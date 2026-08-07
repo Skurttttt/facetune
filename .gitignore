@@ -43,3 +43,13 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local public-client configuration supplied through --dart-define-from-file.
+# Commit config/example.json only.
+/config/development.json
+/config/production.json
+/config/*.local.json
+
+# Supabase CLI local state.
+/supabase/.branches/
+/supabase/.temp/

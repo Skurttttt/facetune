@@ -1,3 +1,5 @@
+SUPABASE PW: facetune_123*
+
 Option 1 — Gemini analyzes the face shape ⭐⭐⭐⭐⭐ (Recommended)
 Flutter
       ↓
