@@ -5,6 +5,13 @@ import 'package:go_router/go_router.dart';
 import '../../core/constants/app_constants.dart';
 import '../../features/analysis/presentation/pages/analysis_result_page.dart';
 import '../../features/authentication/presentation/pages/authentication_page.dart';
+import '../../features/authentication/presentation/pages/auth_loading_page.dart';
+import '../../features/authentication/presentation/pages/email_login_page.dart';
+import '../../features/authentication/presentation/pages/forgot_password_page.dart';
+import '../../features/authentication/presentation/pages/registration_page.dart';
+import '../../features/authentication/presentation/pages/reset_password_page.dart';
+import '../../features/authentication/presentation/controllers/auth_controller.dart';
+import '../../features/authentication/presentation/controllers/auth_state.dart';
 import '../../features/history/presentation/pages/history_page.dart';
 import '../../features/home/presentation/pages/home_page.dart';
 import '../../features/makeup_styles/presentation/pages/style_selection_page.dart';
@@ -15,8 +22,42 @@ import '../../features/scan/presentation/pages/scan_page.dart';
 import '../../features/settings/presentation/pages/settings_page.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
+  final refreshNotifier = _AuthRouterRefreshNotifier();
+  ref
+    ..onDispose(refreshNotifier.dispose)
+    ..listen<AuthState>(authControllerProvider, (previous, next) {
+      if (previous?.status != next.status ||
+          previous?.user?.id != next.user?.id) {
+        refreshNotifier.refresh();
+      }
+    });
+
   return GoRouter(
     initialLocation: AppConstants.homeRoute,
+    refreshListenable: refreshNotifier,
+    redirect: (context, state) {
+      final authState = ref.read(authControllerProvider);
+      final location = state.matchedLocation;
+      const publicRoutes = {
+        AppConstants.authRoute,
+        AppConstants.authLoadingRoute,
+        AppConstants.emailLoginRoute,
+        AppConstants.registerRoute,
+        AppConstants.forgotPasswordRoute,
+        AppConstants.resetPasswordRoute,
+      };
+      final isPublicRoute = publicRoutes.contains(location);
+
+      if (authState.status == AuthStatus.passwordRecovery) {
+        return location == AppConstants.resetPasswordRoute
+            ? null
+            : AppConstants.resetPasswordRoute;
+      }
+      if (!authState.isAuthenticated) {
+        return isPublicRoute ? null : AppConstants.authRoute;
+      }
+      return isPublicRoute ? AppConstants.homeRoute : null;
+    },
     routes: [
       GoRoute(
         path: AppConstants.homeRoute,
@@ -27,6 +68,31 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: AppConstants.authRoute,
         name: 'auth',
         builder: (context, state) => const AuthenticationPage(),
+      ),
+      GoRoute(
+        path: AppConstants.authLoadingRoute,
+        name: 'authLoading',
+        builder: (context, state) => const AuthLoadingPage(),
+      ),
+      GoRoute(
+        path: AppConstants.emailLoginRoute,
+        name: 'emailLogin',
+        builder: (context, state) => const EmailLoginPage(),
+      ),
+      GoRoute(
+        path: AppConstants.registerRoute,
+        name: 'register',
+        builder: (context, state) => const RegistrationPage(),
+      ),
+      GoRoute(
+        path: AppConstants.forgotPasswordRoute,
+        name: 'forgotPassword',
+        builder: (context, state) => const ForgotPasswordPage(),
+      ),
+      GoRoute(
+        path: AppConstants.resetPasswordRoute,
+        name: 'resetPassword',
+        builder: (context, state) => const ResetPasswordPage(),
       ),
       GoRoute(
         path: AppConstants.scanRoute,
@@ -79,3 +145,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     },
   );
 });
+
+class _AuthRouterRefreshNotifier extends ChangeNotifier {
+  void refresh() => notifyListeners();
+}

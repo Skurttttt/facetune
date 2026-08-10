@@ -11,6 +11,11 @@ class AppConstants {
 
   static const String homeRoute = '/';
   static const String authRoute = '/auth';
+  static const String authLoadingRoute = '/auth/loading';
+  static const String emailLoginRoute = '/auth/email';
+  static const String registerRoute = '/auth/register';
+  static const String forgotPasswordRoute = '/auth/forgot-password';
+  static const String resetPasswordRoute = '/auth/reset-password';
   static const String scanRoute = '/scan';
   static const String stylesRoute = '/styles';
   static const String analysisRoute = '/analysis';
@@ -19,6 +24,10 @@ class AppConstants {
   static const String historyRoute = '/history';
   static const String profileRoute = '/profile';
   static const String settingsRoute = '/settings';
+
+  static const String authCallbackUrl = 'io.facetune.app://login-callback/';
+  static const String passwordResetCallbackUrl =
+      'io.facetune.app://reset-callback/';
 
   static const double spacingSmall = 8;
   static const double spacingMedium = 16;

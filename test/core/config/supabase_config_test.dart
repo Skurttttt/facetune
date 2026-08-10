@@ -3,6 +3,17 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('SupabaseConfig', () {
+    test('compile-time environment contract is internally consistent', () {
+      const expectConfigured = bool.fromEnvironment('EXPECT_SUPABASE_CONFIG');
+      final config = SupabaseConfig.fromEnvironment();
+
+      expect(config.url.isEmpty, config.publishableKey.isEmpty);
+      if (expectConfigured) {
+        expect(config.isConfigured, isTrue);
+        expect(config.validate, returnsNormally);
+      }
+    });
+
     test('accepts an HTTPS project URL and publishable key', () {
       const config = SupabaseConfig(
         url: 'https://example.supabase.co',

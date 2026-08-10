@@ -19,6 +19,19 @@ Build Android with the same configuration:
 flutter build apk --debug --dart-define-from-file=config/development.json
 ```
 
+To build and install the configured APK in one guarded step, use:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tool/build_and_install_dev.ps1
+```
+
+The script validates the expected property names and formats, builds with the
+define file, locates `adb.exe` from `android/local.properties`, and installs
+only when an authorized device is connected. It then launches the installed
+package and requires the sanitized device log to report `Supabase
+initialization: READY`. This prevents accidentally reinstalling or accepting an
+older APK that was compiled without Supabase defines.
+
 `config/development.json`, `config/production.json`, and `*.local.json` are
 ignored by Git. `config/example.json` contains placeholders and is safe to
 commit.
@@ -27,6 +40,10 @@ If no Supabase defines are supplied, the static application still starts
 without initializing Supabase. This supports UI tests and compile-only
 workflows. If only one value is supplied, or if the URL/key format is invalid,
 startup fails before constructing a client.
+
+Debug startup logs report only whether each value is present and whether
+initialization is ready, missing, invalid, or failed. The publishable key itself
+is never printed.
 
 Apply database and Storage migrations using the instructions in
 `supabase/README.md`.
