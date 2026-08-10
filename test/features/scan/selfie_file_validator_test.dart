@@ -58,4 +58,27 @@ void main() {
       ),
     );
   });
+
+  test('rejects a file extension that does not match its MIME signature', () {
+    final jpegHeader = Uint8List.fromList([
+      0xff,
+      0xd8,
+      0xff,
+      0xe0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+    ]);
+
+    expect(
+      () =>
+          validator.validate(path: 'selfie.png', size: 50, header: jpegHeader),
+      throwsA(isA<SelfieFailure>()),
+    );
+  });
 }

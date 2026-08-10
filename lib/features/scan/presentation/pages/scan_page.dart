@@ -45,13 +45,15 @@ class ScanPage extends ConsumerWidget {
               const _GuidanceCard(),
               if (state.errorMessage != null) ...[
                 const SizedBox(height: AppSpacing.md),
-                _PermissionError(
+                _ScanError(
                   message: state.errorMessage!,
                   canOpenSettings: state.canOpenSettings,
+                  canRetryValidation: state.canRetryValidation,
                   onOpenSettings: controller.openSettings,
+                  onRetryValidation: controller.validateForAnalysis,
                 ),
               ],
-              if (state.stage == ScanStage.readyForValidation) ...[
+              if (state.stage == ScanStage.readyForSecureValidation) ...[
                 const SizedBox(height: AppSpacing.md),
                 const AppCard(
                   color: AppColors.petal,
@@ -61,7 +63,7 @@ class ScanPage extends ConsumerWidget {
                       SizedBox(width: AppSpacing.sm),
                       Expanded(
                         child: Text(
-                          'Selfie prepared securely and ready for the image validation stage.',
+                          'Local checks passed. Your selfie is ready for secure face, lighting, sharpness, visibility, and framing checks.',
                         ),
                       ),
                     ],
@@ -83,15 +85,18 @@ class ScanPage extends ConsumerWidget {
                 ),
               ] else ...[
                 PrimaryButton(
-                  label: state.stage == ScanStage.readyForValidation
-                      ? 'Ready for validation'
-                      : 'Continue to image validation',
+                  label: switch (state.stage) {
+                    ScanStage.validatingLocal => 'Validating image…',
+                    ScanStage.readyForSecureValidation =>
+                      'Ready for secure validation',
+                    _ => 'Validate selfie',
+                  },
                   icon: Icons.arrow_forward_rounded,
                   onPressed:
                       state.isBusy ||
-                          state.stage == ScanStage.readyForValidation
+                          state.stage == ScanStage.readyForSecureValidation
                       ? null
-                      : controller.proceedToValidation,
+                      : controller.validateForAnalysis,
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Row(
@@ -206,16 +211,20 @@ class _GuidanceCard extends StatelessWidget {
   );
 }
 
-class _PermissionError extends StatelessWidget {
-  const _PermissionError({
+class _ScanError extends StatelessWidget {
+  const _ScanError({
     required this.message,
     required this.canOpenSettings,
+    required this.canRetryValidation,
     required this.onOpenSettings,
+    required this.onRetryValidation,
   });
 
   final String message;
   final bool canOpenSettings;
+  final bool canRetryValidation;
   final VoidCallback onOpenSettings;
+  final VoidCallback onRetryValidation;
 
   @override
   Widget build(BuildContext context) => AppCard(
@@ -230,6 +239,14 @@ class _PermissionError extends StatelessWidget {
             onPressed: onOpenSettings,
             icon: const Icon(Icons.settings_outlined),
             label: const Text('Open Settings'),
+          ),
+        ],
+        if (canRetryValidation) ...[
+          const SizedBox(height: AppSpacing.xs),
+          TextButton.icon(
+            onPressed: onRetryValidation,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Retry validation'),
           ),
         ],
       ],

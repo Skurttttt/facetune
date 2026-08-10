@@ -1,6 +1,9 @@
+import 'package:facetune/features/scan/domain/entities/local_image_validation.dart';
 import 'package:facetune/features/scan/domain/entities/prepared_selfie.dart';
 import 'package:facetune/features/scan/domain/entities/selfie_source.dart';
+import 'package:facetune/features/scan/domain/errors/image_validation_failure.dart';
 import 'package:facetune/features/scan/domain/errors/selfie_failure.dart';
+import 'package:facetune/features/scan/domain/repositories/image_validation_repository.dart';
 import 'package:facetune/features/scan/domain/repositories/selfie_repository.dart';
 import 'package:facetune/features/scan/presentation/controllers/scan_controller.dart';
 import 'package:facetune/features/scan/presentation/controllers/scan_state.dart';
@@ -14,10 +17,17 @@ void main() {
     uploadSizeBytes: 70,
     source: SelfieSource.gallery,
   );
+  const validImage = LocalImageValidation(
+    mimeType: 'image/jpeg',
+    width: 1080,
+    height: 1440,
+    originalSizeBytes: 100,
+    uploadSizeBytes: 70,
+  );
 
   test('selected selfie becomes preview ready', () async {
     final repository = _FakeSelfieRepository(result: selfie);
-    final controller = ScanController(repository);
+    final controller = _controller(repository);
 
     await controller.chooseFromGallery();
 
@@ -27,7 +37,7 @@ void main() {
 
   test('replacement discards prior local files only after success', () async {
     final repository = _FakeSelfieRepository(result: selfie);
-    final controller = ScanController(repository);
+    final controller = _controller(repository);
     await controller.chooseFromGallery();
     const replacement = PreparedSelfie(
       originalPath: 'replacement.png',
@@ -46,7 +56,7 @@ void main() {
 
   test('permanent denial keeps preview and offers settings', () async {
     final repository = _FakeSelfieRepository(result: selfie);
-    final controller = ScanController(repository);
+    final controller = _controller(repository);
     await controller.chooseFromGallery();
     repository.failure = const SelfieFailure(
       SelfieFailureType.permissionPermanentlyDenied,
@@ -60,14 +70,59 @@ void main() {
     expect(controller.state.errorMessage, 'Open settings.');
   });
 
-  test('proceed marks the selfie ready for Phase 6 validation', () async {
-    final controller = ScanController(_FakeSelfieRepository(result: selfie));
+  test('successful local validation is ready for secure validation', () async {
+    final controller = _controller(
+      _FakeSelfieRepository(result: selfie),
+      validationResult: validImage,
+    );
     await controller.chooseFromGallery();
 
-    controller.proceedToValidation();
+    await controller.validateForAnalysis();
 
-    expect(controller.state.stage, ScanStage.readyForValidation);
+    expect(controller.state.stage, ScanStage.readyForSecureValidation);
+    expect(controller.state.localValidation, same(validImage));
   });
+
+  test('validation failure keeps selfie and exposes retry', () async {
+    const failure = ImageValidationFailure(
+      ImageValidationFailureType.corruptImage,
+      'Image is corrupt.',
+    );
+    final controller = _controller(
+      _FakeSelfieRepository(result: selfie),
+      validationFailure: failure,
+    );
+    await controller.chooseFromGallery();
+
+    await controller.validateForAnalysis();
+
+    expect(controller.state.stage, ScanStage.validationFailed);
+    expect(controller.state.selfie, same(selfie));
+    expect(controller.state.canRetryValidation, isTrue);
+    expect(controller.state.errorMessage, failure.message);
+  });
+}
+
+ScanController _controller(
+  _FakeSelfieRepository repository, {
+  LocalImageValidation? validationResult,
+  ImageValidationFailure? validationFailure,
+}) {
+  return ScanController(
+    selfieRepository: repository,
+    validationRepository: _FakeImageValidationRepository(
+      result:
+          validationResult ??
+          const LocalImageValidation(
+            mimeType: 'image/jpeg',
+            width: 1080,
+            height: 1440,
+            originalSizeBytes: 100,
+            uploadSizeBytes: 70,
+          ),
+      failure: validationFailure,
+    ),
+  );
 }
 
 class _FakeSelfieRepository implements SelfieRepository {
@@ -89,4 +144,18 @@ class _FakeSelfieRepository implements SelfieRepository {
 
   @override
   Future<bool> openPermissionSettings() async => true;
+}
+
+class _FakeImageValidationRepository implements ImageValidationRepository {
+  const _FakeImageValidationRepository({required this.result, this.failure});
+
+  final LocalImageValidation result;
+  final ImageValidationFailure? failure;
+
+  @override
+  Future<LocalImageValidation> validateLocal(PreparedSelfie selfie) async {
+    final currentFailure = failure;
+    if (currentFailure != null) throw currentFailure;
+    return result;
+  }
 }

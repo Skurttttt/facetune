@@ -7,7 +7,7 @@ class SelfieFileValidator {
 
   final int maximumBytes;
 
-  void validate({
+  String validate({
     required String path,
     required int size,
     required Uint8List header,
@@ -24,28 +24,30 @@ class SelfieFileValidator {
         'That image is too large. Choose a photo under 20 MB.',
       );
     }
-    if (!_hasSupportedExtension(path) || !_hasSupportedSignature(header)) {
+    final mimeType = detectMimeType(header);
+    if (!_extensionMatchesMime(path, mimeType)) {
       throw const SelfieFailure(
         SelfieFailureType.unsupportedType,
         'Choose a JPEG, PNG, WebP, HEIC, or HEIF image.',
       );
     }
+    return mimeType!;
   }
 
-  bool _hasSupportedExtension(String path) {
+  bool _extensionMatchesMime(String path, String? mimeType) {
+    if (mimeType == null) return false;
     final extension = path.toLowerCase().split('.').last;
-    return const {
-      'jpg',
-      'jpeg',
-      'png',
-      'webp',
-      'heic',
-      'heif',
-    }.contains(extension);
+    return switch (mimeType) {
+      'image/jpeg' => extension == 'jpg' || extension == 'jpeg',
+      'image/png' => extension == 'png',
+      'image/webp' => extension == 'webp',
+      'image/heic' => extension == 'heic' || extension == 'heif',
+      _ => false,
+    };
   }
 
-  bool _hasSupportedSignature(Uint8List bytes) {
-    if (bytes.length < 12) return false;
+  String? detectMimeType(Uint8List bytes) {
+    if (bytes.length < 12) return null;
     final isJpeg = bytes[0] == 0xff && bytes[1] == 0xd8;
     final isPng =
         bytes[0] == 0x89 &&
@@ -64,6 +66,10 @@ class SelfieFileValidator {
             brand.contains('hevx') ||
             brand.contains('mif1') ||
             brand.contains('msf1'));
-    return isJpeg || isPng || isWebP || isHeif;
+    if (isJpeg) return 'image/jpeg';
+    if (isPng) return 'image/png';
+    if (isWebP) return 'image/webp';
+    if (isHeif) return 'image/heic';
+    return null;
   }
 }
