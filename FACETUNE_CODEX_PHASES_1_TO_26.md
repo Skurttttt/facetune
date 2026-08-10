@@ -597,26 +597,129 @@ Do not implement the next phase until explicitly instructed.
 
 # PHASE 7 — Gemini Face Analysis
 
-Read `CODEX_MASTER_GUIDE.md` first.
+Read `CODEX_MASTER_GUIDE.md` completely first.
 
-Implement only **Phase 7 — Gemini Face Analysis**.
+Then read the current FaceTune phase guide.
 
-### Objective
+Continue the existing FaceTune project.
 
-Securely analyze a user's selfie using Gemini and return validated structured facial attributes.
+Implement ONLY:
 
-### Architecture
+PHASE 7 — Gemini Face Analysis
+
+Do not implement Phase 8 or later phases.
+
+Preserve the modular OOP / SOLID architecture established in Phase 2.5.
+
+---
+
+## OBJECTIVE
+
+Securely analyze a user's selfie using Google Gemini and return validated, strongly typed facial attributes.
+
+The complete flow must be:
 
 Flutter
-→ authenticated Supabase backend / Edge Function
-→ Gemini
-→ validated structured output
-→ repository/domain model
-→ Flutter
+→ authenticated Supabase Edge Function
+→ Gemini API
+→ validated structured response
+→ Dart repository/domain layer
+→ Riverpod controller/state
+→ Flutter UI
+→ Supabase persistence
 
 Gemini credentials must remain server-side.
 
-### Analyze
+---
+
+## GEMINI SECRET
+
+The Supabase project already contains the Edge Function secret:
+
+GEMINI_API_KEY
+
+The Edge Function must read it using server-side environment access.
+
+Example concept:
+
+Deno.env.get("GEMINI_API_KEY")
+
+Do NOT:
+
+- hardcode the Gemini key
+- place the Gemini key in Flutter
+- place it in `development.json`
+- place it in AndroidManifest.xml
+- place it in pubspec.yaml
+- place it in GitHub
+- print it to logs
+
+If the secret is missing, return a sanitized server error.
+
+---
+
+## GEMINI MODEL
+
+Use the currently supported production Gemini Flash model appropriate for multimodal image understanding.
+
+Before implementation:
+
+1. Verify the exact current model ID supported by the Gemini API.
+2. Prefer the latest stable GA Flash model.
+3. Do not use deprecated model IDs.
+4. Keep the model ID server-side configurable.
+
+Do not scatter the model ID throughout Flutter code.
+
+Prefer one server-side configuration constant or environment/config abstraction.
+
+---
+
+## INPUT
+
+The Edge Function receives:
+
+- authenticated user session
+- selfie image or secure image reference
+- optional analysis metadata if required
+
+Do not trust a client-supplied user ID.
+
+Derive user identity from the authenticated Supabase session/JWT.
+
+---
+
+## IMAGE VALIDATION
+
+Before extracting facial attributes, Gemini must validate that the image is suitable.
+
+Validate:
+
+- exactly one visible face
+- face is sufficiently visible
+- face is not severely obstructed
+- image lighting is usable
+- image is sufficiently sharp for analysis
+- face framing is acceptable
+
+Reject:
+
+- no face
+- multiple people
+- unusable image
+- extremely dark image
+- severely blurry image
+- face too obscured
+
+Return structured validation errors.
+
+Do not proceed to facial attribute analysis when validation fails.
+
+---
+
+## ANALYZE
+
+For valid selfies, analyze:
 
 - face shape
 - skin tone
@@ -628,38 +731,239 @@ Gemini credentials must remain server-side.
 
 Include confidence values where practical.
 
-### Implement
+---
 
-- secure Edge Function/API operation for face analysis
-- authenticated user validation
-- request validation
-- Gemini prompt/version separation
-- structured response schema
-- server-side response validation
-- Dart domain/entity model
-- DTO mapping
-- repository
-- Riverpod/controller integration
-- analysis loading/progress state
-- persistence to analyses table
-- timeout/retry strategy
-- malformed JSON handling
-- unsupported enum handling
-- low-confidence handling
-- no-face and multiple-face handling
-- useful developer logging without leaking private image content
+## STRUCTURED OUTPUT
 
-### Important
+Gemini must return structured JSON only.
 
-Return structured data, not uncontrolled prose.
+Use a strict JSON schema where supported.
 
-Do not blindly trust model output.
+Example target:
 
-### Done when
+{
+  "imageValid": true,
+  "validation": {
+    "faceCount": 1,
+    "lightingAcceptable": true,
+    "sharpnessAcceptable": true,
+    "faceVisible": true,
+    "framingAcceptable": true
+  },
+  "analysis": {
+    "faceShape": "oval",
+    "skinTone": "medium",
+    "undertone": "warm",
+    "eyeShape": "almond",
+    "lipShape": "full",
+    "hairColor": "dark_brown",
+    "eyeColor": "brown"
+  },
+  "confidence": {
+    "faceShape": 0.91,
+    "skinTone": 0.88,
+    "undertone": 0.82,
+    "eyeShape": 0.90,
+    "lipShape": 0.87,
+    "hairColor": 0.94,
+    "eyeColor": 0.89
+  }
+}
 
-A real selfie can be securely analyzed and the Flutter app receives validated, typed facial attributes without exposing the Gemini key.
+Do not rely on free-form prose.
 
-### Required validation
+Do not blindly trust Gemini output.
+
+---
+
+## SERVER-SIDE VALIDATION
+
+Validate Gemini output before returning it to Flutter.
+
+Handle:
+
+- malformed JSON
+- missing fields
+- null fields
+- unsupported enum values
+- impossible values
+- confidence values outside expected range
+- empty Gemini response
+- refusal
+- timeout
+- rate-limit errors
+- upstream API errors
+
+Normalize values when appropriate.
+
+Do not silently accept invalid AI output.
+
+---
+
+## DOMAIN / DATA ARCHITECTURE
+
+Follow the modular architecture established in Phase 2.5.
+
+Do not place Gemini calls inside UI code.
+
+Expected conceptual structure:
+
+features/analysis/
+├── data/
+│   ├── datasources/
+│   ├── models/
+│   └── repositories/
+├── domain/
+│   ├── entities/
+│   ├── repositories/
+│   └── usecases/
+└── presentation/
+    ├── controllers/
+    ├── pages/
+    └── widgets/
+
+Responsibilities:
+
+Presentation
+→ UI and state only
+
+Domain
+→ entities, contracts, use cases
+
+Data
+→ DTOs, serialization, Edge Function calls, repository implementations
+
+Do not create God classes.
+
+---
+
+## DART MODELS
+
+Create strongly typed models/entities for:
+
+- image validation result
+- facial analysis
+- confidence scores
+- analysis failure/error state
+
+Use immutable models where practical.
+
+Do not pass raw Map<String, dynamic> throughout the application.
+
+---
+
+## RIVERPOD
+
+Integrate the analysis flow using Riverpod.
+
+Support states such as:
+
+idle
+validating
+analyzing
+success
+validationFailure
+networkFailure
+serverFailure
+geminiFailure
+
+Avoid ambiguous boolean combinations.
+
+---
+
+## PERSISTENCE
+
+On successful analysis:
+
+Save the result to the existing Supabase `analyses` table.
+
+Persist:
+
+- authenticated user ID
+- original image reference/path
+- face shape
+- skin tone
+- undertone
+- eye shape
+- lip shape
+- hair color
+- eye color
+- confidence JSON
+- Gemini model ID
+- prompt version if schema supports it
+- created timestamp
+
+Do not create duplicate tables if the Phase 3 schema already supports this.
+
+If a schema adjustment is required, create a proper migration.
+
+---
+
+## PROMPT VERSIONING
+
+The face-analysis Gemini prompt must be versioned.
+
+Example concept:
+
+face_analysis_v1
+
+Do not bury the full prompt inside random UI or repository files.
+
+Keep prompts isolated and maintainable.
+
+---
+
+## TIMEOUT / RETRY
+
+Implement bounded timeout and retry behavior.
+
+Do NOT retry endlessly.
+
+Do not retry deterministic validation failures such as:
+
+- no face
+- multiple faces
+- invalid image
+
+Retry only appropriate transient failures.
+
+---
+
+## LOGGING
+
+Log useful development diagnostics without exposing:
+
+- Gemini API key
+- full private image content
+- raw user authentication tokens
+- sensitive storage URLs
+
+Sanitize Gemini/API errors before returning them to Flutter.
+
+---
+
+## TEST CASES
+
+Add tests where feasible for:
+
+1. Valid selfie
+2. No-face image
+3. Multiple-face image
+4. Malformed Gemini JSON
+5. Unsupported enum value
+6. Low-confidence response
+7. Timeout
+8. Authentication failure
+9. Edge Function error
+10. Successful persistence
+
+Use mocked Gemini responses for automated tests where appropriate.
+
+Do not depend on live Gemini calls for every unit test.
+
+---
+
+## REQUIRED VALIDATION
 
 After implementation:
 
@@ -667,30 +971,85 @@ After implementation:
 - Run `dart format .`.
 - Run `flutter analyze`.
 - Run relevant `flutter test` tests.
-- Run `flutter build apk --debug` when Android compilation should be verified.
-- Fix errors introduced by this phase.
-- Do not hide or suppress genuine errors just to make checks appear green.
 
-### Completion report
+Validate Supabase Edge Function code separately where appropriate.
 
-At the end, report:
+Deploy/test the Edge Function if the current environment is correctly linked.
 
-```text
+If Android compilation should be verified, run:
+
+flutter build apk --debug --dart-define-from-file=config/development.json
+
+If a physical Android device is available, verify with:
+
+flutter run --dart-define-from-file=config/development.json
+
+Do not claim Phase 7 is complete merely because the project compiles.
+
+The real success condition is:
+
+A real authenticated user can submit a valid selfie, the request securely reaches Gemini through Supabase, Gemini returns validated structured facial attributes, the result is saved to Supabase, and Flutter receives typed analysis data.
+
+---
+
+## SECURITY CHECK
+
+Before declaring completion verify:
+
+- GEMINI_API_KEY exists only server-side.
+- Flutter does not contain Gemini credentials.
+- Edge Function requires authentication.
+- User identity comes from authenticated session/JWT.
+- AI response is validated server-side.
+- RLS protects saved analyses.
+- Logs do not expose secrets.
+
+---
+
+## COMPLETION REPORT
+
+At the end report:
+
 PHASE COMPLETED:
+Phase 7 — Gemini Face Analysis
+
 FILES CREATED:
+
 FILES MODIFIED:
+
 DEPENDENCIES ADDED:
+
 DATABASE / STORAGE CHANGES:
-EDGE FUNCTION / AI CHANGES:
+
+EDGE FUNCTION CREATED:
+
+GEMINI MODEL USED:
+
+PROMPT VERSION:
+
+AUTHENTICATION STATUS:
+
+STRUCTURED OUTPUT STATUS:
+
+IMAGE VALIDATION STATUS:
+
+PERSISTENCE STATUS:
+
+SECURITY CHECK:
+
 TESTS / VALIDATION:
+
 KNOWN LIMITATIONS:
+
+MANUAL ACTION REQUIRED:
+None / describe exact action
+
 NEXT RECOMMENDED PHASE:
-```
+Phase 8 — Makeup Style Selection
 
 Then STOP.
 
-Do not implement the next phase until explicitly instructed.
-
+Do not implement Phase 8.
 ---
 
 # PHASE 8 — Makeup Style Selection

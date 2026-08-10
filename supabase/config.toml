@@ -1,0 +1,4 @@
+project_id = "facetune"
+
+[functions.analyze-face]
+verify_jwt = true

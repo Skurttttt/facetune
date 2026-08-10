@@ -2,7 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../core/constants/app_constants.dart';
+import '../../../analysis/presentation/controllers/face_analysis_controller.dart';
+import '../../../analysis/presentation/controllers/face_analysis_state.dart';
 import '../../../../shared/widgets/app_ui.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../domain/entities/selfie_source.dart';
@@ -16,7 +20,18 @@ class ScanPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(scanControllerProvider);
     final controller = ref.read(scanControllerProvider.notifier);
+    final analysisState = ref.watch(faceAnalysisControllerProvider);
     final selfie = state.selfie;
+    ref.listen<FaceAnalysisState>(faceAnalysisControllerProvider, (
+      previous,
+      next,
+    ) {
+      if (previous?.status != FaceAnalysisStatus.success &&
+          next.status == FaceAnalysisStatus.success &&
+          context.mounted) {
+        context.push(AppConstants.analysisRoute);
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(title: const Text('New scan')),
@@ -70,6 +85,13 @@ class ScanPage extends ConsumerWidget {
                   ),
                 ),
               ],
+              if (analysisState.message != null) ...[
+                const SizedBox(height: AppSpacing.md),
+                AppCard(
+                  color: AppColors.petal,
+                  child: Text(analysisState.message!),
+                ),
+              ],
               const SizedBox(height: AppSpacing.lg),
               if (selfie == null) ...[
                 PrimaryButton(
@@ -85,17 +107,17 @@ class ScanPage extends ConsumerWidget {
                 ),
               ] else ...[
                 PrimaryButton(
-                  label: switch (state.stage) {
-                    ScanStage.validatingLocal => 'Validating image…',
-                    ScanStage.readyForSecureValidation =>
-                      'Ready for secure validation',
-                    _ => 'Validate selfie',
-                  },
+                  label: _primaryLabel(state, analysisState),
                   icon: Icons.arrow_forward_rounded,
-                  onPressed:
-                      state.isBusy ||
-                          state.stage == ScanStage.readyForSecureValidation
+                  onPressed: state.isBusy || analysisState.isBusy
                       ? null
+                      : state.stage == ScanStage.readyForSecureValidation
+                      ? () => ref
+                            .read(faceAnalysisControllerProvider.notifier)
+                            .analyze(
+                              selfie: selfie,
+                              localValidation: state.localValidation!,
+                            )
                       : controller.validateForAnalysis,
                 ),
                 const SizedBox(height: AppSpacing.sm),
@@ -105,7 +127,9 @@ class ScanPage extends ConsumerWidget {
                       child: SecondaryButton(
                         label: 'Retake',
                         icon: Icons.camera_alt_outlined,
-                        onPressed: state.isBusy ? null : controller.takePhoto,
+                        onPressed: state.isBusy || analysisState.isBusy
+                            ? null
+                            : controller.takePhoto,
                       ),
                     ),
                     const SizedBox(width: AppSpacing.sm),
@@ -113,7 +137,7 @@ class ScanPage extends ConsumerWidget {
                       child: SecondaryButton(
                         label: 'Reselect',
                         icon: Icons.photo_library_outlined,
-                        onPressed: state.isBusy
+                        onPressed: state.isBusy || analysisState.isBusy
                             ? null
                             : controller.chooseFromGallery,
                       ),
@@ -138,6 +162,20 @@ class ScanPage extends ConsumerWidget {
     return state.isBusy && state.activeSource == SelfieSource.gallery
         ? 'Preparing selfie…'
         : 'Choose from gallery';
+  }
+
+  String _primaryLabel(ScanState scanState, FaceAnalysisState analysisState) {
+    if (analysisState.status == FaceAnalysisStatus.uploading) {
+      return 'Uploading securely…';
+    }
+    if (analysisState.status == FaceAnalysisStatus.secureProcessing) {
+      return 'Analyzing securely…';
+    }
+    return switch (scanState.stage) {
+      ScanStage.validatingLocal => 'Validating image…',
+      ScanStage.readyForSecureValidation => 'Analyze selfie',
+      _ => 'Validate selfie',
+    };
   }
 }
 
