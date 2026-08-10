@@ -1,0 +1,1 @@
+enum SelfieSource { camera, gallery }

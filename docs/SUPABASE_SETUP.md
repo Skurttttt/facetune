@@ -10,8 +10,21 @@ defines. Values are not hardcoded in Dart or bundled as Flutter assets.
 4. Run the app:
 
 ```powershell
-flutter run --dart-define-from-file=config/development.json
+powershell -ExecutionPolicy Bypass -File tool/run_dev.ps1
 ```
+
+The repository also includes configured development launch targets:
+
+- VS Code: select `FaceTune — Development` and press F5. Workspace settings
+  also add the define file to normal Flutter runs.
+- Android Studio: select the shared `FaceTune — Development` run
+  configuration.
+- PowerShell: use `tool/run_dev.ps1` instead of plain `flutter run`.
+
+Plain `flutter run` does not automatically read JSON configuration files. It
+creates a valid but intentionally unconfigured build, so the authentication
+guard will appear. Use one of the configured launch paths above for every
+development run.
 
 Build Android with the same configuration:
 

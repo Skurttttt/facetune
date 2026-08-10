@@ -1,5 +1,7 @@
 SUPABASE PW: facetune_123*
 
+powershell -ExecutionPolicy Bypass -File tool/run_dev.ps1
+
 Option 1 — Gemini analyzes the face shape ⭐⭐⭐⭐⭐ (Recommended)
 Flutter
       ↓
