@@ -190,7 +190,9 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
     ref
         .read(makeupRecommendationControllerProvider.notifier)
         .restore(look.recommendation);
-    ref.read(makeupPreviewControllerProvider.notifier).restore(look.preview);
+    ref
+        .read(makeupPreviewControllerProvider.notifier)
+        .restore(look.preview, recommendation: look.recommendation);
     ref.read(resultActionsControllerProvider.notifier).restoreSavedLook(look);
     context.push(AppConstants.previewRoute);
   }

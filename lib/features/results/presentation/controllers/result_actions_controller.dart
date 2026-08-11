@@ -155,6 +155,12 @@ class ResultActionsController extends StateNotifier<ResultActionsState> {
     );
   }
 
+  void forgetAnalysis(String analysisId) {
+    final looks = {...state.savedLooksByPreviewId}
+      ..removeWhere((_, look) => look.analysis.id == analysisId);
+    state = _copy(savedLooksByPreviewId: Map.unmodifiable(looks));
+  }
+
   Future<void> share({
     required GeneratedPreview preview,
     required String styleName,

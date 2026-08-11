@@ -28,6 +28,30 @@ void main() {
     expect(controller.state.preview?.generationNumber, 2);
     expect(repository.calls, 2);
   });
+
+  test(
+    'restored results retain their recommendation for regeneration',
+    () async {
+      final repository = _FakePreviewRepository();
+      final controller = MakeupPreviewController(
+        GenerateMakeupPreview(repository),
+      );
+      addTearDown(controller.dispose);
+      final recommendation = MakeupRecommendationDto.fromResponse(
+        validRecommendationResponse,
+      ).recommendation;
+      final restoredPreview = await repository.generate(
+        recommendation: recommendation,
+      );
+      repository.calls = 0;
+
+      controller.restore(restoredPreview, recommendation: recommendation);
+      await controller.generateVariation();
+
+      expect(repository.calls, 1);
+      expect(controller.state.status, MakeupPreviewStatus.success);
+    },
+  );
 }
 
 class _FakePreviewRepository implements MakeupPreviewRepository {

@@ -52,7 +52,11 @@ class MakeupPreviewController extends StateNotifier<MakeupPreviewState> {
 
   void clear() => state = const MakeupPreviewState();
 
-  void restore(GeneratedPreview preview) {
+  void restore(
+    GeneratedPreview preview, {
+    MakeupRecommendation? recommendation,
+  }) {
+    _recommendation = recommendation ?? _recommendation;
     state = MakeupPreviewState(
       status: MakeupPreviewStatus.success,
       preview: preview,
