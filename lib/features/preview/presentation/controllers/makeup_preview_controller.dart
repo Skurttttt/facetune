@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../recommendation/domain/entities/makeup_recommendation.dart';
 import '../../data/providers/preview_providers.dart';
+import '../../domain/entities/generated_preview.dart';
 import '../../domain/errors/preview_failure.dart';
 import '../../domain/usecases/generate_makeup_preview.dart';
 import 'makeup_preview_state.dart';
@@ -50,4 +51,11 @@ class MakeupPreviewController extends StateNotifier<MakeupPreviewState> {
   Future<void> generateVariation() => retry();
 
   void clear() => state = const MakeupPreviewState();
+
+  void restore(GeneratedPreview preview) {
+    state = MakeupPreviewState(
+      status: MakeupPreviewStatus.success,
+      preview: preview,
+    );
+  }
 }

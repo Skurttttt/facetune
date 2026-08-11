@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../scan/domain/entities/local_image_validation.dart';
 import '../../../scan/domain/entities/prepared_selfie.dart';
 import '../../data/providers/analysis_providers.dart';
+import '../../domain/entities/face_analysis.dart';
 import '../../domain/errors/analysis_failure.dart';
 import '../../domain/repositories/face_analysis_repository.dart';
 import '../../domain/usecases/analyze_face.dart';
@@ -51,4 +52,11 @@ class FaceAnalysisController extends StateNotifier<FaceAnalysisState> {
   }
 
   void clear() => state = const FaceAnalysisState();
+
+  void restore(FaceAnalysis analysis) {
+    state = FaceAnalysisState(
+      status: FaceAnalysisStatus.success,
+      analysis: analysis,
+    );
+  }
 }

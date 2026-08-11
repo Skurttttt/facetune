@@ -26,4 +26,8 @@ class MakeupStyleSelectionController
   }
 
   void clear() => state = const MakeupStyleSelectionState();
+
+  void restore(MakeupStyle style) {
+    state = MakeupStyleSelectionState(selectedStyle: style, isConfirmed: true);
+  }
 }

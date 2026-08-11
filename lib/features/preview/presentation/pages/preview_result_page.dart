@@ -35,6 +35,14 @@ class PreviewResultPage extends ConsumerWidget {
         .watch(makeupStyleSelectionControllerProvider)
         .selectedStyle;
     final actionState = ref.watch(resultActionsControllerProvider);
+    final preview = previewState.preview;
+    if (preview != null && !actionState.loadedPreviewIds.contains(preview.id)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref
+            .read(resultActionsControllerProvider.notifier)
+            .loadSavedStatus(preview);
+      });
+    }
 
     ref.listen<ResultActionsState>(resultActionsControllerProvider, (
       previous,
@@ -86,10 +94,10 @@ class PreviewResultPage extends ConsumerWidget {
                 actionState: actionState,
                 onSave: () => ref
                     .read(resultActionsControllerProvider.notifier)
-                    .toggleSaved(previewState.preview!.id),
+                    .toggleSaved(previewState.preview!),
                 onFavorite: () => ref
                     .read(resultActionsControllerProvider.notifier)
-                    .toggleFavorite(previewState.preview!.id),
+                    .toggleFavorite(previewState.preview!),
                 onShare: () => ref
                     .read(resultActionsControllerProvider.notifier)
                     .share(
@@ -285,6 +293,7 @@ class _ResultDetails extends StatelessWidget {
         isSaved: actionState.isSaved(previewId),
         isFavorite: actionState.isFavorite(previewId),
         isSharing: actionState.isSharing,
+        isMutating: actionState.isMutating,
         onSave: onSave,
         onFavorite: onFavorite,
         onShare: onShare,

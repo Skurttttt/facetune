@@ -10,6 +10,7 @@ void main() {
           body: ResultActions(
             isSaved: false,
             isFavorite: false,
+            isMutating: false,
             isSharing: false,
             onSave: () {},
             onFavorite: () {},

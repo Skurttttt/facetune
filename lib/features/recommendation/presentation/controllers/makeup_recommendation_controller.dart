@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../analysis/domain/entities/face_analysis.dart';
 import '../../../makeup_styles/domain/entities/makeup_style.dart';
 import '../../data/providers/recommendation_providers.dart';
+import '../../domain/entities/makeup_recommendation.dart';
 import '../../domain/errors/recommendation_failure.dart';
 import '../../domain/usecases/generate_makeup_recommendation.dart';
 import 'makeup_recommendation_state.dart';
@@ -68,4 +69,11 @@ class MakeupRecommendationController
   }
 
   void clear() => state = const MakeupRecommendationState();
+
+  void restore(MakeupRecommendation recommendation) {
+    state = MakeupRecommendationState(
+      status: MakeupRecommendationStatus.success,
+      recommendation: recommendation,
+    );
+  }
 }

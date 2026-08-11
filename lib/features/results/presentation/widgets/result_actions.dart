@@ -8,6 +8,7 @@ class ResultActions extends StatelessWidget {
     required this.isSaved,
     required this.isFavorite,
     required this.isSharing,
+    required this.isMutating,
     required this.onSave,
     required this.onFavorite,
     required this.onShare,
@@ -19,6 +20,7 @@ class ResultActions extends StatelessWidget {
   final bool isSaved;
   final bool isFavorite;
   final bool isSharing;
+  final bool isMutating;
   final VoidCallback onSave;
   final VoidCallback onFavorite;
   final VoidCallback onShare;
@@ -29,16 +31,16 @@ class ResultActions extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     children: [
       PrimaryButton(
-        label: isSaved ? 'Saved for this session' : 'Save look',
+        label: isSaved ? 'Saved' : 'Save look',
         icon: isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-        onPressed: onSave,
+        onPressed: isMutating ? null : onSave,
       ),
       const SizedBox(height: AppSpacing.sm),
       Row(
         children: [
           Expanded(
             child: OutlinedButton.icon(
-              onPressed: onFavorite,
+              onPressed: isMutating ? null : onFavorite,
               icon: Icon(
                 isFavorite
                     ? Icons.favorite_rounded
