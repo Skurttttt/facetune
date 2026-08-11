@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../core/constants/app_constants.dart';
+import '../../../preview/presentation/controllers/makeup_preview_controller.dart';
 import '../../../../shared/widgets/app_ui.dart';
 import '../../../../theme/app_tokens.dart';
 import '../controllers/makeup_recommendation_controller.dart';
@@ -104,8 +107,19 @@ class _RecommendationContent extends StatelessWidget {
         const StatusState(
           title: 'Ready for your preview',
           message:
-              'Preview generation is intentionally reserved for Phase 10. Your validated plan is saved securely.',
+              'Identity preservation is prioritized, but AI results can vary. You can generate another variation if needed.',
           icon: Icons.auto_awesome_rounded,
+        ),
+        const SizedBox(height: AppSpacing.md),
+        PrimaryButton(
+          label: 'Generate makeup preview',
+          icon: Icons.auto_awesome_rounded,
+          onPressed: () {
+            ProviderScope.containerOf(context)
+                .read(makeupPreviewControllerProvider.notifier)
+                .generate(recommendation: recommendation);
+            context.push(AppConstants.previewRoute);
+          },
         ),
         const SizedBox(height: AppSpacing.lg),
       ],

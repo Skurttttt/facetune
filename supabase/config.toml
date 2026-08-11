@@ -2,3 +2,9 @@ project_id = "facetune"
 
 [functions.analyze-face]
 verify_jwt = true
+
+[functions.generate-makeup-recommendation]
+verify_jwt = true
+
+[functions.generate-makeup-preview]
+verify_jwt = true
