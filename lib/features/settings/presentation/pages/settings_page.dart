@@ -8,6 +8,7 @@ import '../../../authentication/presentation/controllers/auth_state.dart';
 import '../../../authentication/presentation/widgets/auth_feedback_listener.dart';
 import '../../data/providers/settings_providers.dart';
 import '../../domain/entities/user_settings.dart';
+import '../../domain/errors/settings_failure.dart';
 import '../controllers/settings_controller.dart';
 import '../controllers/settings_state.dart';
 
@@ -21,11 +22,17 @@ class SettingsPage extends ConsumerWidget {
     final authState = ref.watch(authControllerProvider);
     final isGuest = authState.user?.isAnonymous == true;
     final version = ref.watch(appVersionProvider);
+    final sessionExpired =
+        state.failureKind == SettingsFailureKind.sessionExpired;
     ref.listen<SettingsState>(settingsControllerProvider, (previous, next) {
       if (next.feedback == null || next.feedback == previous?.feedback) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(next.feedback!)));
+      final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(next.feedback!),
+          backgroundColor: next.feedbackIsError ? AppColors.error : null,
+        ),
+      );
       ref.read(settingsControllerProvider.notifier).clearFeedback();
     });
 
@@ -42,9 +49,24 @@ class SettingsPage extends ConsumerWidget {
                 title: 'Settings unavailable',
                 message: state.message ?? 'Please try again.',
                 icon: Icons.settings_backup_restore_rounded,
-                actionLabel: 'Try again',
-                onAction: () =>
-                    ref.read(settingsControllerProvider.notifier).load(),
+                actionLabel: sessionExpired
+                    ? 'Sign in again'
+                    : state.retryable
+                    ? 'Try again'
+                    : 'Sign out',
+                onAction: sessionExpired
+                    ? () => ref
+                          .read(authControllerProvider.notifier)
+                          .recoverExpiredSession()
+                    : state.retryable
+                    ? () => ref.read(settingsControllerProvider.notifier).load()
+                    : () => _confirmSignOut(context, ref, isGuest),
+                secondaryActionLabel: !sessionExpired && state.retryable
+                    ? 'Sign out'
+                    : null,
+                onSecondaryAction: !sessionExpired && state.retryable
+                    ? () => _confirmSignOut(context, ref, isGuest)
+                    : null,
               ),
             ),
             SettingsStatus.ready => ListView(

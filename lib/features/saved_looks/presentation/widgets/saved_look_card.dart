@@ -9,6 +9,7 @@ class SavedLookCard extends StatelessWidget {
     required this.onOpen,
     required this.onFavorite,
     required this.onRemove,
+    required this.isMutating,
     super.key,
   });
 
@@ -16,12 +17,13 @@ class SavedLookCard extends StatelessWidget {
   final VoidCallback onOpen;
   final VoidCallback onFavorite;
   final VoidCallback onRemove;
+  final bool isMutating;
 
   @override
   Widget build(BuildContext context) => Card(
     clipBehavior: Clip.antiAlias,
     child: InkWell(
-      onTap: onOpen,
+      onTap: isMutating ? null : onOpen,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -56,13 +58,18 @@ class SavedLookCard extends StatelessWidget {
                       tooltip: look.isFavorite
                           ? 'Remove favorite'
                           : 'Add favorite',
-                      onPressed: onFavorite,
-                      icon: Icon(
-                        look.isFavorite
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        color: AppColors.rose,
-                      ),
+                      onPressed: isMutating ? null : onFavorite,
+                      icon: isMutating
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(
+                              look.isFavorite
+                                  ? Icons.favorite_rounded
+                                  : Icons.favorite_border_rounded,
+                              color: AppColors.rose,
+                            ),
                     ),
                   ),
                 ),
@@ -97,7 +104,7 @@ class SavedLookCard extends StatelessWidget {
                 ),
                 IconButton(
                   tooltip: 'Remove saved look',
-                  onPressed: onRemove,
+                  onPressed: isMutating ? null : onRemove,
                   icon: const Icon(Icons.more_horiz_rounded),
                 ),
               ],

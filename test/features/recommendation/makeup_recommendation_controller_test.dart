@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:facetune/features/analysis/data/models/face_analysis_dto.dart';
 import 'package:facetune/features/analysis/domain/entities/face_analysis.dart';
 import 'package:facetune/features/makeup_styles/domain/catalog/makeup_style_catalog.dart';
@@ -38,6 +40,46 @@ void main() {
       expect(repository.calls, 1);
     },
   );
+
+  test('clear ignores a recommendation that completes late', () async {
+    final completer = Completer<MakeupRecommendation>();
+    final controller = MakeupRecommendationController(
+      GenerateMakeupRecommendation(_PendingRepository(completer.future)),
+    );
+    addTearDown(controller.dispose);
+    final analysis = FaceAnalysisDto.fromResponse(validAnalysisResponse).analysis;
+    final style = MakeupStyleCatalog.styles[3];
+
+    final operation = controller.generate(analysis: analysis, style: style);
+    expect(controller.state.status, MakeupRecommendationStatus.generating);
+
+    controller.clear();
+    completer.complete(
+      MakeupRecommendationDto.fromResponse(
+        validRecommendationResponse,
+      ).recommendation,
+    );
+    await operation;
+
+    expect(controller.state.status, MakeupRecommendationStatus.idle);
+    expect(controller.state.recommendation, isNull);
+  });
+
+  test('unexpected errors leave a friendly retryable state', () async {
+    final controller = MakeupRecommendationController(
+      GenerateMakeupRecommendation(_UnexpectedRepository()),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.generate(
+      analysis: FaceAnalysisDto.fromResponse(validAnalysisResponse).analysis,
+      style: MakeupStyleCatalog.styles[3],
+    );
+
+    expect(controller.state.status, MakeupRecommendationStatus.failure);
+    expect(controller.state.retryable, isTrue);
+    expect(controller.state.message, isNot(contains('StateError')));
+  });
 }
 
 class _FakeRepository implements MakeupRecommendationRepository {
@@ -54,4 +96,24 @@ class _FakeRepository implements MakeupRecommendationRepository {
     calls += 1;
     return result;
   }
+}
+
+class _PendingRepository implements MakeupRecommendationRepository {
+  const _PendingRepository(this.result);
+
+  final Future<MakeupRecommendation> result;
+
+  @override
+  Future<MakeupRecommendation> generate({
+    required FaceAnalysis analysis,
+    required MakeupStyle style,
+  }) => result;
+}
+
+class _UnexpectedRepository implements MakeupRecommendationRepository {
+  @override
+  Future<MakeupRecommendation> generate({
+    required FaceAnalysis analysis,
+    required MakeupStyle style,
+  }) => Future.error(StateError('internal detail'));
 }

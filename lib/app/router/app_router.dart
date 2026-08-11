@@ -21,6 +21,7 @@ import '../../features/profile/presentation/pages/profile_page.dart';
 import '../../features/saved_looks/presentation/pages/saved_looks_page.dart';
 import '../../features/scan/presentation/pages/scan_page.dart';
 import '../../features/settings/presentation/pages/settings_page.dart';
+import '../../shared/widgets/app_ui.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final refreshNotifier = _AuthRouterRefreshNotifier();
@@ -143,9 +144,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     ],
     errorBuilder: (context, state) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Route not found')),
-        body: Center(
-          child: Text('No route found for ${state.matchedLocation}'),
+        appBar: AppBar(title: const Text('Page unavailable')),
+        body: SafeArea(
+          child: PageFrame(
+            child: Center(
+              child: StatusState(
+                title: 'Page unavailable',
+                message: 'That page could not be opened.',
+                icon: Icons.explore_off_outlined,
+                actionLabel: 'Return Home',
+                onAction: () => context.go(AppConstants.homeRoute),
+              ),
+            ),
+          ),
         ),
       );
     },

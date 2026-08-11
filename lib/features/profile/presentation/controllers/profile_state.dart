@@ -1,4 +1,5 @@
 import '../../domain/entities/user_profile.dart';
+import '../../domain/errors/profile_failure.dart';
 
 enum ProfileStatus { loading, ready, failure }
 
@@ -11,6 +12,9 @@ class ProfileState {
     this.activeOperation,
     this.message,
     this.feedback,
+    this.feedbackIsError = false,
+    this.failureKind,
+    this.retryable = true,
   });
 
   final ProfileStatus status;
@@ -18,6 +22,9 @@ class ProfileState {
   final ProfileOperation? activeOperation;
   final String? message;
   final String? feedback;
+  final bool feedbackIsError;
+  final ProfileFailureKind? failureKind;
+  final bool retryable;
 
   bool get isBusy => activeOperation != null;
 }

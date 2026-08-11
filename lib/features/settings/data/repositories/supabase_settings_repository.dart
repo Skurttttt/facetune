@@ -9,18 +9,23 @@ import '../../domain/repositories/settings_repository.dart';
 import '../data_sources/settings_remote_data_source.dart';
 
 class SupabaseSettingsRepository implements SettingsRepository {
-  const SupabaseSettingsRepository(this._remote);
+  const SupabaseSettingsRepository(
+    this._remote, {
+    this.operationTimeout = const Duration(seconds: 20),
+  });
 
   final SettingsRemoteDataSource _remote;
+  final Duration operationTimeout;
 
   @override
   Future<UserSettings> load() async {
     _requireSession();
     try {
-      final row = await _remote.selectSettings();
+      final row = await _remote.selectSettings().timeout(operationTimeout);
       if (row == null) {
         throw const SettingsFailure(
           'Your preferences are not ready yet. Sign out and sign in again.',
+          kind: SettingsFailureKind.unavailable,
         );
       }
       return _map(row);
@@ -47,7 +52,9 @@ class SupabaseSettingsRepository implements SettingsRepository {
   Future<UserSettings> _update(Map<String, Object?> values) async {
     _requireSession();
     try {
-      return _map(await _remote.updateSettings(values));
+      return _map(
+        await _remote.updateSettings(values).timeout(operationTimeout),
+      );
     } catch (error) {
       if (error is SettingsFailure) rethrow;
       throw _failure(error);
@@ -56,7 +63,11 @@ class SupabaseSettingsRepository implements SettingsRepository {
 
   void _requireSession() {
     if (_remote.currentUserId == null) {
-      throw const SettingsFailure('Your session expired. Sign in again.');
+      throw const SettingsFailure(
+        'Your session expired. Sign in again.',
+        kind: SettingsFailureKind.sessionExpired,
+        retryable: false,
+      );
     }
   }
 
@@ -82,23 +93,46 @@ class SupabaseSettingsRepository implements SettingsRepository {
 
   static SettingsFailure _failure(Object error) {
     if (error is SocketException || error is TimeoutException) {
-      return const SettingsFailure('Check your connection and try again.');
+      return SettingsFailure(
+        error is TimeoutException
+            ? 'That request is taking too long. Please try again.'
+            : 'Check your connection and try again.',
+        kind: error is TimeoutException
+            ? SettingsFailureKind.timeout
+            : SettingsFailureKind.offline,
+      );
     }
     if (error is AuthException) {
-      return const SettingsFailure('Your session expired. Sign in again.');
+      return const SettingsFailure(
+        'Your session expired. Sign in again.',
+        kind: SettingsFailureKind.sessionExpired,
+        retryable: false,
+      );
+    }
+    if (error is PostgrestException && _isExpiredSession(error)) {
+      return const SettingsFailure(
+        'Your session expired. Sign in again.',
+        kind: SettingsFailureKind.sessionExpired,
+        retryable: false,
+      );
     }
     if (error is PostgrestException) {
       return const SettingsFailure(
         'Your preferences could not be updated right now.',
+        kind: SettingsFailureKind.unavailable,
       );
     }
     if (error is FormatException) {
       return const SettingsFailure(
         'Your saved preferences contain invalid data.',
+        kind: SettingsFailureKind.invalidData,
         retryable: false,
       );
     }
-    return const SettingsFailure('Your preferences could not be loaded.');
+    return const SettingsFailure(
+      'Your preferences could not be loaded.',
+      kind: SettingsFailureKind.unknown,
+    );
   }
 
   static String _requiredString(Map<String, Object?> row, String key) {
@@ -113,5 +147,13 @@ class SupabaseSettingsRepository implements SettingsRepository {
     final value = row[key];
     if (value is! bool) throw FormatException('$key is invalid.');
     return value;
+  }
+
+  static bool _isExpiredSession(PostgrestException error) {
+    final detail = '${error.code} ${error.message} ${error.details}'
+        .toLowerCase();
+    return error.code == 'PGRST301' ||
+        (detail.contains('jwt') &&
+            (detail.contains('expired') || detail.contains('invalid')));
   }
 }

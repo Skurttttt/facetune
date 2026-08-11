@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthUser;
 
 import '../../domain/entities/auth_event.dart';
@@ -9,9 +11,13 @@ import '../data_sources/auth_remote_data_source.dart';
 import '../mappers/auth_error_mapper.dart';
 
 class SupabaseAuthRepository implements AuthRepository {
-  const SupabaseAuthRepository(this._remoteDataSource);
+  const SupabaseAuthRepository(
+    this._remoteDataSource, {
+    this.operationTimeout = const Duration(seconds: 20),
+  });
 
   final AuthRemoteDataSource _remoteDataSource;
+  final Duration operationTimeout;
 
   @override
   AuthUser? get currentUser => _mapUser(_remoteDataSource.currentUser);
@@ -32,10 +38,9 @@ class SupabaseAuthRepository implements AuthRepository {
     required String password,
   }) async {
     try {
-      final response = await _remoteDataSource.signInWithPassword(
-        email: email.trim(),
-        password: password,
-      );
+      final response = await _remoteDataSource
+          .signInWithPassword(email: email.trim(), password: password)
+          .timeout(operationTimeout);
       final user = _requireUser(response.user);
       await bootstrapProfile(user);
       return user;
@@ -51,11 +56,13 @@ class SupabaseAuthRepository implements AuthRepository {
     required String password,
   }) async {
     try {
-      final response = await _remoteDataSource.signUp(
-        displayName: displayName.trim(),
-        email: email.trim(),
-        password: password,
-      );
+      final response = await _remoteDataSource
+          .signUp(
+            displayName: displayName.trim(),
+            email: email.trim(),
+            password: password,
+          )
+          .timeout(operationTimeout);
       final user = _requireUser(response.user);
       if (response.session != null) {
         await bootstrapProfile(user);
@@ -72,7 +79,9 @@ class SupabaseAuthRepository implements AuthRepository {
   @override
   Future<void> sendPasswordReset(String email) async {
     try {
-      await _remoteDataSource.resetPasswordForEmail(email.trim());
+      await _remoteDataSource
+          .resetPasswordForEmail(email.trim())
+          .timeout(operationTimeout);
     } catch (error) {
       throw AuthErrorMapper.map(error);
     }
@@ -81,7 +90,9 @@ class SupabaseAuthRepository implements AuthRepository {
   @override
   Future<void> updatePassword(String password) async {
     try {
-      await _remoteDataSource.updatePassword(password);
+      await _remoteDataSource
+          .updatePassword(password)
+          .timeout(operationTimeout);
     } catch (error) {
       throw AuthErrorMapper.map(error);
     }
@@ -90,7 +101,9 @@ class SupabaseAuthRepository implements AuthRepository {
   @override
   Future<void> signInWithGoogle() async {
     try {
-      final launched = await _remoteDataSource.signInWithGoogle();
+      final launched = await _remoteDataSource.signInWithGoogle().timeout(
+        operationTimeout,
+      );
       if (!launched) {
         throw const AuthFailure(
           'Could not open Google sign-in. Please try again.',
@@ -104,7 +117,9 @@ class SupabaseAuthRepository implements AuthRepository {
   @override
   Future<AuthUser> signInAnonymously() async {
     try {
-      final response = await _remoteDataSource.signInAnonymously();
+      final response = await _remoteDataSource.signInAnonymously().timeout(
+        operationTimeout,
+      );
       final user = _requireUser(response.user);
       await bootstrapProfile(user);
       return user;
@@ -120,7 +135,9 @@ class SupabaseAuthRepository implements AuthRepository {
       if (nativeUser == null || nativeUser.id != user.id) {
         throw const AuthFailure('Your session is no longer active.');
       }
-      await _remoteDataSource.ensureProfile(nativeUser);
+      await _remoteDataSource
+          .ensureProfile(nativeUser)
+          .timeout(operationTimeout);
     } catch (error) {
       throw AuthErrorMapper.map(error);
     }
@@ -129,7 +146,7 @@ class SupabaseAuthRepository implements AuthRepository {
   @override
   Future<void> signOut() async {
     try {
-      await _remoteDataSource.signOut();
+      await _remoteDataSource.signOut().timeout(operationTimeout);
     } catch (error) {
       throw AuthErrorMapper.map(error);
     }

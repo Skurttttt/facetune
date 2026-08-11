@@ -17,10 +17,13 @@ class SupabaseHistoryRepository implements HistoryRepository {
   const SupabaseHistoryRepository(
     this._remote, {
     Duration deletionTimeout = const Duration(seconds: 30),
-  }) : _deletionTimeout = deletionTimeout;
+    Duration loadTimeout = const Duration(seconds: 30),
+  }) : _deletionTimeout = deletionTimeout,
+       _loadTimeout = loadTimeout;
 
   final HistoryRemoteDataSource _remote;
   final Duration _deletionTimeout;
+  final Duration _loadTimeout;
 
   @override
   Future<HistoryPageResult> loadPage({
@@ -28,13 +31,17 @@ class SupabaseHistoryRepository implements HistoryRepository {
     required int limit,
   }) async {
     if (_remote.currentUserId == null) {
-      throw const HistoryFailure('Sign in to view your FaceTune history.');
+      throw const HistoryFailure(
+        'Your session expired. Sign in again.',
+        retryable: false,
+        sessionExpired: true,
+      );
     }
     try {
       final analyses = await _remote.selectAnalyses(
         offset: offset,
         limit: limit,
-      );
+      ).timeout(_loadTimeout);
       if (analyses.isEmpty) {
         return HistoryPageResult(
           items: const [],
@@ -48,13 +55,15 @@ class SupabaseHistoryRepository implements HistoryRepository {
       final linked = await Future.wait([
         _remote.selectRecommendations(analysisIds),
         _remote.selectGeneratedImages(analysisIds),
-      ]);
+      ]).timeout(_loadTimeout);
       final recommendations = linked[0];
       final generatedImages = linked[1];
       final generatedIds = generatedImages
           .map((row) => _requiredString(row, 'id'))
           .toList();
-      final savedLooks = await _remote.selectSavedLooks(generatedIds);
+      final savedLooks = await _remote
+          .selectSavedLooks(generatedIds)
+          .timeout(_loadTimeout);
       final entries = await Future.wait(
         analyses.map(
           (analysis) => _hydrate(
@@ -64,7 +73,7 @@ class SupabaseHistoryRepository implements HistoryRepository {
             savedLooks: savedLooks,
           ),
         ),
-      );
+      ).timeout(_loadTimeout);
       return HistoryPageResult(
         items: List.unmodifiable(entries),
         hasMore: analyses.length == limit,
@@ -149,7 +158,7 @@ class SupabaseHistoryRepository implements HistoryRepository {
 
     final originalUrlFuture = _remote.createSignedUrl(
       analysis.originalImagePath,
-    );
+    ).timeout(_loadTimeout);
     if (previewRow == null || recommendation == null || style == null) {
       final originalUrl = await originalUrlFuture;
       return HistoryEntry(
@@ -184,7 +193,7 @@ class SupabaseHistoryRepository implements HistoryRepository {
     final urls = await Future.wait([
       originalUrlFuture,
       _remote.createSignedUrl(generatedDto.generatedImagePath),
-    ]);
+    ]).timeout(_loadTimeout);
     final preview = generatedDto.toDomain(
       originalImageUrl: urls[0],
       generatedImageUrl: urls[1],
@@ -221,7 +230,11 @@ class SupabaseHistoryRepository implements HistoryRepository {
   @override
   Future<void> deleteSession(String analysisId) async {
     if (_remote.currentUserId == null) {
-      throw const HistoryFailure('Sign in before deleting history.');
+      throw const HistoryFailure(
+        'Your session expired. Sign in again.',
+        retryable: false,
+        sessionExpired: true,
+      );
     }
     try {
       final response = await _remote
@@ -242,11 +255,28 @@ class SupabaseHistoryRepository implements HistoryRepository {
       return const HistoryFailure('Check your connection and try again.');
     }
     if (error is AuthException) {
-      return const HistoryFailure('Your session expired. Sign in again.');
+      return const HistoryFailure(
+        'Your session expired. Sign in again.',
+        retryable: false,
+        sessionExpired: true,
+      );
+    }
+    if ((error is StorageException &&
+            int.tryParse(error.statusCode.toString()) == 401) ||
+        (error is PostgrestException && _isExpiredSession(error))) {
+      return const HistoryFailure(
+        'Your session expired. Sign in again.',
+        retryable: false,
+        sessionExpired: true,
+      );
     }
     if (error is HistoryRemoteFailure) {
       if (error.status == 401) {
-        return const HistoryFailure('Your session expired. Sign in again.');
+        return const HistoryFailure(
+          'Your session expired. Sign in again.',
+          retryable: false,
+          sessionExpired: true,
+        );
       }
       if (error.status == 404) {
         return const HistoryFailure(
@@ -254,7 +284,18 @@ class SupabaseHistoryRepository implements HistoryRepository {
           retryable: false,
         );
       }
-      return HistoryFailure(error.message, retryable: error.retryable);
+      if (error.status == 403) {
+        return const HistoryFailure(
+          'You no longer have access to this history session.',
+          retryable: false,
+        );
+      }
+      return HistoryFailure(
+        loading
+            ? 'Your FaceTune history could not be loaded right now.'
+            : 'This history session could not be deleted right now.',
+        retryable: error.retryable || error.status >= 500,
+      );
     }
     if (error is PostgrestException || error is StorageException) {
       return HistoryFailure(
@@ -291,4 +332,12 @@ class SupabaseHistoryRepository implements HistoryRepository {
 
   static String _fallbackString(Object? value, String fallback) =>
       value is String && value.trim().isNotEmpty ? value.trim() : fallback;
+
+  static bool _isExpiredSession(PostgrestException error) {
+    final detail = '${error.code} ${error.message} ${error.details}'
+        .toLowerCase();
+    return error.code == 'PGRST301' ||
+        (detail.contains('jwt') &&
+            (detail.contains('expired') || detail.contains('invalid')));
+  }
 }

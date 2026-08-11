@@ -97,10 +97,12 @@ void main() {
   });
 
   test('bounds a timed-out function request', () async {
+    final remote = _FakeRemoteDataSource(
+      invokeDelay: const Duration(milliseconds: 30),
+    );
     final repository = SupabaseFaceAnalysisRepository(
-      _FakeRemoteDataSource(invokeDelay: const Duration(milliseconds: 30)),
+      remote,
       functionTimeout: const Duration(milliseconds: 1),
-      maximumAttempts: 1,
     );
 
     expect(
@@ -117,6 +119,100 @@ void main() {
         ),
       ),
     );
+    await Future<void>.delayed(const Duration(milliseconds: 35));
+    expect(remote.invokeCount, 1);
+  });
+
+  test('bounds selfie upload before invoking secure analysis', () async {
+    final remote = _FakeRemoteDataSource(
+      uploadDelay: const Duration(milliseconds: 30),
+    );
+    final repository = SupabaseFaceAnalysisRepository(
+      remote,
+      uploadTimeout: const Duration(milliseconds: 1),
+    );
+
+    await expectLater(
+      () => repository.analyze(
+        selfie: selfie,
+        localValidation: localValidation,
+        onProgress: (_) {},
+      ),
+      throwsA(
+        isA<AnalysisFailure>()
+            .having(
+              (failure) => failure.type,
+              'type',
+              AnalysisFailureType.timeout,
+            )
+            .having((failure) => failure.retryable, 'retryable', isTrue),
+      ),
+    );
+    expect(remote.invokeCount, 0);
+  });
+
+  test('does not expose raw backend messages', () async {
+    final repository = SupabaseFaceAnalysisRepository(
+      _FakeRemoteDataSource(
+        failure: const AnalysisRemoteFailure(
+          status: 500,
+          code: 'persistence_failed',
+          message: 'database_password=do-not-expose',
+          retryable: true,
+        ),
+      ),
+    );
+
+    await expectLater(
+      () => repository.analyze(
+        selfie: selfie,
+        localValidation: localValidation,
+        onProgress: (_) {},
+      ),
+      throwsA(
+        isA<AnalysisFailure>()
+            .having(
+              (failure) => failure.message,
+              'message',
+              'Your analysis could not be saved. Please try again.',
+            )
+            .having(
+              (failure) => failure.message,
+              'sanitized message',
+              isNot(contains('database_password')),
+            ),
+      ),
+    );
+  });
+
+  test('maps status-zero function failures to offline recovery', () async {
+    final repository = SupabaseFaceAnalysisRepository(
+      _FakeRemoteDataSource(
+        failure: const AnalysisRemoteFailure(
+          status: 0,
+          code: '',
+          message: 'raw client exception',
+          retryable: false,
+        ),
+      ),
+    );
+
+    await expectLater(
+      () => repository.analyze(
+        selfie: selfie,
+        localValidation: localValidation,
+        onProgress: (_) {},
+      ),
+      throwsA(
+        isA<AnalysisFailure>()
+            .having(
+              (failure) => failure.type,
+              'type',
+              AnalysisFailureType.network,
+            )
+            .having((failure) => failure.retryable, 'retryable', isTrue),
+      ),
+    );
   });
 }
 
@@ -126,12 +222,16 @@ class _FakeRemoteDataSource implements AnalysisRemoteDataSource {
     this.response,
     this.failure,
     this.invokeDelay = Duration.zero,
+    this.uploadDelay = Duration.zero,
+    this.uploadFailure,
   });
 
   final String? userId;
   final Object? response;
   final AnalysisRemoteFailure? failure;
   final Duration invokeDelay;
+  final Duration uploadDelay;
+  final Object? uploadFailure;
   int uploadCount = 0;
   int invokeCount = 0;
 
@@ -157,5 +257,8 @@ class _FakeRemoteDataSource implements AnalysisRemoteDataSource {
     required String storagePath,
   }) async {
     uploadCount += 1;
+    if (uploadDelay > Duration.zero) await Future<void>.delayed(uploadDelay);
+    final currentFailure = uploadFailure;
+    if (currentFailure != null) throw currentFailure;
   }
 }

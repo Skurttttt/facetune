@@ -53,11 +53,26 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   Widget build(BuildContext context) {
     final state = ref.watch(historyControllerProvider);
     final isGuest = ref.watch(authControllerProvider).user?.isAnonymous == true;
+    final previewIsGenerating = ref.watch(
+      makeupPreviewControllerProvider.select(
+        (state) => state.status == MakeupPreviewStatus.generating,
+      ),
+    );
     ref.listen<HistoryState>(historyControllerProvider, (previous, next) {
       if (next.feedback == null || next.feedback == previous?.feedback) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(next.feedback!)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(next.feedback!),
+          action: next.sessionExpired
+              ? SnackBarAction(
+                  label: 'Sign in again',
+                  onPressed: () => ref
+                      .read(authControllerProvider.notifier)
+                      .recoverExpiredSession(),
+                )
+              : null,
+        ),
+      );
       ref.read(historyControllerProvider.notifier).clearFeedback();
     });
     ref.listen<int>(savedLooksRevisionProvider, (previous, next) {
@@ -82,14 +97,24 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
           child: RefreshIndicator(
             onRefresh: () =>
                 ref.read(historyControllerProvider.notifier).refresh(),
-            child: _content(context, state, isGuest),
+            child: _content(
+              context,
+              state,
+              isGuest,
+              previewIsGenerating,
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _content(BuildContext context, HistoryState state, bool isGuest) {
+  Widget _content(
+    BuildContext context,
+    HistoryState state,
+    bool isGuest,
+    bool previewIsGenerating,
+  ) {
     if (state.status == HistoryLoadStatus.loading) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -108,9 +133,14 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
             title: 'History unavailable',
             message: state.message ?? 'Please try again.',
             icon: Icons.history_toggle_off_rounded,
-            actionLabel: 'Try again',
-            onAction: () =>
-                ref.read(historyControllerProvider.notifier).loadInitial(),
+            actionLabel: state.sessionExpired ? 'Sign in again' : 'Try again',
+            onAction: state.sessionExpired
+                ? () => ref
+                      .read(authControllerProvider.notifier)
+                      .recoverExpiredSession()
+                : () => ref
+                      .read(historyControllerProvider.notifier)
+                      .loadInitial(),
           ),
         ],
       );
@@ -187,6 +217,14 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
               title: 'Could not load more history',
               message: state.message ?? 'Pull to refresh and try again.',
               icon: Icons.error_outline_rounded,
+              actionLabel: state.sessionExpired ? 'Sign in again' : 'Retry',
+              onAction: state.sessionExpired
+                  ? () => ref
+                        .read(authControllerProvider.notifier)
+                        .recoverExpiredSession()
+                  : () => ref
+                        .read(historyControllerProvider.notifier)
+                        .retryLoadMore(),
             ),
           ),
         ],
@@ -222,7 +260,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                     : () => ref
                           .read(historyControllerProvider.notifier)
                           .toggleFavorite(entry),
-                onRegenerate: entry.canRegenerate
+                onRegenerate: entry.canRegenerate && !previewIsGenerating
                     ? () => _regenerate(entry)
                     : null,
                 onDelete: () => _confirmDelete(entry),
@@ -264,6 +302,21 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     final preview = entry.preview;
     final recommendation = entry.recommendation;
     if (preview != null && recommendation != null) {
+      final style = entry.style;
+      if (style == null ||
+          recommendation.analysisId != entry.analysis.id ||
+          preview.analysisId != entry.analysis.id ||
+          preview.recommendationId != recommendation.id ||
+          style.code != recommendation.styleCode) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'This historical result has incomplete links and cannot be opened.',
+            ),
+          ),
+        );
+        return;
+      }
       ref
           .read(makeupPreviewControllerProvider.notifier)
           .restore(preview, recommendation: recommendation);
@@ -287,7 +340,11 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
 
   Future<void> _regenerate(HistoryEntry entry) async {
     final recommendation = entry.recommendation;
-    if (recommendation == null) return;
+    if (recommendation == null ||
+        ref.read(makeupPreviewControllerProvider).status ==
+            MakeupPreviewStatus.generating) {
+      return;
+    }
     _restoreBase(entry);
     final generation = ref
         .read(makeupPreviewControllerProvider.notifier)

@@ -26,8 +26,11 @@ class ProfileController extends StateNotifier<ProfileState> {
 
   final ProfileRepository _repository;
   final AvatarPicker _avatarPicker;
+  bool _isLoading = false;
 
   Future<void> load() async {
+    if (_isLoading) return;
+    _isLoading = true;
     state = const ProfileState();
     try {
       final profile = await _repository.load();
@@ -39,8 +42,20 @@ class ProfileController extends StateNotifier<ProfileState> {
         state = ProfileState(
           status: ProfileStatus.failure,
           message: failure.message,
+          failureKind: failure.kind,
+          retryable: failure.retryable,
         );
       }
+    } on Object {
+      if (mounted) {
+        state = const ProfileState(
+          status: ProfileStatus.failure,
+          message: 'Your profile could not be loaded. Please try again.',
+          failureKind: ProfileFailureKind.unknown,
+        );
+      }
+    } finally {
+      _isLoading = false;
     }
   }
 
@@ -57,8 +72,14 @@ class ProfileController extends StateNotifier<ProfileState> {
         );
       }
     } on ProfileFailure catch (failure) {
+      if (mounted) _handleMutationFailure(failure);
+    } on Object {
       if (mounted) {
-        state = _state(feedback: failure.message);
+        _handleMutationFailure(
+          const ProfileFailure(
+            'Your display name could not be updated. Please try again.',
+          ),
+        );
       }
     }
   }
@@ -82,20 +103,46 @@ class ProfileController extends StateNotifier<ProfileState> {
         );
       }
     } on ProfileFailure catch (failure) {
+      if (mounted) _handleMutationFailure(failure);
+    } on Object {
       if (mounted) {
-        state = _state(feedback: failure.message);
+        _handleMutationFailure(
+          const ProfileFailure(
+            'Your profile photo could not be updated. Please try again.',
+          ),
+        );
       }
     }
   }
 
   void clearFeedback() => state = _state();
 
-  ProfileState _state({ProfileOperation? activeOperation, String? feedback}) =>
-      ProfileState(
-        status: state.status,
+  void _handleMutationFailure(ProfileFailure failure) {
+    if (failure.kind == ProfileFailureKind.sessionExpired) {
+      state = ProfileState(
+        status: ProfileStatus.failure,
         profile: state.profile,
-        activeOperation: activeOperation,
-        message: state.message,
-        feedback: feedback,
+        message: failure.message,
+        failureKind: failure.kind,
+        retryable: failure.retryable,
       );
+      return;
+    }
+    state = _state(feedback: failure.message, feedbackIsError: true);
+  }
+
+  ProfileState _state({
+    ProfileOperation? activeOperation,
+    String? feedback,
+    bool feedbackIsError = false,
+  }) => ProfileState(
+    status: state.status,
+    profile: state.profile,
+    activeOperation: activeOperation,
+    message: state.message,
+    feedback: feedback,
+    feedbackIsError: feedbackIsError,
+    failureKind: state.failureKind,
+    retryable: state.retryable,
+  );
 }

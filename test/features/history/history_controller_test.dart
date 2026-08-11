@@ -1,7 +1,9 @@
 import 'package:facetune/features/analysis/data/models/face_analysis_dto.dart';
 import 'package:facetune/features/history/domain/entities/history_entry.dart';
+import 'package:facetune/features/history/domain/errors/history_failure.dart';
 import 'package:facetune/features/history/domain/repositories/history_repository.dart';
 import 'package:facetune/features/history/presentation/controllers/history_controller.dart';
+import 'package:facetune/features/history/presentation/controllers/history_state.dart';
 import 'package:facetune/features/makeup_styles/domain/catalog/makeup_style_catalog.dart';
 import 'package:facetune/features/preview/data/models/generated_preview_dto.dart';
 import 'package:facetune/features/preview/domain/entities/generated_preview.dart';
@@ -62,6 +64,34 @@ void main() {
     expect(controller.state.items, isEmpty);
     expect(history.deletedId, complete.id);
     expect(savedRevisions, 2);
+  });
+
+  test('automatic filtered pagination stops after failure and retries once', () async {
+    final analysisOnly = _entry('analysis-only');
+    final favorite = _entry('favorite', complete: true, favorite: true);
+    final history = _OutcomeHistoryRepository([
+      HistoryPageResult(items: [analysisOnly], hasMore: true, nextOffset: 1),
+      const HistoryFailure('Check your connection and try again.'),
+      HistoryPageResult(items: [favorite], hasMore: false, nextOffset: 2),
+    ]);
+    final controller = HistoryController(
+      history,
+      _FakeSavedLooksRepository(),
+      () {},
+    );
+    addTearDown(controller.dispose);
+    await controller.loadInitial();
+
+    await controller.setFilter(HistoryFilter.favorites);
+    expect(controller.state.status, HistoryLoadStatus.failure);
+    expect(history.calls, 2);
+
+    await Future<void>.delayed(Duration.zero);
+    expect(history.calls, 2);
+
+    await controller.retryLoadMore();
+    expect(history.calls, 3);
+    expect(controller.state.visibleItems, [favorite]);
   });
 }
 
@@ -194,4 +224,25 @@ class _FakeSavedLooksRepository implements SavedLooksRepository {
 
   @override
   Future<void> remove(String savedLookId) async {}
+}
+
+class _OutcomeHistoryRepository implements HistoryRepository {
+  _OutcomeHistoryRepository(this.outcomes);
+
+  final List<Object> outcomes;
+  int calls = 0;
+
+  @override
+  Future<HistoryPageResult> loadPage({
+    required int offset,
+    required int limit,
+  }) async {
+    calls += 1;
+    final outcome = outcomes.removeAt(0);
+    if (outcome is HistoryFailure) throw outcome;
+    return outcome as HistoryPageResult;
+  }
+
+  @override
+  Future<void> deleteSession(String analysisId) async {}
 }

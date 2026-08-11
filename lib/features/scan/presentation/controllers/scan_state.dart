@@ -20,6 +20,7 @@ class ScanState {
     this.errorMessage,
     this.canOpenSettings = false,
     this.canRetryValidation = false,
+    this.canReselect = false,
   });
 
   final ScanStage stage;
@@ -29,6 +30,7 @@ class ScanState {
   final String? errorMessage;
   final bool canOpenSettings;
   final bool canRetryValidation;
+  final bool canReselect;
 
   bool get isBusy =>
       stage == ScanStage.acquiring || stage == ScanStage.validatingLocal;

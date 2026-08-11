@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../saved_looks/data/providers/saved_looks_providers.dart';
+import '../../../authentication/presentation/controllers/auth_controller.dart';
 import '../../../saved_looks/domain/errors/saved_looks_failure.dart';
 import '../../../saved_looks/domain/repositories/saved_looks_repository.dart';
 import '../../data/providers/history_providers.dart';
@@ -11,6 +14,7 @@ import 'history_state.dart';
 
 final historyControllerProvider =
     StateNotifierProvider.autoDispose<HistoryController, HistoryState>((ref) {
+      ref.watch(authControllerProvider.select((state) => state.user?.id));
       final controller = HistoryController(
         ref.watch(historyRepositoryProvider),
         ref.watch(savedLooksRepositoryProvider),
@@ -28,6 +32,7 @@ class HistoryController extends StateNotifier<HistoryState> {
   ) : super(const HistoryState());
 
   static const pageSize = 12;
+  static const _mutationTimeout = Duration(seconds: 30);
   final HistoryRepository _repository;
   final SavedLooksRepository _savedLooksRepository;
   final void Function() _notifySavedLooksChanged;
@@ -44,14 +49,20 @@ class HistoryController extends StateNotifier<HistoryState> {
   Future<void> refresh() => loadInitial();
 
   Future<void> loadMore() async {
-    if (!state.hasMore ||
-        state.status == HistoryLoadStatus.loading ||
-        state.status == HistoryLoadStatus.loadingMore) {
+    if (!state.hasMore || state.status != HistoryLoadStatus.ready) {
       return;
     }
     final generation = _loadGeneration;
     state = _state(status: HistoryLoadStatus.loadingMore);
     await _load(offset: state.nextOffset, append: true, generation: generation);
+  }
+
+  Future<void> retryLoadMore() async {
+    if (state.status != HistoryLoadStatus.failure || state.items.isEmpty) {
+      return;
+    }
+    state = _state(status: HistoryLoadStatus.ready);
+    await loadMore();
   }
 
   Future<void> _load({
@@ -67,6 +78,7 @@ class HistoryController extends StateNotifier<HistoryState> {
         items: List.unmodifiable([if (append) ...state.items, ...page.items]),
         hasMore: page.hasMore,
         nextOffset: page.nextOffset,
+        sessionExpired: false,
       );
       await _ensureVisible(_filterGeneration);
     } on HistoryFailure catch (failure) {
@@ -76,6 +88,16 @@ class HistoryController extends StateNotifier<HistoryState> {
         items: append ? state.items : const [],
         hasMore: append && state.hasMore,
         message: failure.message,
+        sessionExpired: failure.sessionExpired,
+      );
+    } catch (_) {
+      if (!mounted || generation != _loadGeneration) return;
+      state = _state(
+        status: HistoryLoadStatus.failure,
+        items: append ? state.items : const [],
+        hasMore: append && state.hasMore,
+        message: 'Your FaceTune history could not be loaded right now.',
+        sessionExpired: false,
       );
     }
   }
@@ -96,8 +118,7 @@ class HistoryController extends StateNotifier<HistoryState> {
         generation == _filterGeneration &&
         state.visibleItems.isEmpty &&
         state.hasMore &&
-        state.status != HistoryLoadStatus.loading &&
-        state.status != HistoryLoadStatus.loadingMore) {
+        state.status == HistoryLoadStatus.ready) {
       await loadMore();
     }
   }
@@ -108,11 +129,13 @@ class HistoryController extends StateNotifier<HistoryState> {
     state = _state(mutatingIds: {...state.mutatingIds, entry.id});
     try {
       final savedLook = entry.savedLook == null
-          ? await _savedLooksRepository.save(preview, favorite: true)
+          ? await _savedLooksRepository
+                .save(preview, favorite: true)
+                .timeout(_mutationTimeout)
           : await _savedLooksRepository.setFavorite(
               entry.savedLook!,
               !entry.savedLook!.isFavorite,
-            );
+            ).timeout(_mutationTimeout);
       if (!mounted) return;
       state = _state(
         status: HistoryLoadStatus.ready,
@@ -127,6 +150,7 @@ class HistoryController extends StateNotifier<HistoryState> {
         feedback: savedLook.isFavorite
             ? 'Added to favorites.'
             : 'Removed from favorites.',
+        sessionExpired: false,
       );
       _notifySavedLooksChanged();
     } on SavedLooksFailure catch (failure) {
@@ -135,6 +159,24 @@ class HistoryController extends StateNotifier<HistoryState> {
         mutatingIds: {...state.mutatingIds}..remove(entry.id),
         feedback: failure.message,
         feedbackIsError: true,
+        sessionExpired: failure.sessionExpired,
+      );
+    } on TimeoutException {
+      if (!mounted) return;
+      state = _state(
+        mutatingIds: {...state.mutatingIds}..remove(entry.id),
+        feedback:
+            'Updating the favorite took too long. Check your connection.',
+        feedbackIsError: true,
+        sessionExpired: false,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      state = _state(
+        mutatingIds: {...state.mutatingIds}..remove(entry.id),
+        feedback: 'The favorite could not be updated right now.',
+        feedbackIsError: true,
+        sessionExpired: false,
       );
     }
   }
@@ -152,6 +194,7 @@ class HistoryController extends StateNotifier<HistoryState> {
         ),
         mutatingIds: {...state.mutatingIds}..remove(entry.id),
         feedback: 'History session deleted.',
+        sessionExpired: false,
       );
       _notifySavedLooksChanged();
       return true;
@@ -161,6 +204,16 @@ class HistoryController extends StateNotifier<HistoryState> {
         mutatingIds: {...state.mutatingIds}..remove(entry.id),
         feedback: failure.message,
         feedbackIsError: true,
+        sessionExpired: failure.sessionExpired,
+      );
+      return false;
+    } catch (_) {
+      if (!mounted) return false;
+      state = _state(
+        mutatingIds: {...state.mutatingIds}..remove(entry.id),
+        feedback: 'This history session could not be deleted right now.',
+        feedbackIsError: true,
+        sessionExpired: false,
       );
       return false;
     }
@@ -179,6 +232,7 @@ class HistoryController extends StateNotifier<HistoryState> {
     String? message,
     String? feedback,
     bool feedbackIsError = false,
+    bool? sessionExpired,
   }) => HistoryState(
     status: status ?? state.status,
     items: items ?? state.items,
@@ -190,5 +244,6 @@ class HistoryController extends StateNotifier<HistoryState> {
     message: message,
     feedback: feedback,
     feedbackIsError: feedbackIsError,
+    sessionExpired: sessionExpired ?? state.sessionExpired,
   );
 }

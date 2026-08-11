@@ -6,6 +6,7 @@ import 'package:facetune/features/recommendation/data/models/makeup_recommendati
 import 'package:facetune/features/results/domain/services/result_share_service.dart';
 import 'package:facetune/features/results/presentation/controllers/result_actions_controller.dart';
 import 'package:facetune/features/saved_looks/domain/entities/saved_look.dart';
+import 'package:facetune/features/saved_looks/domain/errors/saved_looks_failure.dart';
 import 'package:facetune/features/saved_looks/domain/repositories/saved_looks_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -88,14 +89,56 @@ void main() {
     expect(controller.state.isError, isTrue);
     expect(controller.state.feedback, 'Sharing failed safely.');
   });
+
+  test('failed saved status waits for an explicit retry', () async {
+    repository.findFailuresRemaining = 1;
+    final controller = ResultActionsController(
+      _FakeShareService(),
+      repository,
+      () {},
+    );
+    addTearDown(controller.dispose);
+
+    await controller.loadSavedStatus(preview);
+    await controller.loadSavedStatus(preview);
+    expect(repository.findCalls, 1);
+    expect(controller.state.failedPreviewIds, contains(preview.id));
+
+    await controller.retrySavedStatus(preview);
+    expect(repository.findCalls, 2);
+    expect(controller.state.failedPreviewIds, isNot(contains(preview.id)));
+    expect(controller.state.loadedPreviewIds, contains(preview.id));
+  });
+
+  test('unexpected share failures always clear the busy flag', () async {
+    final controller = ResultActionsController(
+      _UnexpectedShareService(),
+      repository,
+      () {},
+    );
+    addTearDown(controller.dispose);
+
+    await controller.share(preview: preview, styleName: 'Soft Glam');
+
+    expect(controller.state.isSharing, isFalse);
+    expect(controller.state.feedback, contains('unavailable'));
+  });
 }
 
 class _FakeSavedLooksRepository implements SavedLooksRepository {
   final Map<String, SavedLook> _looks = {};
+  int findCalls = 0;
+  int findFailuresRemaining = 0;
 
   @override
-  Future<SavedLook?> findByGeneratedImageId(String generatedImageId) async =>
-      _looks[generatedImageId];
+  Future<SavedLook?> findByGeneratedImageId(String generatedImageId) async {
+    findCalls += 1;
+    if (findFailuresRemaining > 0) {
+      findFailuresRemaining -= 1;
+      throw const SavedLooksFailure('Check your connection and try again.');
+    }
+    return _looks[generatedImageId];
+  }
 
   @override
   Future<SavedLook> save(
@@ -161,4 +204,12 @@ class _FakeShareService implements ResultShareService {
     previewId = preview.id;
     this.styleName = styleName;
   }
+}
+
+class _UnexpectedShareService implements ResultShareService {
+  @override
+  Future<void> share({
+    required GeneratedPreview preview,
+    required String styleName,
+  }) => Future.error(StateError('platform detail'));
 }

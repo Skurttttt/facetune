@@ -25,11 +25,10 @@ class DeviceSelfieRepository implements SelfieRepository {
 
   @override
   Future<PreparedSelfie?> acquire(SelfieSource source) async {
-    if (source == SelfieSource.camera) {
-      await _requireCameraPermission();
-    }
-
     try {
+      if (source == SelfieSource.camera) {
+        await _requireCameraPermission();
+      }
       final selected = await _picker.pickImage(
         source: source == SelfieSource.camera
             ? ImageSource.camera
@@ -60,8 +59,12 @@ class DeviceSelfieRepository implements SelfieRepository {
     final sourceFile = File(selected.path);
     final size = await sourceFile.length();
     final randomAccessFile = await sourceFile.open();
-    final header = await randomAccessFile.read(16);
-    await randomAccessFile.close();
+    late final List<int> header;
+    try {
+      header = await randomAccessFile.read(16);
+    } finally {
+      await randomAccessFile.close();
+    }
     _validator.validate(path: selected.path, size: size, header: header);
 
     final sessionDirectory = Directory(

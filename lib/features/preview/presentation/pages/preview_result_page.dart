@@ -7,6 +7,8 @@ import '../../../../shared/widgets/app_ui.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../../analysis/presentation/controllers/face_analysis_controller.dart';
 import '../../../analysis/domain/entities/face_analysis.dart';
+import '../../../authentication/presentation/controllers/auth_controller.dart';
+import '../../../history/presentation/controllers/history_controller.dart';
 import '../../../makeup_styles/presentation/controllers/makeup_style_selection_controller.dart';
 import '../../../recommendation/presentation/controllers/makeup_recommendation_controller.dart';
 import '../../../recommendation/domain/entities/makeup_recommendation.dart';
@@ -18,6 +20,7 @@ import '../../../results/presentation/widgets/before_after_comparison.dart';
 import '../../../results/presentation/widgets/makeup_breakdown.dart';
 import '../../../results/presentation/widgets/recommended_palette.dart';
 import '../../../results/presentation/widgets/result_actions.dart';
+import '../../domain/errors/preview_failure.dart';
 import '../controllers/makeup_preview_controller.dart';
 import '../controllers/makeup_preview_state.dart';
 
@@ -49,9 +52,30 @@ class PreviewResultPage extends ConsumerWidget {
       next,
     ) {
       if (next.feedback == null || next.feedback == previous?.feedback) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(next.feedback!)));
+      final currentPreview = ref.read(makeupPreviewControllerProvider).preview;
+      final canRetrySavedStatus = !next.sessionExpired &&
+          currentPreview != null &&
+          next.failedPreviewIds.contains(currentPreview.id);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(next.feedback!),
+          action: next.sessionExpired
+              ? SnackBarAction(
+                  label: 'Sign in again',
+                  onPressed: () => ref
+                      .read(authControllerProvider.notifier)
+                      .recoverExpiredSession(),
+                )
+              : canRetrySavedStatus
+              ? SnackBarAction(
+                  label: 'Retry',
+                  onPressed: () => ref
+                      .read(resultActionsControllerProvider.notifier)
+                      .retrySavedStatus(currentPreview!),
+                )
+              : null,
+        ),
+      );
       ref.read(resultActionsControllerProvider.notifier).clearFeedback();
     });
 
@@ -66,26 +90,64 @@ class PreviewResultPage extends ConsumerWidget {
               ),
             ),
             MakeupPreviewStatus.failure => Center(
-              child: StatusState(
-                title: 'Preview generation paused',
-                message: [
-                  previewState.message ?? 'Please try again.',
-                  if (previewState.technicalCode != null)
-                    'Diagnostic: ${previewState.technicalCode}',
-                ].join('\n\n'),
-                icon: Icons.error_outline_rounded,
-                actionLabel: previewState.retryable ? 'Try again' : null,
-                onAction: previewState.retryable
-                    ? () => ref
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  StatusState(
+                    title: 'Preview generation paused',
+                    message: previewState.message ?? 'Please try again.',
+                    icon: Icons.error_outline_rounded,
+                    actionLabel:
+                        previewState.failureType ==
+                            PreviewFailureType.authentication
+                        ? 'Sign in again'
+                        : previewState.retryable
+                        ? 'Try again'
+                        : null,
+                    onAction:
+                        previewState.failureType ==
+                            PreviewFailureType.authentication
+                        ? () => ref
+                              .read(authControllerProvider.notifier)
+                              .recoverExpiredSession()
+                        : previewState.retryable
+                        ? () => ref
+                              .read(makeupPreviewControllerProvider.notifier)
+                              .retry()
+                        : null,
+                    secondaryActionLabel:
+                        previewState.failureType ==
+                            PreviewFailureType.authentication
+                        ? null
+                        : 'Return to makeup plan',
+                    onSecondaryAction:
+                        previewState.failureType ==
+                            PreviewFailureType.authentication
+                        ? null
+                        : () => context.go(AppConstants.recommendationRoute),
+                  ),
+                  if (previewState.previousPreview != null) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    TextButton.icon(
+                      onPressed: () => ref
                           .read(makeupPreviewControllerProvider.notifier)
-                          .retry()
-                    : null,
+                          .showPreviousResult(),
+                      icon: const Icon(Icons.undo_rounded),
+                      label: const Text('View previous result'),
+                    ),
+                  ],
+                ],
               ),
             ),
             MakeupPreviewStatus.success
                 when analysis != null &&
                     recommendation != null &&
-                    selectedStyle != null =>
+                    selectedStyle != null &&
+                    preview != null &&
+                    analysis.id == recommendation.analysisId &&
+                    analysis.id == preview.analysisId &&
+                    recommendation.id == preview.recommendationId &&
+                    selectedStyle.code == recommendation.styleCode =>
               _ResultContent(
                 previewState: previewState,
                 analysis: analysis,
@@ -107,14 +169,29 @@ class PreviewResultPage extends ConsumerWidget {
                 onGenerateAnother: () => ref
                     .read(makeupPreviewControllerProvider.notifier)
                     .generateVariation(),
-                onReturnHome: () => context.go(AppConstants.homeRoute),
+                onReturnHome: () {
+                  ref.invalidate(historyControllerProvider);
+                  context.go(AppConstants.homeRoute);
+                },
               ),
-            _ => const Center(
+            MakeupPreviewStatus.success => Center(
+              child: StatusState(
+                title: 'Result links unavailable',
+                message:
+                    'This preview no longer matches the active analysis and makeup plan.',
+                icon: Icons.link_off_rounded,
+                actionLabel: 'Return to makeup plan',
+                onAction: () => context.go(AppConstants.recommendationRoute),
+              ),
+            ),
+            _ => Center(
               child: StatusState(
                 title: 'Result unavailable',
                 message:
                     'Complete analysis, recommendation, and preview generation to view your result.',
                 icon: Icons.info_outline_rounded,
+                actionLabel: 'Return to makeup plan',
+                onAction: () => context.go(AppConstants.recommendationRoute),
               ),
             ),
           },

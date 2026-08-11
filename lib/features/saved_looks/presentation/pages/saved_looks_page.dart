@@ -51,6 +51,23 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
   Widget build(BuildContext context) {
     final state = ref.watch(savedLooksControllerProvider);
     final isGuest = ref.watch(authControllerProvider).user?.isAnonymous == true;
+    ref.listen<SavedLooksState>(savedLooksControllerProvider, (previous, next) {
+      if (next.feedback == null || next.feedback == previous?.feedback) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(next.feedback!),
+          action: next.sessionExpired
+              ? SnackBarAction(
+                  label: 'Sign in again',
+                  onPressed: () => ref
+                      .read(authControllerProvider.notifier)
+                      .recoverExpiredSession(),
+                )
+              : null,
+        ),
+      );
+      ref.read(savedLooksControllerProvider.notifier).clearFeedback();
+    });
     return AppShell(
       index: 1,
       child: SafeArea(
@@ -88,9 +105,14 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
             title: 'Saved looks unavailable',
             message: state.message ?? 'Please try again.',
             icon: Icons.cloud_off_outlined,
-            actionLabel: 'Try again',
-            onAction: () =>
-                ref.read(savedLooksControllerProvider.notifier).loadInitial(),
+            actionLabel: state.sessionExpired ? 'Sign in again' : 'Try again',
+            onAction: state.sessionExpired
+                ? () => ref
+                      .read(authControllerProvider.notifier)
+                      .recoverExpiredSession()
+                : () => ref
+                      .read(savedLooksControllerProvider.notifier)
+                      .loadInitial(),
           ),
         ],
       );
@@ -128,6 +150,14 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
               title: 'Could not finish updating',
               message: state.message ?? 'Pull to refresh and try again.',
               icon: Icons.error_outline_rounded,
+              actionLabel: state.sessionExpired ? 'Sign in again' : 'Retry',
+              onAction: state.sessionExpired
+                  ? () => ref
+                        .read(authControllerProvider.notifier)
+                        .recoverExpiredSession()
+                  : () => ref
+                        .read(savedLooksControllerProvider.notifier)
+                        .retryLoadMore(),
             ),
           ),
         ],
@@ -162,6 +192,7 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
                   final look = state.items[index];
                   return SavedLookCard(
                     look: look,
+                    isMutating: state.mutatingIds.contains(look.id),
                     onOpen: () => _openResult(look),
                     onFavorite: () => _toggleFavorite(look),
                     onRemove: () => _confirmRemove(look),

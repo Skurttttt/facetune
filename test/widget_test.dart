@@ -16,13 +16,17 @@ import 'package:facetune/features/analysis/domain/errors/analysis_failure.dart';
 import 'package:facetune/features/analysis/domain/repositories/face_analysis_repository.dart';
 import 'package:facetune/features/authentication/data/providers/auth_repository_provider.dart';
 import 'package:facetune/features/authentication/domain/entities/auth_user.dart';
+import 'package:facetune/features/history/data/providers/history_providers.dart';
 import 'package:facetune/features/profile/data/providers/profile_providers.dart';
 import 'package:facetune/features/scan/domain/entities/local_image_validation.dart';
 import 'package:facetune/features/scan/domain/entities/prepared_selfie.dart';
+import 'package:facetune/features/saved_looks/data/providers/saved_looks_providers.dart';
+import 'package:facetune/features/saved_looks/data/repositories/unavailable_saved_looks_repository.dart';
 import 'package:facetune/features/settings/data/providers/settings_providers.dart';
 
 import 'helpers/fake_account_repositories.dart';
 import 'helpers/fake_auth_repository.dart';
+import 'helpers/fake_history_repository.dart';
 
 void main() {
   testWidgets('Start Scan opens the static scan experience', (tester) async {
@@ -37,6 +41,10 @@ void main() {
           profileRepositoryProvider.overrideWithValue(FakeProfileRepository()),
           settingsRepositoryProvider.overrideWithValue(
             FakeSettingsRepository(),
+          ),
+          historyRepositoryProvider.overrideWithValue(FakeHistoryRepository()),
+          savedLooksRepositoryProvider.overrideWithValue(
+            const UnavailableSavedLooksRepository(),
           ),
           faceAnalysisRepositoryProvider.overrideWithValue(
             const _UnavailableAnalysisRepository(),

@@ -60,32 +60,58 @@ class SupabaseMakeupRecommendationRepository
         retryable: true,
       );
     } on RecommendationRemoteFailure catch (error) {
+      final code = error.code.trim().toLowerCase();
+      if (error.status <= 0) {
+        throw const RecommendationFailure(
+          RecommendationFailureType.network,
+          'Check your connection and try again.',
+          retryable: true,
+        );
+      }
       if (error.status == 401) {
         throw const RecommendationFailure(
           RecommendationFailureType.authentication,
           'Your session expired. Sign in again.',
         );
       }
-      if (error.status == 400 || error.status == 404 || error.status == 422) {
+      if (error.status == 400) {
         throw RecommendationFailure(
           RecommendationFailureType.validation,
-          error.message,
+          'This makeup request is no longer valid. Return and choose your style again.',
+        );
+      }
+      if (error.status == 404) {
+        throw const RecommendationFailure(
+          RecommendationFailureType.validation,
+          'The completed face analysis could not be found. Start a new scan.',
+        );
+      }
+      if (error.status == 422) {
+        throw RecommendationFailure(
+          RecommendationFailureType.validation,
+          'The AI could not safely create a plan from this analysis.',
           retryable: error.retryable,
         );
       }
-      if (error.code.startsWith('gemini_') || error.code.contains('ai_')) {
+      if (code.startsWith('gemini_') || code.contains('ai_')) {
         throw RecommendationFailure(
           RecommendationFailureType.gemini,
-          error.message,
+          'The AI service could not create your makeup plan right now.',
           retryable: error.retryable,
         );
       }
       throw RecommendationFailure(
         RecommendationFailureType.server,
-        error.message,
+        'Your makeup plan could not be created right now.',
         retryable: error.retryable || error.status >= 500,
       );
-    } on StorageException {
+    } on StorageException catch (error) {
+      if (int.tryParse(error.statusCode.toString()) == 401) {
+        throw const RecommendationFailure(
+          RecommendationFailureType.authentication,
+          'Your session expired. Sign in again.',
+        );
+      }
       throw const RecommendationFailure(
         RecommendationFailureType.server,
         'The recommendation service is temporarily unavailable.',

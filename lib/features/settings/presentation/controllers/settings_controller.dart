@@ -23,8 +23,11 @@ class SettingsController extends StateNotifier<SettingsState> {
   SettingsController(this._repository) : super(SettingsState());
 
   final SettingsRepository _repository;
+  bool _isLoading = false;
 
   Future<void> load() async {
+    if (_isLoading) return;
+    _isLoading = true;
     state = SettingsState();
     try {
       final settings = await _repository.load();
@@ -36,8 +39,20 @@ class SettingsController extends StateNotifier<SettingsState> {
         state = SettingsState(
           status: SettingsStatus.failure,
           message: failure.message,
+          failureKind: failure.kind,
+          retryable: failure.retryable,
         );
       }
+    } on Object {
+      if (mounted) {
+        state = SettingsState(
+          status: SettingsStatus.failure,
+          message: 'Your preferences could not be loaded. Please try again.',
+          failureKind: SettingsFailureKind.unknown,
+        );
+      }
+    } finally {
+      _isLoading = false;
     }
   }
 
@@ -87,15 +102,36 @@ class SettingsController extends StateNotifier<SettingsState> {
         );
       }
     } on SettingsFailure catch (failure) {
+      if (mounted) _handleUpdateFailure(failure, previous);
+    } on Object {
       if (mounted) {
-        state = SettingsState(
-          status: SettingsStatus.ready,
-          settings: previous,
-          feedback: failure.message,
-          feedbackIsError: true,
+        _handleUpdateFailure(
+          const SettingsFailure(
+            'Your preference could not be saved. Please try again.',
+          ),
+          previous,
         );
       }
     }
+  }
+
+  void _handleUpdateFailure(SettingsFailure failure, UserSettings previous) {
+    if (failure.kind == SettingsFailureKind.sessionExpired) {
+      state = SettingsState(
+        status: SettingsStatus.failure,
+        settings: previous,
+        message: failure.message,
+        failureKind: failure.kind,
+        retryable: failure.retryable,
+      );
+      return;
+    }
+    state = SettingsState(
+      status: SettingsStatus.ready,
+      settings: previous,
+      feedback: failure.message,
+      feedbackIsError: true,
+    );
   }
 
   void clearFeedback() {
@@ -103,6 +139,8 @@ class SettingsController extends StateNotifier<SettingsState> {
       status: state.status,
       settings: state.settings,
       message: state.message,
+      failureKind: state.failureKind,
+      retryable: state.retryable,
     );
   }
 }

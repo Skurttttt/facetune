@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../domain/errors/auth_failure.dart';
@@ -6,6 +8,11 @@ abstract final class AuthErrorMapper {
   static AuthFailure map(Object error) {
     if (error is AuthFailure) {
       return error;
+    }
+    if (error is TimeoutException) {
+      return const AuthFailure(
+        'That request is taking too long. Check your connection and try again.',
+      );
     }
     if (error is AuthException) {
       final message = error.message.toLowerCase();

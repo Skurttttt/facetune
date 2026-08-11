@@ -8,6 +8,8 @@ import '../../../../shared/widgets/app_ui.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../../authentication/domain/services/auth_validators.dart';
 import '../../../authentication/presentation/controllers/auth_controller.dart';
+import '../../../authentication/presentation/widgets/auth_feedback_listener.dart';
+import '../../domain/errors/profile_failure.dart';
 import '../controllers/profile_controller.dart';
 import '../controllers/profile_state.dart';
 
@@ -16,17 +18,24 @@ class ProfilePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    listenForAuthFeedback(ref, context);
     final authState = ref.watch(authControllerProvider);
     final state = ref.watch(profileControllerProvider);
     ref.listen<ProfileState>(profileControllerProvider, (previous, next) {
       if (next.feedback == null || next.feedback == previous?.feedback) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(next.feedback!)));
+      final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(next.feedback!),
+          backgroundColor: next.feedbackIsError ? AppColors.error : null,
+        ),
+      );
       ref.read(profileControllerProvider.notifier).clearFeedback();
     });
     final user = authState.user;
     final isGuest = user?.isAnonymous == true;
+    final sessionExpired =
+        state.failureKind == ProfileFailureKind.sessionExpired;
 
     return AppShell(
       index: 3,
@@ -41,9 +50,18 @@ class ProfilePage extends ConsumerWidget {
                 title: 'Profile unavailable',
                 message: state.message ?? 'Please try again.',
                 icon: Icons.person_off_outlined,
-                actionLabel: 'Try again',
-                onAction: () =>
-                    ref.read(profileControllerProvider.notifier).load(),
+                actionLabel: sessionExpired
+                    ? 'Sign in again'
+                    : state.retryable
+                    ? 'Try again'
+                    : null,
+                onAction: sessionExpired
+                    ? () => ref
+                          .read(authControllerProvider.notifier)
+                          .recoverExpiredSession()
+                    : state.retryable
+                    ? () => ref.read(profileControllerProvider.notifier).load()
+                    : null,
               ),
             ),
             ProfileStatus.ready => ListView(

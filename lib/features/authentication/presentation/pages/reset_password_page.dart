@@ -83,6 +83,16 @@ class _ResetPasswordPageState extends ConsumerState<ResetPasswordPage> {
                   authState.activeOperation == AuthOperation.updatePassword,
               onPressed: _submit,
             ),
+            const SizedBox(height: AppSpacing.sm),
+            TextButton.icon(
+              onPressed: authState.isLoading
+                  ? null
+                  : () => ref
+                        .read(authControllerProvider.notifier)
+                        .cancelPasswordRecovery(),
+              icon: const Icon(Icons.close_rounded),
+              label: const Text('Cancel password reset'),
+            ),
           ],
         ),
       ),

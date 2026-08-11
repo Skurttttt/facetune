@@ -14,6 +14,7 @@ class HistoryState {
     this.message,
     this.feedback,
     this.feedbackIsError = false,
+    this.sessionExpired = false,
   });
 
   final HistoryLoadStatus status;
@@ -26,6 +27,7 @@ class HistoryState {
   final String? message;
   final String? feedback;
   final bool feedbackIsError;
+  final bool sessionExpired;
 
   List<HistoryEntry> get visibleItems {
     final normalizedQuery = query.trim().toLowerCase();

@@ -13,13 +13,14 @@ class MakeupStyleCard extends StatelessWidget {
 
   final MakeupStyle style;
   final bool isSelected;
-  final VoidCallback onSelected;
+  final VoidCallback? onSelected;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Semantics(
       button: true,
+      enabled: onSelected != null,
       selected: isSelected,
       label: '${style.name} makeup style. ${style.description}',
       onTap: onSelected,

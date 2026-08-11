@@ -19,10 +19,12 @@ class AnalysisResultPage extends ConsumerWidget {
       body: SafeArea(
         child: PageFrame(
           child: analysis == null
-              ? const StatusState(
+              ? StatusState(
                   title: 'Analysis unavailable',
                   message: 'Return to Scan and analyze a validated selfie.',
                   icon: Icons.error_outline_rounded,
+                  actionLabel: 'Return to scan',
+                  onAction: () => context.go(AppConstants.scanRoute),
                 )
               : _AnalysisContent(analysis: analysis),
         ),

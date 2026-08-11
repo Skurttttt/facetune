@@ -214,7 +214,20 @@ class SupabaseSavedLooksRepository implements SavedLooksRepository {
       return const SavedLooksFailure('Check your connection and try again.');
     }
     if (error is AuthException) {
-      return const SavedLooksFailure('Your session expired. Sign in again.');
+      return const SavedLooksFailure(
+        'Your session expired. Sign in again.',
+        retryable: false,
+        sessionExpired: true,
+      );
+    }
+    if ((error is StorageException &&
+            int.tryParse(error.statusCode.toString()) == 401) ||
+        (error is PostgrestException && _isExpiredSession(error))) {
+      return const SavedLooksFailure(
+        'Your session expired. Sign in again.',
+        retryable: false,
+        sessionExpired: true,
+      );
     }
     if (error is PostgrestException || error is StorageException) {
       return const SavedLooksFailure(
@@ -228,5 +241,13 @@ class SupabaseSavedLooksRepository implements SavedLooksRepository {
       );
     }
     return const SavedLooksFailure('Your saved looks could not be loaded.');
+  }
+
+  static bool _isExpiredSession(PostgrestException error) {
+    final detail = '${error.code} ${error.message} ${error.details}'
+        .toLowerCase();
+    return error.code == 'PGRST301' ||
+        (detail.contains('jwt') &&
+            (detail.contains('expired') || detail.contains('invalid')));
   }
 }

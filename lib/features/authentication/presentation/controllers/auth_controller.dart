@@ -24,11 +24,15 @@ class AuthController extends StateNotifier<AuthState> {
     required bool isSupabaseAvailable,
   }) : _repository = repository,
        super(_initialState(repository, isSupabaseAvailable)) {
-    _subscription = _repository.authEvents.listen(_handleAuthEvent);
+    _subscription = _repository.authEvents.listen(
+      (event) => unawaited(_handleAuthEvent(event)),
+      onError: _handleAuthStreamError,
+    );
   }
 
   final AuthRepository _repository;
   StreamSubscription<AuthEvent>? _subscription;
+  int _authEventGeneration = 0;
 
   static AuthState _initialState(
     AuthRepository repository,
@@ -113,10 +117,41 @@ class AuthController extends StateNotifier<AuthState> {
   }
 
   Future<void> signOut() async {
+    ++_authEventGeneration;
     await _run(AuthOperation.signOut, () async {
       await _repository.signOut();
       state = const AuthState.unauthenticated();
     });
+  }
+
+  /// Recovers from a confirmed expired session.
+  ///
+  /// Unlike normal sign-out, this always clears local authentication state,
+  /// even when the remote sign-out request cannot complete.
+  Future<void> recoverExpiredSession() => _clearLocalSessionSafely();
+
+  /// Leaves password-recovery mode without trapping the user on the form.
+  Future<void> cancelPasswordRecovery() => _clearLocalSessionSafely();
+
+  Future<void> _clearLocalSessionSafely() async {
+    if (state.activeOperation == AuthOperation.signOut) {
+      return;
+    }
+    ++_authEventGeneration;
+    state = const AuthState(
+      status: AuthStatus.unauthenticated,
+      activeOperation: AuthOperation.signOut,
+    );
+    try {
+      await _repository.signOut();
+    } on Object {
+      // The server session is already known to be invalid. Local recovery must
+      // not be blocked by a failed best-effort remote sign-out.
+    } finally {
+      if (mounted) {
+        state = const AuthState.unauthenticated();
+      }
+    }
   }
 
   Future<void> _run(
@@ -136,6 +171,13 @@ class AuthController extends StateNotifier<AuthState> {
         errorMessage: failure.message,
         feedbackId: state.feedbackId + 1,
       );
+    } on Object {
+      state = AuthState(
+        status: state.status,
+        user: state.user,
+        errorMessage: 'Something went wrong. Please try again.',
+        feedbackId: state.feedbackId + 1,
+      );
     }
   }
 
@@ -143,6 +185,7 @@ class AuthController extends StateNotifier<AuthState> {
     if (!mounted) {
       return;
     }
+    final generation = ++_authEventGeneration;
     if (event.type == AuthEventType.signedOut) {
       state = const AuthState.unauthenticated();
       return;
@@ -162,7 +205,10 @@ class AuthController extends StateNotifier<AuthState> {
     try {
       await _repository.bootstrapProfile(user);
     } on AuthFailure catch (failure) {
-      if (mounted) {
+      if (mounted &&
+          generation == _authEventGeneration &&
+          state.status == status &&
+          state.user?.id == user.id) {
         state = AuthState(
           status: status,
           user: user,
@@ -170,7 +216,38 @@ class AuthController extends StateNotifier<AuthState> {
           feedbackId: state.feedbackId + 1,
         );
       }
+    } on Object {
+      if (mounted &&
+          generation == _authEventGeneration &&
+          state.status == status &&
+          state.user?.id == user.id) {
+        state = AuthState(
+          status: status,
+          user: user,
+          errorMessage: 'We could not finish preparing your account.',
+          feedbackId: state.feedbackId + 1,
+        );
+      }
     }
+  }
+
+  void _handleAuthStreamError(Object error, StackTrace stackTrace) {
+    if (!mounted) {
+      return;
+    }
+    ++_authEventGeneration;
+    final user = _repository.currentUser ?? state.user;
+    final status = user == null
+        ? AuthStatus.unauthenticated
+        : state.status == AuthStatus.passwordRecovery
+        ? AuthStatus.passwordRecovery
+        : AuthStatus.authenticated;
+    state = AuthState(
+      status: status,
+      user: user,
+      errorMessage: 'We could not refresh your session. Please try again.',
+      feedbackId: state.feedbackId + 1,
+    );
   }
 
   @override

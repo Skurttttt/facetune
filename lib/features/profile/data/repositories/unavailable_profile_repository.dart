@@ -7,14 +7,25 @@ class UnavailableProfileRepository implements ProfileRepository {
   const UnavailableProfileRepository();
 
   @override
-  Future<UserProfile> load() =>
-      throw const ProfileFailure('Profile is unavailable in this build.');
+  Future<UserProfile> load() => throw const ProfileFailure(
+    'Profile is unavailable in this build.',
+    kind: ProfileFailureKind.unavailable,
+    retryable: false,
+  );
 
   @override
   Future<UserProfile> updateAvatar(AvatarImage avatar) =>
-      throw const ProfileFailure('Profile is unavailable in this build.');
+      throw const ProfileFailure(
+        'Profile is unavailable in this build.',
+        kind: ProfileFailureKind.unavailable,
+        retryable: false,
+      );
 
   @override
   Future<UserProfile> updateDisplayName(String displayName) =>
-      throw const ProfileFailure('Profile is unavailable in this build.');
+      throw const ProfileFailure(
+        'Profile is unavailable in this build.',
+        kind: ProfileFailureKind.unavailable,
+        retryable: false,
+      );
 }

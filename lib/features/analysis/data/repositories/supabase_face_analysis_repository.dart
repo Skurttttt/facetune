@@ -16,16 +16,16 @@ class SupabaseFaceAnalysisRepository implements FaceAnalysisRepository {
   const SupabaseFaceAnalysisRepository(
     this._remoteDataSource, {
     Uuid uuid = const Uuid(),
+    Duration uploadTimeout = const Duration(seconds: 45),
     Duration functionTimeout = const Duration(seconds: 105),
-    int maximumAttempts = 2,
   }) : _uuid = uuid,
-       _functionTimeout = functionTimeout,
-       _maximumAttempts = maximumAttempts;
+       _uploadTimeout = uploadTimeout,
+       _functionTimeout = functionTimeout;
 
   final AnalysisRemoteDataSource _remoteDataSource;
   final Uuid _uuid;
+  final Duration _uploadTimeout;
   final Duration _functionTimeout;
-  final int _maximumAttempts;
 
   @override
   Future<FaceAnalysis> analyze({
@@ -45,27 +45,28 @@ class SupabaseFaceAnalysisRepository implements FaceAnalysisRepository {
     final storagePath = '$userId/analyses/$analysisId/original/$imageId.jpg';
     try {
       onProgress(AnalysisProgress.uploading);
-      await _remoteDataSource.uploadSelfie(
-        localPath: selfie.uploadPath,
-        storagePath: storagePath,
-      );
-      onProgress(AnalysisProgress.secureProcessing);
-      Object? response;
-      for (var attempt = 1; attempt <= _maximumAttempts; attempt += 1) {
-        try {
-          response = await _remoteDataSource
-              .invokeAnalysis(
-                analysisId: analysisId,
-                storagePath: storagePath,
-                localValidation: localValidation,
-              )
-              .timeout(_functionTimeout);
-          break;
-        } catch (error) {
-          final failure = _mapFailure(error);
-          if (!failure.retryable || attempt == _maximumAttempts) rethrow;
-        }
+      try {
+        await _remoteDataSource
+            .uploadSelfie(
+              localPath: selfie.uploadPath,
+              storagePath: storagePath,
+            )
+            .timeout(_uploadTimeout);
+      } on TimeoutException {
+        throw const AnalysisFailure(
+          AnalysisFailureType.timeout,
+          'The selfie upload took too long. Check your connection and try again.',
+          retryable: true,
+        );
       }
+      onProgress(AnalysisProgress.secureProcessing);
+      final response = await _remoteDataSource
+          .invokeAnalysis(
+            analysisId: analysisId,
+            storagePath: storagePath,
+            localValidation: localValidation,
+          )
+          .timeout(_functionTimeout);
       try {
         return FaceAnalysisDto.fromResponse(response).analysis;
       } on FormatException {
@@ -98,30 +99,84 @@ class SupabaseFaceAnalysisRepository implements FaceAnalysisRepository {
         retryable: true,
       );
     }
+    if (error is FileSystemException) {
+      return const AnalysisFailure(
+        AnalysisFailureType.validation,
+        'The selected image is no longer available. Choose it again.',
+      );
+    }
+    if (error is AuthException) {
+      return const AnalysisFailure(
+        AnalysisFailureType.authentication,
+        'Your session expired. Sign in again.',
+      );
+    }
     if (error is AnalysisRemoteFailure) {
-      if (error.status == 401) {
+      final code = error.code.trim().toLowerCase();
+      if (error.status <= 0) {
+        return const AnalysisFailure(
+          AnalysisFailureType.network,
+          'Check your connection and try again.',
+          retryable: true,
+        );
+      }
+      if (error.status == 401 || error.status == 403) {
         return const AnalysisFailure(
           AnalysisFailureType.authentication,
           'Your session expired. Sign in again.',
         );
       }
       if (error.status == 422) {
-        return AnalysisFailure(AnalysisFailureType.validation, error.message);
+        return AnalysisFailure(
+          AnalysisFailureType.validation,
+          _validationMessages[code] ??
+              'That selfie could not be validated. Choose another photo.',
+        );
       }
-      if (error.code.startsWith('gemini_') || error.code.contains('ai_')) {
+      if (error.status == 404 && code == 'image_not_found') {
+        return const AnalysisFailure(
+          AnalysisFailureType.validation,
+          'The uploaded selfie is no longer available. Choose it again.',
+        );
+      }
+      if (error.status == 408 || error.status == 504) {
+        return const AnalysisFailure(
+          AnalysisFailureType.timeout,
+          'Analysis took too long. Please try again.',
+          retryable: true,
+        );
+      }
+      if (code.startsWith('gemini_') || code.contains('ai_')) {
         return AnalysisFailure(
           AnalysisFailureType.gemini,
-          error.message,
+          code == 'gemini_rate_limited'
+              ? 'Analysis is busy. Please try again shortly.'
+              : 'Secure analysis is temporarily unavailable. Please try again.',
           retryable: error.retryable,
+        );
+      }
+      if (code == 'server_configuration') {
+        return const AnalysisFailure(
+          AnalysisFailureType.server,
+          'Secure analysis is unavailable right now.',
         );
       }
       return AnalysisFailure(
         AnalysisFailureType.server,
-        error.message,
+        code == 'persistence_failed'
+            ? 'Your analysis could not be saved. Please try again.'
+            : 'The analysis service is temporarily unavailable.',
         retryable: error.retryable || error.status >= 500,
       );
     }
     if (error is StorageException) {
+      final status = int.tryParse(error.statusCode.toString());
+      if (status == 401 || status == 403) {
+        return const AnalysisFailure(
+          AnalysisFailureType.authentication,
+          'Your session expired. Sign in again.',
+        );
+      }
       return const AnalysisFailure(
         AnalysisFailureType.server,
         'The private selfie could not be uploaded.',
@@ -134,4 +189,22 @@ class SupabaseFaceAnalysisRepository implements FaceAnalysisRepository {
       retryable: true,
     );
   }
+
+  static const _validationMessages = <String, String>{
+    'no_face': 'No visible face was found. Choose a clear selfie.',
+    'multiple_faces':
+        'More than one face was found. Choose a selfie with one person.',
+    'face_obscured':
+        'Your face is too obscured for analysis. Choose a clearer selfie.',
+    'insufficient_lighting':
+        'The lighting is too dark or uneven. Choose a brighter selfie.',
+    'excessive_blur':
+        'The selfie is too blurry for analysis. Choose a sharper photo.',
+    'poor_framing': 'Center your full face in the frame and try again.',
+    'low_confidence':
+        'The selfie is not clear enough for a reliable analysis. Try another photo.',
+    'invalid_image_size': 'The selfie has an unsupported file size.',
+    'invalid_image_type': 'Choose a supported selfie image.',
+    'gemini_refusal': 'This image could not be analyzed. Choose another selfie.',
+  };
 }

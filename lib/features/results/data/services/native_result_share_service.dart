@@ -11,6 +11,8 @@ class NativeResultShareService implements ResultShareService {
   const NativeResultShareService();
 
   static const _maximumShareBytes = 15 * 1024 * 1024;
+  static const _connectionTimeout = Duration(seconds: 15);
+  static const _downloadTimeout = Duration(seconds: 30);
 
   @override
   Future<void> share({
@@ -22,13 +24,26 @@ class NativeResultShareService implements ResultShareService {
       throw const ResultShareFailure('The private preview link is invalid.');
     }
     File? temporaryFile;
-    final client = HttpClient();
+    final client = HttpClient()..connectionTimeout = _connectionTimeout;
     try {
-      final request = await client.getUrl(uri);
-      final response = await request.close();
+      final request = await client.getUrl(uri).timeout(_connectionTimeout);
+      final response = await request.close().timeout(_connectionTimeout);
       if (response.statusCode != HttpStatus.ok) {
         throw const ResultShareFailure(
           'The preview could not be prepared for sharing.',
+        );
+      }
+      final mimeType = response.headers.contentType?.mimeType;
+      if (mimeType == null ||
+          !const {'image/jpeg', 'image/png', 'image/webp'}.contains(mimeType)) {
+        throw const ResultShareFailure(
+          'The preview file is not a supported image.',
+        );
+      }
+      final contentLength = response.contentLength;
+      if (contentLength > _maximumShareBytes) {
+        throw const ResultShareFailure(
+          'The preview is too large to share safely.',
         );
       }
       final directory = await getTemporaryDirectory();
@@ -39,7 +54,7 @@ class NativeResultShareService implements ResultShareService {
       final sink = temporaryFile.openWrite();
       var byteCount = 0;
       try {
-        await for (final chunk in response) {
+        await for (final chunk in response.timeout(_downloadTimeout)) {
           byteCount += chunk.length;
           if (byteCount > _maximumShareBytes) {
             throw const ResultShareFailure(
@@ -72,7 +87,13 @@ class NativeResultShareService implements ResultShareService {
     } finally {
       client.close(force: true);
       final file = temporaryFile;
-      if (file != null && await file.exists()) await file.delete();
+      if (file != null) {
+        try {
+          if (await file.exists()) await file.delete();
+        } catch (_) {
+          // Temporary-file cleanup must never leave the UI stuck in sharing.
+        }
+      }
     }
   }
 

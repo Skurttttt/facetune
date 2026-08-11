@@ -42,7 +42,7 @@ class SupabaseMakeupPreviewRepository implements MakeupPreviewRepository {
       final urls = await Future.wait([
         _remoteDataSource.createSignedUrl(dto.originalImagePath),
         _remoteDataSource.createSignedUrl(dto.generatedImagePath),
-      ]);
+      ]).timeout(_timeout);
       return dto.toDomain(
         originalImageUrl: urls[0],
         generatedImageUrl: urls[1],
@@ -66,32 +66,59 @@ class SupabaseMakeupPreviewRepository implements MakeupPreviewRepository {
       final technicalCode = error.code.trim().isEmpty
           ? 'UNKNOWN_ERROR'
           : error.code.trim().toUpperCase();
+      if (error.status <= 0) {
+        throw PreviewFailure(
+          PreviewFailureType.network,
+          'Check your connection and try again.',
+          retryable: true,
+          technicalCode: technicalCode,
+        );
+      }
       if (error.status == 401) {
         throw const PreviewFailure(
           PreviewFailureType.authentication,
           'Your session expired. Sign in again.',
         );
       }
-      if (error.status == 400 || error.status == 404 || error.status == 422) {
+      if (error.status == 400) {
         throw PreviewFailure(
           PreviewFailureType.validation,
-          error.message,
+          'This makeup plan is no longer valid. Return to your plan and try again.',
+          technicalCode: technicalCode,
+        );
+      }
+      if (error.status == 403 || error.status == 404) {
+        throw PreviewFailure(
+          PreviewFailureType.validation,
+          'The original selfie or makeup plan is no longer available.',
+          technicalCode: technicalCode,
+        );
+      }
+      if (error.status == 422) {
+        throw PreviewFailure(
+          PreviewFailureType.validation,
+          'The original selfie cannot be used for this preview. Start a new scan with another photo.',
           retryable: error.retryable,
           technicalCode: technicalCode,
         );
       }
       if (technicalCode.startsWith('GEMINI_') ||
-          technicalCode.contains('IMAGE_')) {
+          technicalCode.contains('IMAGE_') ||
+          technicalCode == 'UNCHANGED_GENERATED_IMAGE') {
         throw PreviewFailure(
           PreviewFailureType.gemini,
-          error.message,
+          technicalCode == 'UNCHANGED_GENERATED_IMAGE'
+              ? 'The AI did not apply a visible makeup change. Try another variation.'
+              : 'The AI service could not create your preview right now.',
           retryable: error.retryable,
           technicalCode: technicalCode,
         );
       }
       throw PreviewFailure(
         PreviewFailureType.server,
-        error.message,
+        technicalCode == 'STORAGE_UPLOAD_FAILED'
+            ? 'The preview could not be stored securely. Please try again.'
+            : 'Your makeup preview could not be created right now.',
         retryable: error.retryable || error.status >= 500,
         technicalCode: technicalCode,
       );
@@ -102,7 +129,13 @@ class SupabaseMakeupPreviewRepository implements MakeupPreviewRepository {
         retryable: true,
         technicalCode: 'INVALID_FUNCTION_RESPONSE',
       );
-    } on StorageException {
+    } on StorageException catch (error) {
+      if (int.tryParse(error.statusCode.toString()) == 401) {
+        throw const PreviewFailure(
+          PreviewFailureType.authentication,
+          'Your session expired. Sign in again.',
+        );
+      }
       throw const PreviewFailure(
         PreviewFailureType.server,
         'The private preview could not be loaded.',

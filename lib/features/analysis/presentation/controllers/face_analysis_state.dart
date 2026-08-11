@@ -30,6 +30,15 @@ class FaceAnalysisState {
       status == FaceAnalysisStatus.uploading ||
       status == FaceAnalysisStatus.secureProcessing;
 
+  bool get hasFailure => switch (status) {
+    FaceAnalysisStatus.validationFailure ||
+    FaceAnalysisStatus.authenticationFailure ||
+    FaceAnalysisStatus.networkFailure ||
+    FaceAnalysisStatus.serverFailure ||
+    FaceAnalysisStatus.geminiFailure => true,
+    _ => false,
+  };
+
   factory FaceAnalysisState.failure(AnalysisFailure failure) {
     final status = switch (failure.type) {
       AnalysisFailureType.authentication =>

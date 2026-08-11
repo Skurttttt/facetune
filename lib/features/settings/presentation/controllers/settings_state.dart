@@ -1,4 +1,5 @@
 import '../../domain/entities/user_settings.dart';
+import '../../domain/errors/settings_failure.dart';
 
 enum SettingsStatus { loading, ready, failure }
 
@@ -12,6 +13,8 @@ class SettingsState {
     this.message,
     this.feedback,
     this.feedbackIsError = false,
+    this.failureKind,
+    this.retryable = true,
   }) : settings = settings ?? UserSettings.defaults();
 
   final SettingsStatus status;
@@ -20,4 +23,6 @@ class SettingsState {
   final String? message;
   final String? feedback;
   final bool feedbackIsError;
+  final SettingsFailureKind? failureKind;
+  final bool retryable;
 }

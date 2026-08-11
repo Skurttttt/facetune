@@ -3,9 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
+import '../../../authentication/presentation/controllers/auth_controller.dart';
 import '../../../preview/presentation/controllers/makeup_preview_controller.dart';
+import '../../../preview/presentation/controllers/makeup_preview_state.dart';
 import '../../../../shared/widgets/app_ui.dart';
 import '../../../../theme/app_tokens.dart';
+import '../../domain/errors/recommendation_failure.dart';
 import '../controllers/makeup_recommendation_controller.dart';
 import '../controllers/makeup_recommendation_state.dart';
 import '../widgets/recommendation_item_card.dart';
@@ -29,6 +32,11 @@ class MakeupRecommendationPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(makeupRecommendationControllerProvider);
+    final previewIsGenerating = ref.watch(
+      makeupPreviewControllerProvider.select(
+        (state) => state.status == MakeupPreviewStatus.generating,
+      ),
+    );
     return Scaffold(
       appBar: AppBar(title: const Text('Your makeup plan')),
       body: SafeArea(
@@ -44,23 +52,54 @@ class MakeupRecommendationPage extends ConsumerWidget {
                 title: 'We could not create your plan',
                 message: state.message ?? 'Please try again.',
                 icon: Icons.error_outline_rounded,
-                actionLabel: state.retryable ? 'Try again' : null,
-                onAction: state.retryable
+                actionLabel:
+                    state.failureType == RecommendationFailureType.authentication
+                    ? 'Sign in again'
+                    : state.retryable
+                    ? 'Try again'
+                    : null,
+                onAction:
+                    state.failureType == RecommendationFailureType.authentication
+                    ? () => ref
+                          .read(authControllerProvider.notifier)
+                          .recoverExpiredSession()
+                    : state.retryable
                     ? () => ref
                           .read(makeupRecommendationControllerProvider.notifier)
                           .retry()
                     : null,
+                secondaryActionLabel:
+                    state.failureType == RecommendationFailureType.authentication
+                    ? null
+                    : 'Choose another style',
+                onSecondaryAction:
+                    state.failureType == RecommendationFailureType.authentication
+                    ? null
+                    : () => context.go(AppConstants.stylesRoute),
               ),
             ),
             MakeupRecommendationStatus.success => _RecommendationContent(
               state: state,
               labels: _labels,
+              previewIsGenerating: previewIsGenerating,
+              onGeneratePreview: () {
+                if (ref.read(makeupPreviewControllerProvider).status ==
+                    MakeupPreviewStatus.generating) {
+                  return;
+                }
+                ref
+                    .read(makeupPreviewControllerProvider.notifier)
+                    .generate(recommendation: state.recommendation!);
+                context.push(AppConstants.previewRoute);
+              },
             ),
-            MakeupRecommendationStatus.idle => const Center(
+            MakeupRecommendationStatus.idle => Center(
               child: StatusState(
                 title: 'Recommendation unavailable',
                 message: 'Complete your analysis and choose a makeup style.',
                 icon: Icons.info_outline_rounded,
+                actionLabel: 'Return to analysis',
+                onAction: () => context.go(AppConstants.analysisRoute),
               ),
             ),
           },
@@ -71,10 +110,17 @@ class MakeupRecommendationPage extends ConsumerWidget {
 }
 
 class _RecommendationContent extends StatelessWidget {
-  const _RecommendationContent({required this.state, required this.labels});
+  const _RecommendationContent({
+    required this.state,
+    required this.labels,
+    required this.previewIsGenerating,
+    required this.onGeneratePreview,
+  });
 
   final MakeupRecommendationState state;
   final Map<String, String> labels;
+  final bool previewIsGenerating;
+  final VoidCallback onGeneratePreview;
 
   @override
   Widget build(BuildContext context) {
@@ -112,14 +158,11 @@ class _RecommendationContent extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.md),
         PrimaryButton(
-          label: 'Generate makeup preview',
+          label: previewIsGenerating
+              ? 'Creating your preview…'
+              : 'Generate makeup preview',
           icon: Icons.auto_awesome_rounded,
-          onPressed: () {
-            ProviderScope.containerOf(context)
-                .read(makeupPreviewControllerProvider.notifier)
-                .generate(recommendation: recommendation);
-            context.push(AppConstants.previewRoute);
-          },
+          onPressed: previewIsGenerating ? null : onGeneratePreview,
         ),
         const SizedBox(height: AppSpacing.lg),
       ],

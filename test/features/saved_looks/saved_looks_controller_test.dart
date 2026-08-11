@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:facetune/features/analysis/data/models/face_analysis_dto.dart';
 import 'package:facetune/features/makeup_styles/domain/catalog/makeup_style_catalog.dart';
 import 'package:facetune/features/preview/data/models/generated_preview_dto.dart';
@@ -50,6 +52,46 @@ void main() {
     expect(controller.state.status, SavedLooksStatus.ready);
     expect(controller.state.items, isEmpty);
     expect(repository.removedId, look.id);
+  });
+
+  test('duplicate favorite taps are ignored while the item is mutating', () async {
+    final look = _look('look-1');
+    final completer = Completer<SavedLook>();
+    final repository = _PendingMutationRepository(look, completer);
+    final controller = SavedLooksController(repository);
+    addTearDown(controller.dispose);
+    await controller.loadInitial();
+
+    final first = controller.toggleFavorite(look);
+    final second = controller.toggleFavorite(look);
+    expect(repository.favoriteCalls, 1);
+    expect(controller.state.mutatingIds, contains(look.id));
+
+    completer.complete(look.copyWith(isFavorite: true));
+    await Future.wait([first, second]);
+    expect(controller.state.mutatingIds, isNot(contains(look.id)));
+    expect(controller.state.items.single.isFavorite, isTrue);
+  });
+
+  test('a stale initial load cannot overwrite a newer refresh', () async {
+    final first = Completer<SavedLooksPageResult>();
+    final second = Completer<SavedLooksPageResult>();
+    final repository = _PendingPagesRepository([first, second]);
+    final controller = SavedLooksController(repository);
+    addTearDown(controller.dispose);
+
+    final oldLoad = controller.loadInitial();
+    final newLoad = controller.loadInitial();
+    second.complete(
+      SavedLooksPageResult(items: [_look('new')], hasMore: false),
+    );
+    await newLoad;
+    first.complete(
+      SavedLooksPageResult(items: [_look('old')], hasMore: false),
+    );
+    await oldLoad;
+
+    expect(controller.state.items.single.id, 'new');
   });
 }
 
@@ -104,4 +146,63 @@ class _FakeRepository implements SavedLooksRepository {
   @override
   Future<SavedLook> save(GeneratedPreview preview, {bool favorite = false}) =>
       throw UnimplementedError();
+}
+
+class _PendingMutationRepository implements SavedLooksRepository {
+  _PendingMutationRepository(this.look, this.favoriteCompleter);
+
+  final SavedLook look;
+  final Completer<SavedLook> favoriteCompleter;
+  int favoriteCalls = 0;
+
+  @override
+  Future<SavedLooksPageResult> loadPage({
+    required int offset,
+    required int limit,
+  }) async => SavedLooksPageResult(items: [look], hasMore: false);
+
+  @override
+  Future<SavedLook> setFavorite(SavedLook look, bool favorite) {
+    favoriteCalls += 1;
+    return favoriteCompleter.future;
+  }
+
+  @override
+  Future<void> remove(String savedLookId) async {}
+
+  @override
+  Future<SavedLook?> findByGeneratedImageId(String generatedImageId) async =>
+      null;
+
+  @override
+  Future<SavedLook> save(GeneratedPreview preview, {bool favorite = false}) =>
+      throw UnimplementedError();
+}
+
+class _PendingPagesRepository implements SavedLooksRepository {
+  _PendingPagesRepository(this.pages);
+
+  final List<Completer<SavedLooksPageResult>> pages;
+  int call = 0;
+
+  @override
+  Future<SavedLooksPageResult> loadPage({
+    required int offset,
+    required int limit,
+  }) => pages[call++].future;
+
+  @override
+  Future<SavedLook?> findByGeneratedImageId(String generatedImageId) async =>
+      null;
+
+  @override
+  Future<void> remove(String savedLookId) async {}
+
+  @override
+  Future<SavedLook> save(GeneratedPreview preview, {bool favorite = false}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<SavedLook> setFavorite(SavedLook look, bool isFavorite) async =>
+      look.copyWith(isFavorite: isFavorite);
 }
