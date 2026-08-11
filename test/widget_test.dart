@@ -16,9 +16,12 @@ import 'package:facetune/features/analysis/domain/errors/analysis_failure.dart';
 import 'package:facetune/features/analysis/domain/repositories/face_analysis_repository.dart';
 import 'package:facetune/features/authentication/data/providers/auth_repository_provider.dart';
 import 'package:facetune/features/authentication/domain/entities/auth_user.dart';
+import 'package:facetune/features/profile/data/providers/profile_providers.dart';
 import 'package:facetune/features/scan/domain/entities/local_image_validation.dart';
 import 'package:facetune/features/scan/domain/entities/prepared_selfie.dart';
+import 'package:facetune/features/settings/data/providers/settings_providers.dart';
 
+import 'helpers/fake_account_repositories.dart';
 import 'helpers/fake_auth_repository.dart';
 
 void main() {
@@ -31,6 +34,10 @@ void main() {
         overrides: [
           supabaseAvailableProvider.overrideWithValue(true),
           authRepositoryProvider.overrideWithValue(repository),
+          profileRepositoryProvider.overrideWithValue(FakeProfileRepository()),
+          settingsRepositoryProvider.overrideWithValue(
+            FakeSettingsRepository(),
+          ),
           faceAnalysisRepositoryProvider.overrideWithValue(
             const _UnavailableAnalysisRepository(),
           ),

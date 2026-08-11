@@ -98,13 +98,20 @@ class SupabaseAuthRemoteDataSource extends SupabaseRemoteDataSource
         ? rawName.trim()
         : null;
 
-    await client.from('profiles').upsert({
-      'auth_user_id': user.id,
-      'display_name': displayName,
-    }, onConflict: 'auth_user_id');
-    await client.from('user_settings').upsert({
-      'user_id': user.id,
-    }, onConflict: 'user_id');
+    await client
+        .from('profiles')
+        .upsert(
+          {'auth_user_id': user.id, 'display_name': displayName},
+          onConflict: 'auth_user_id',
+          ignoreDuplicates: true,
+        );
+    await client
+        .from('user_settings')
+        .upsert(
+          {'user_id': user.id},
+          onConflict: 'user_id',
+          ignoreDuplicates: true,
+        );
   }
 
   @override

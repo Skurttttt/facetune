@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-final themeModeProvider = StateNotifierProvider<ThemeModeController, ThemeMode>(
-  (ref) => ThemeModeController(),
-);
+import '../../domain/entities/user_settings.dart';
+import 'settings_controller.dart';
 
-class ThemeModeController extends StateNotifier<ThemeMode> {
-  ThemeModeController() : super(ThemeMode.system);
-
-  void toggleThemeMode() {
-    state = state == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
-  }
-}
+final themeModeProvider = Provider<ThemeMode>((ref) {
+  final preference = ref.watch(
+    settingsControllerProvider.select((state) => state.settings.theme),
+  );
+  return switch (preference) {
+    AppThemePreference.system => ThemeMode.system,
+    AppThemePreference.light => ThemeMode.light,
+    AppThemePreference.dark => ThemeMode.dark,
+  };
+});

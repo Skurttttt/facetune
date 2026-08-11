@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
@@ -6,106 +7,114 @@ import '../../../../theme/app_tokens.dart';
 import '../../../../shared/widgets/app_shell.dart';
 import '../../../../shared/widgets/app_ui.dart';
 import '../../../../shared/widgets/look_card.dart';
+import '../../../authentication/presentation/controllers/auth_controller.dart';
+import '../../../profile/presentation/controllers/profile_controller.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends ConsumerWidget {
   const HomePage({super.key});
 
   @override
-  Widget build(BuildContext context) => AppShell(
-    index: 0,
-    child: SafeArea(
-      child: PageFrame(
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Good morning, Mia',
-                          style: Theme.of(context).textTheme.headlineSmall,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'What beauty mood are you in?',
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(color: AppColors.taupe),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton.filledTonal(
-                    onPressed: () => context.push(AppConstants.settingsRoute),
-                    icon: const Icon(Icons.tune_rounded),
-                  ),
-                ],
-              ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
-            SliverToBoxAdapter(child: _ScanHero()),
-            const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xl)),
-            SliverToBoxAdapter(
-              child: SectionHeader(
-                'Recent looks',
-                action: 'View all',
-                onAction: () => context.go(AppConstants.historyRoute),
-              ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.sm)),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 232,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: const [
-                    LookCard(title: 'Soft Glam', date: 'Today'),
-                    SizedBox(width: 12),
-                    LookCard(title: 'Clean Girl', date: 'Mon'),
-                  ],
-                ),
-              ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xl)),
-            const SliverToBoxAdapter(child: SectionHeader('Picked for you')),
-            const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.sm)),
-            SliverToBoxAdapter(
-              child: AppCard(
-                color: AppColors.petal,
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authUser = ref.watch(authControllerProvider).user;
+    final profile = ref.watch(profileControllerProvider).profile;
+    final name =
+        profile?.displayName ?? authUser?.friendlyName ?? 'Beauty lover';
+    return AppShell(
+      index: 0,
+      child: SafeArea(
+        child: PageFrame(
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.wb_sunny_outlined,
-                      color: AppColors.gold,
-                      size: 32,
-                    ),
-                    const SizedBox(width: AppSpacing.md),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Warm tones will glow on you',
-                            style: Theme.of(context).textTheme.titleMedium,
+                            'Welcome back, $name',
+                            style: Theme.of(context).textTheme.headlineSmall,
                           ),
                           const SizedBox(height: 4),
-                          const Text(
-                            'Try peach blush with a soft cocoa liner.',
+                          Text(
+                            'What beauty mood are you in?',
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: AppColors.taupe),
                           ),
                         ],
                       ),
                     ),
+                    IconButton.filledTonal(
+                      onPressed: () => context.push(AppConstants.settingsRoute),
+                      icon: const Icon(Icons.tune_rounded),
+                    ),
                   ],
                 ),
               ),
-            ),
-          ],
+              const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
+              SliverToBoxAdapter(child: _ScanHero()),
+              const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xl)),
+              SliverToBoxAdapter(
+                child: SectionHeader(
+                  'Recent looks',
+                  action: 'View all',
+                  onAction: () => context.go(AppConstants.historyRoute),
+                ),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.sm)),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 232,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: const [
+                      LookCard(title: 'Soft Glam', date: 'Today'),
+                      SizedBox(width: 12),
+                      LookCard(title: 'Clean Girl', date: 'Mon'),
+                    ],
+                  ),
+                ),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xl)),
+              const SliverToBoxAdapter(child: SectionHeader('Picked for you')),
+              const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.sm)),
+              SliverToBoxAdapter(
+                child: AppCard(
+                  color: AppColors.petal,
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.wb_sunny_outlined,
+                        color: AppColors.gold,
+                        size: 32,
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Warm tones will glow on you',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Try peach blush with a soft cocoa liner.',
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _ScanHero extends StatelessWidget {

@@ -3,137 +3,334 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
-import '../../../../features/authentication/presentation/controllers/auth_controller.dart';
-import '../../../../features/authentication/presentation/controllers/auth_state.dart';
-import '../../../../features/authentication/presentation/widgets/auth_feedback_listener.dart';
 import '../../../../shared/widgets/app_shell.dart';
 import '../../../../shared/widgets/app_ui.dart';
 import '../../../../theme/app_tokens.dart';
+import '../../../authentication/domain/services/auth_validators.dart';
+import '../../../authentication/presentation/controllers/auth_controller.dart';
+import '../controllers/profile_controller.dart';
+import '../controllers/profile_state.dart';
 
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    listenForAuthFeedback(ref, context);
     final authState = ref.watch(authControllerProvider);
+    final state = ref.watch(profileControllerProvider);
+    ref.listen<ProfileState>(profileControllerProvider, (previous, next) {
+      if (next.feedback == null || next.feedback == previous?.feedback) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(next.feedback!)));
+      ref.read(profileControllerProvider.notifier).clearFeedback();
+    });
     final user = authState.user;
-    final isGuest = user?.isAnonymous ?? false;
+    final isGuest = user?.isAnonymous == true;
 
     return AppShell(
       index: 3,
       child: SafeArea(
         child: PageFrame(
-          child: ListView(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Profile',
-                    style: Theme.of(context).textTheme.headlineMedium,
-                  ),
-                  IconButton(
-                    onPressed: () => context.push(AppConstants.settingsRoute),
-                    icon: const Icon(Icons.settings_outlined),
-                  ),
-                ],
+          child: switch (state.status) {
+            ProfileStatus.loading => const Center(
+              child: LoadingState(label: 'Loading your profile…'),
+            ),
+            ProfileStatus.failure => Center(
+              child: StatusState(
+                title: 'Profile unavailable',
+                message: state.message ?? 'Please try again.',
+                icon: Icons.person_off_outlined,
+                actionLabel: 'Try again',
+                onAction: () =>
+                    ref.read(profileControllerProvider.notifier).load(),
               ),
-              const SizedBox(height: AppSpacing.lg),
-              AppCard(
-                child: Column(
+            ),
+            ProfileStatus.ready => ListView(
+              children: [
+                Row(
                   children: [
-                    const CircleAvatar(
-                      radius: 42,
-                      backgroundColor: AppColors.blush,
-                      foregroundColor: AppColors.rose,
-                      child: Icon(Icons.person_rounded, size: 44),
+                    Expanded(
+                      child: Text(
+                        'Profile',
+                        style: Theme.of(context).textTheme.headlineMedium,
+                      ),
                     ),
-                    const SizedBox(height: AppSpacing.md),
-                    Text(
-                      user?.friendlyName ?? 'Beauty lover',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    Text(
-                      isGuest
-                          ? 'Guest beauty profile'
-                          : user?.email ?? 'FaceTune account',
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    const Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _Stat('12', 'Looks'),
-                        _Stat('8', 'Saved'),
-                        _Stat('4', 'Favorites'),
-                      ],
+                    IconButton.filledTonal(
+                      tooltip: 'Open settings',
+                      onPressed: () => context.push(AppConstants.settingsRoute),
+                      icon: const Icon(Icons.settings_outlined),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              const _ProfileTile(Icons.favorite_border_rounded, 'Saved looks'),
-              const _ProfileTile(Icons.history_rounded, 'Scan history'),
-              _ProfileTile(
-                Icons.settings_outlined,
-                'Settings',
-                onTap: () => context.push(AppConstants.settingsRoute),
-              ),
-              const _ProfileTile(Icons.shield_outlined, 'Privacy & data'),
-              const _ProfileTile(Icons.info_outline_rounded, 'About FaceTune'),
-              if (isGuest) ...[
                 const SizedBox(height: AppSpacing.lg),
-                const AppCard(
-                  color: AppColors.petal,
-                  child: Text(
-                    'This guest account is temporary. Signing out removes access to its saved data unless it is upgraded in a future account-linking flow.',
+                AppCard(
+                  child: Column(
+                    children: [
+                      _ProfileAvatar(
+                        imageUrl: state.profile?.avatarUrl,
+                        initials: _initials(
+                          state.profile?.displayName ?? user?.friendlyName,
+                        ),
+                        isLoading:
+                            state.activeOperation == ProfileOperation.avatar,
+                        onPressed: state.isBusy
+                            ? null
+                            : () => ref
+                                  .read(profileControllerProvider.notifier)
+                                  .chooseAvatar(),
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      Text(
+                        state.profile?.displayName ??
+                            user?.friendlyName ??
+                            'Beauty lover',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        isGuest
+                            ? 'No email linked'
+                            : user?.email ?? 'Email unavailable',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppColors.taupe,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Chip(
+                        avatar: Icon(
+                          isGuest
+                              ? Icons.hourglass_empty_rounded
+                              : Icons.verified_user_outlined,
+                          size: 18,
+                        ),
+                        label: Text(
+                          isGuest ? 'Guest account' : 'Registered account',
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      TextButton.icon(
+                        onPressed: state.isBusy
+                            ? null
+                            : () => _editDisplayName(
+                                context,
+                                ref,
+                                state.profile?.displayName ?? '',
+                              ),
+                        icon: const Icon(Icons.edit_outlined),
+                        label: Text(
+                          state.activeOperation == ProfileOperation.displayName
+                              ? 'Saving…'
+                              : 'Edit display name',
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+                if (isGuest) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  const AppCard(
+                    color: AppColors.petal,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Your guest account is temporary',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        SizedBox(height: AppSpacing.xs),
+                        Text(
+                          'Your private looks remain attached to this anonymous account. Signing out or clearing app data can permanently remove your access. Safe account transfer is not available yet, so do not sign out if you want to keep this history.',
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.lg),
+                const SectionHeader('Your library'),
+                const SizedBox(height: AppSpacing.xs),
+                AppCard(
+                  padding: EdgeInsets.zero,
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(
+                          Icons.favorite_border_rounded,
+                          color: AppColors.rose,
+                        ),
+                        title: const Text('Saved looks'),
+                        subtitle: const Text('Your intentional collection'),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => context.go(AppConstants.savedRoute),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(
+                          Icons.history_rounded,
+                          color: AppColors.rose,
+                        ),
+                        title: const Text('FaceTune history'),
+                        subtitle: const Text('Past analyses and previews'),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => context.go(AppConstants.historyRoute),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                  leading: const Icon(
+                    Icons.settings_outlined,
+                    color: AppColors.rose,
+                  ),
+                  title: const Text('Settings and privacy'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => context.push(AppConstants.settingsRoute),
+                ),
+                const SizedBox(height: AppSpacing.xl),
               ],
-              const SizedBox(height: AppSpacing.lg),
-              SecondaryButton(
-                label: authState.activeOperation == AuthOperation.signOut
-                    ? 'Signing out…'
-                    : 'Sign out',
-                icon: Icons.logout_rounded,
-                onPressed: authState.isLoading
-                    ? null
-                    : () => ref.read(authControllerProvider.notifier).signOut(),
-              ),
-            ],
-          ),
+            ),
+          },
         ),
       ),
     );
   }
+
+  static Future<void> _editDisplayName(
+    BuildContext context,
+    WidgetRef ref,
+    String currentName,
+  ) async {
+    final formKey = GlobalKey<FormState>();
+    final controller = TextEditingController(text: currentName);
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit display name'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: controller,
+            autofocus: true,
+            textCapitalization: TextCapitalization.words,
+            textInputAction: TextInputAction.done,
+            validator: AuthValidators.displayName,
+            onFieldSubmitted: (_) {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(context, controller.text);
+              }
+            },
+            decoration: const InputDecoration(labelText: 'Display name'),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(context, controller.text);
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value != null) {
+      await ref
+          .read(profileControllerProvider.notifier)
+          .updateDisplayName(value);
+    }
+  }
+
+  static String _initials(String? value) {
+    final words = value
+        ?.trim()
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .toList();
+    if (words == null || words.isEmpty) return 'FT';
+    return words.take(2).map((word) => word[0].toUpperCase()).join();
+  }
 }
 
-class _Stat extends StatelessWidget {
-  const _Stat(this.value, this.label);
-  final String value;
-  final String label;
+class _ProfileAvatar extends StatelessWidget {
+  const _ProfileAvatar({
+    required this.initials,
+    required this.isLoading,
+    required this.onPressed,
+    this.imageUrl,
+  });
+
+  final String? imageUrl;
+  final String initials;
+  final bool isLoading;
+  final VoidCallback? onPressed;
 
   @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      Text(value, style: Theme.of(context).textTheme.titleLarge),
-      Text(label, style: Theme.of(context).textTheme.bodySmall),
-    ],
+  Widget build(BuildContext context) => Semantics(
+    label: 'Profile photo. Double tap to choose a new photo.',
+    button: true,
+    child: Stack(
+      clipBehavior: Clip.none,
+      children: [
+        ClipOval(
+          child: SizedBox.square(
+            dimension: 96,
+            child: imageUrl == null
+                ? _fallback(context)
+                : Image.network(
+                    imageUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) =>
+                        _fallback(context),
+                  ),
+          ),
+        ),
+        if (isLoading)
+          const Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
+              ),
+            ),
+          ),
+        Positioned(
+          right: -4,
+          bottom: -4,
+          child: IconButton.filled(
+            tooltip: 'Choose profile photo',
+            onPressed: onPressed,
+            icon: const Icon(Icons.photo_library_outlined, size: 20),
+          ),
+        ),
+      ],
+    ),
   );
-}
 
-class _ProfileTile extends StatelessWidget {
-  const _ProfileTile(this.icon, this.label, {this.onTap});
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) => ListTile(
-    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-    leading: Icon(icon, color: AppColors.rose),
-    title: Text(label),
-    trailing: const Icon(Icons.chevron_right_rounded),
-    onTap: onTap,
+  Widget _fallback(BuildContext context) => ColoredBox(
+    color: AppColors.blush,
+    child: Center(
+      child: Text(
+        initials,
+        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+          color: AppColors.roseDark,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    ),
   );
 }
