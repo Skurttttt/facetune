@@ -16,6 +16,7 @@ import '../../features/history/presentation/pages/history_page.dart';
 import '../../features/home/presentation/pages/home_page.dart';
 import '../../features/makeup_styles/presentation/pages/style_selection_page.dart';
 import '../../features/preview/presentation/pages/preview_result_page.dart';
+import '../../features/recommendation/presentation/pages/makeup_recommendation_page.dart';
 import '../../features/profile/presentation/pages/profile_page.dart';
 import '../../features/saved_looks/presentation/pages/saved_looks_page.dart';
 import '../../features/scan/presentation/pages/scan_page.dart';
@@ -103,6 +104,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: AppConstants.stylesRoute,
         name: 'styles',
         builder: (context, state) => const StyleSelectionPage(),
+      ),
+      GoRoute(
+        path: AppConstants.recommendationRoute,
+        name: 'recommendation',
+        builder: (context, state) => const MakeupRecommendationPage(),
       ),
       GoRoute(
         path: AppConstants.analysisRoute,

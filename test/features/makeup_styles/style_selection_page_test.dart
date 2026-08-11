@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('selects and confirms a style without leaving the page', (
+  testWidgets('requires a completed analysis before continuing', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -26,11 +26,11 @@ void main() {
     await tester.tap(find.text('Continue with Natural'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Natural selected'), findsOneWidget);
     expect(
-      find.textContaining('Natural is saved for this scan'),
+      find.text('Return to analysis before generating a recommendation.'),
       findsOneWidget,
     );
+    expect(find.text('Continue with Natural'), findsOneWidget);
     expect(find.byType(StyleSelectionPage), findsOneWidget);
   });
 }
