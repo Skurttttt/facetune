@@ -102,6 +102,14 @@ class SupabaseMakeupPreviewRepository implements MakeupPreviewRepository {
           technicalCode: technicalCode,
         );
       }
+      if (error.status == 429) {
+        throw PreviewFailure(
+          PreviewFailureType.server,
+          'You have reached the preview limit for now. Please try again later.',
+          retryable: true,
+          technicalCode: technicalCode,
+        );
+      }
       if (technicalCode.startsWith('GEMINI_') ||
           technicalCode.contains('IMAGE_') ||
           technicalCode == 'UNCHANGED_GENERATED_IMAGE') {

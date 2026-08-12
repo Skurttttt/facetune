@@ -216,6 +216,37 @@ void main() {
     );
   });
 
+  test('presents an exhausted AI quota as a recoverable limit', () async {
+    final repository = SupabaseFaceAnalysisRepository(
+      _FakeRemoteDataSource(
+        failure: const AnalysisRemoteFailure(
+          status: 429,
+          code: 'rate_limited',
+          message: 'hourly_quota_exceeded user=00000000-0000-4000-8000-0000',
+          retryable: true,
+        ),
+      ),
+    );
+
+    await expectLater(
+      () => repository.analyze(
+        selfie: selfie,
+        localValidation: localValidation,
+        onProgress: (_) {},
+      ),
+      throwsA(
+        isA<AnalysisFailure>()
+            .having((failure) => failure.retryable, 'retryable', isTrue)
+            .having((failure) => failure.message, 'message', contains('limit'))
+            .having(
+              (failure) => failure.message,
+              'hides internal quota state',
+              isNot(contains('hourly_quota_exceeded')),
+            ),
+      ),
+    );
+  });
+
   test('recovers from a transient storage upload failure', () async {
     final remote = _FakeRemoteDataSource(
       uploadFailure: const StorageException(

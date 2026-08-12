@@ -3,7 +3,10 @@ export function historyPrefix(userId: string, analysisId: string): string {
 }
 
 export function isOwnedHistoryPath(path: string, prefix: string): boolean {
-  return path.startsWith(`${prefix}/`) && !path.includes("//");
+  if (!path.startsWith(`${prefix}/`) || path.includes("//")) return false;
+  // A prefix match alone still accepts traversal segments that resolve outside
+  // the session folder, so reject them explicitly.
+  return !path.split("/").some((segment) => segment === "." || segment === "..");
 }
 
 export function assertOwnedHistoryPaths(

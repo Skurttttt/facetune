@@ -139,6 +139,13 @@ class SupabaseFaceAnalysisRepository implements FaceAnalysisRepository {
           'The uploaded selfie is no longer available. Choose it again.',
         );
       }
+      if (error.status == 429) {
+        return const AnalysisFailure(
+          AnalysisFailureType.server,
+          'You have reached the analysis limit for now. Please try again later.',
+          retryable: true,
+        );
+      }
       if (error.status == 408 || error.status == 504) {
         return const AnalysisFailure(
           AnalysisFailureType.timeout,

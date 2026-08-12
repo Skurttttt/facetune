@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
+import { consumeAiQuota, quotaMessage } from "../_shared/ai_quota.ts";
 import { requestGeminiRecommendation } from "./gemini_client.ts";
 import { MAKEUP_RECOMMENDATION_PROMPT_VERSION } from "./prompt.ts";
 import { FunctionFailure } from "./types.ts";
@@ -131,6 +132,13 @@ Deno.serve(async (request) => {
       hairColor: analysis.hair_color,
       eyeColor: analysis.eye_color,
     };
+    // Consumed only after validation and the cached-plan short circuit, so a
+    // rejected or already-completed request never spends the caller's quota.
+    const quota = await consumeAiQuota(userClient, "makeup_recommendation");
+    if (!quota.allowed) {
+      throw new FunctionFailure(429, "rate_limited", quotaMessage(quota.reason), true);
+    }
+
     const model = Deno.env.get("GEMINI_MODEL")?.trim() || "gemini-3.6-flash";
     const geminiText = await requestGeminiRecommendation(
       requiredEnvironment("GEMINI_API_KEY"),

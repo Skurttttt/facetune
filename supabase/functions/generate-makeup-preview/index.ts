@@ -1,6 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
+import { consumeAiQuota, quotaMessage } from "../_shared/ai_quota.ts";
+import { isOwnedOriginalPath } from "../_shared/storage_ownership.ts";
 import { extensionFor } from "./image_validation.ts";
 import { requestGeminiPreview } from "./gemini_client.ts";
 import { MAKEUP_PREVIEW_PROMPT_VERSION } from "./prompt.ts";
@@ -87,7 +89,7 @@ Deno.serve(async (request) => {
     );
     const { data: authData, error: authError } = await userClient.auth.getUser();
     if (authError || !authData.user) {
-      throw new FunctionFailure(401, "AUTH_FAILED", "[AUTH_FAILED] Your session has expired. Sign in again.");
+      throw new FunctionFailure(401, "AUTH_FAILED", "Your session has expired. Sign in again.");
     }
     console.log("[Phase10] auth_verified");
     let body: unknown;
@@ -103,7 +105,7 @@ Deno.serve(async (request) => {
       .eq("id", requestedRecommendationId)
       .maybeSingle();
     if (recommendationError || !recommendation) {
-      throw new FunctionFailure(404, "SOURCE_IMAGE_NOT_FOUND", "[SOURCE_IMAGE_NOT_FOUND] The recommendation could not be linked to a source image.");
+      throw new FunctionFailure(404, "SOURCE_IMAGE_NOT_FOUND", "The recommendation could not be linked to a source image.");
     }
     console.log("[Phase10] recommendation_loaded");
     const { data: analysis, error: analysisError } = await userClient
@@ -112,12 +114,18 @@ Deno.serve(async (request) => {
       .eq("id", recommendation.analysis_id)
       .maybeSingle();
     if (analysisError || !analysis) {
-      throw new FunctionFailure(404, "SOURCE_IMAGE_NOT_FOUND", "[SOURCE_IMAGE_NOT_FOUND] The original analysis could not be found.");
+      throw new FunctionFailure(404, "SOURCE_IMAGE_NOT_FOUND", "The original analysis could not be found.");
     }
     console.log("[Phase10] analysis_loaded");
     const originalImagePath = analysis.original_image_path as string;
-    const expectedOriginalPrefix = `${authData.user.id}/analyses/${analysis.id}/original/`;
-    if (!originalImagePath.startsWith(expectedOriginalPrefix)) {
+    if (
+      !isOwnedOriginalPath(
+        originalImagePath,
+        authData.user.id,
+        analysis.id as string,
+        ["jpg", "jpeg", "png", "webp"],
+      )
+    ) {
       throw new FunctionFailure(403, "invalid_original_path", "The original image path is invalid.");
     }
     const { data: originalBlob, error: downloadError } = await userClient.storage
@@ -127,7 +135,7 @@ Deno.serve(async (request) => {
       console.error(
         `[Phase10] source_image_download_failed code=${downloadError?.statusCode ?? "unknown"}`,
       );
-      throw new FunctionFailure(404, "SOURCE_IMAGE_DOWNLOAD_FAILED", "[SOURCE_IMAGE_DOWNLOAD_FAILED] The original selfie could not be loaded.");
+      throw new FunctionFailure(404, "SOURCE_IMAGE_DOWNLOAD_FAILED", "The original selfie could not be loaded.");
     }
     if (originalBlob.size <= 0 || originalBlob.size > maximumOriginalBytes) {
       throw new FunctionFailure(422, "invalid_original_image", "The original selfie cannot be used for generation.");
@@ -147,6 +155,14 @@ Deno.serve(async (request) => {
       .limit(1)
       .maybeSingle();
     const generationNumber = ((latest?.generation_number as number | undefined) ?? 0) + 1;
+    // Consumed only after ownership and source-image validation, so a rejected
+    // request never spends the caller's quota. Image generation is the most
+    // expensive AI call in the app and carries the tightest limit.
+    const quota = await consumeAiQuota(userClient, "makeup_preview");
+    if (!quota.allowed) {
+      throw new FunctionFailure(429, "rate_limited", quotaMessage(quota.reason), true);
+    }
+
     const originalBytes = new Uint8Array(await originalBlob.arrayBuffer());
     const model = Deno.env.get("GEMINI_IMAGE_MODEL")?.trim() || "gemini-3.1-flash-image";
     const generated = await requestGeminiPreview(
@@ -175,7 +191,7 @@ Deno.serve(async (request) => {
       });
     if (uploadError) {
       console.error(`[Phase10] storage_upload_success=false code=${uploadError.statusCode ?? "unknown"}`);
-      throw new FunctionFailure(500, "STORAGE_UPLOAD_FAILED", "[STORAGE_UPLOAD_FAILED] The generated preview could not be stored.", true);
+      throw new FunctionFailure(500, "STORAGE_UPLOAD_FAILED", "The generated preview could not be stored.", true);
     }
     console.log("[Phase10] storage_upload_success=true");
     uploadedPath = candidatePath;
@@ -195,7 +211,7 @@ Deno.serve(async (request) => {
     if (insertError || !inserted) {
       console.error(`[generate-makeup-preview] Persistence failed code=${insertError?.code ?? "unknown"}`);
       console.error("[Phase10] database_insert_success=false");
-      throw new FunctionFailure(500, "DATABASE_INSERT_FAILED", "[DATABASE_INSERT_FAILED] The generated preview could not be linked.", true);
+      throw new FunctionFailure(500, "DATABASE_INSERT_FAILED", "The generated preview could not be linked.", true);
     }
     console.log("[Phase10] database_insert_success=true");
     uploadedPath = null;

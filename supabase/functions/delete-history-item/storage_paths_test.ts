@@ -28,6 +28,24 @@ Deno.test("history paths stay inside the exact owner and analysis prefix", () =>
   );
 });
 
+Deno.test("history paths reject traversal segments", () => {
+  const prefix = historyPrefix("user-1", "analysis-1");
+  assertEquals(
+    isOwnedHistoryPath(
+      "user-1/analyses/analysis-1/../analysis-2/original/photo.jpg",
+      prefix,
+    ),
+    false,
+  );
+  assertEquals(
+    isOwnedHistoryPath(
+      "user-1/analyses/analysis-1/./original/photo.jpg",
+      prefix,
+    ),
+    false,
+  );
+});
+
 Deno.test("history deletion rejects a path outside the session", () => {
   assertThrows(
     () =>

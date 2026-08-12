@@ -93,6 +93,13 @@ class SupabaseMakeupRecommendationRepository
           retryable: error.retryable,
         );
       }
+      if (error.status == 429) {
+        throw const RecommendationFailure(
+          RecommendationFailureType.server,
+          'You have reached the makeup plan limit for now. Please try again later.',
+          retryable: true,
+        );
+      }
       if (code.startsWith('gemini_') || code.contains('ai_')) {
         throw RecommendationFailure(
           RecommendationFailureType.gemini,

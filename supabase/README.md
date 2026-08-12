@@ -87,6 +87,22 @@ The bucket permits JPEG, PNG, and WebP files up to 10 MiB. Later upload phases
 must still validate actual content, extension, dimensions, and ownership before
 uploading.
 
+## AI usage quotas
+
+`20260812000100_ai_usage_quota.sql` adds `public.ai_usage_events` and
+`public.consume_ai_quota(text)`. Every Gemini-backed Edge Function consumes
+quota after validation and before calling Gemini, so an authenticated account
+cannot spend unbounded upstream AI capacity.
+
+Limits are defined inside the SQL function rather than passed as arguments, so a
+caller invoking the RPC directly cannot raise its own ceiling. `authenticated`
+has `select` only and therefore cannot forge or reset usage. Exceeding a limit
+returns HTTP 429 with code `rate_limited`.
+
+`public.purge_ai_usage_events()` trims old rows but is not self-scheduling; add
+a pg_cron job for it. See `docs/SECURITY_HARDENING.md` for the full Phase 16
+audit and the remaining dashboard-side configuration.
+
 ## Security boundary
 
 - The Flutter client receives only the project URL and publishable key.

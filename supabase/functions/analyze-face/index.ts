@@ -1,5 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
+import { consumeAiQuota, quotaMessage } from "../_shared/ai_quota.ts";
+import { isOwnedOriginalPath } from "../_shared/storage_ownership.ts";
 import { requestGeminiAnalysis } from "./gemini_client.ts";
 import { FACE_ANALYSIS_PROMPT_VERSION } from "./prompt.ts";
 import { FunctionFailure } from "./types.ts";
@@ -145,10 +147,8 @@ Deno.serve(async (request) => {
     }
     const payload = requestPayload(decodedBody);
     storagePath = payload.storagePath;
-    const expectedPrefix =
-      `${authData.user.id}/analyses/${payload.analysisId}/original/`;
     if (
-      !storagePath.startsWith(expectedPrefix) || !storagePath.endsWith(".jpg")
+      !isOwnedOriginalPath(storagePath, authData.user.id, payload.analysisId)
     ) {
       throw new FunctionFailure(
         403,
@@ -187,6 +187,18 @@ Deno.serve(async (request) => {
         422,
         "invalid_image_type",
         "The prepared selfie must be a JPEG image.",
+      );
+    }
+
+    // Consumed only after validation and the cached-result short circuit, so a
+    // rejected or already-completed request never spends the caller's quota.
+    const quota = await consumeAiQuota(userClient, "face_analysis");
+    if (!quota.allowed) {
+      throw new FunctionFailure(
+        429,
+        "rate_limited",
+        quotaMessage(quota.reason),
+        true,
       );
     }
 
