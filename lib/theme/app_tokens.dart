@@ -14,6 +14,16 @@ abstract final class AppColors {
   static const error = Color(0xFFB64D56);
   static const darkSurface = Color(0xFF1A1517);
   static const darkCard = Color(0xFF261F22);
+
+  /// Foreground that stays readable on a fixed [background] in either theme.
+  ///
+  /// Accent surfaces such as [petal] and [blush] keep their own brightness in
+  /// dark mode, so text drawn on them cannot inherit the theme's `onSurface`
+  /// colour — that renders near-white text on a near-white card.
+  static Color onAccent(Color background) =>
+      ThemeData.estimateBrightnessForColor(background) == Brightness.dark
+      ? Colors.white
+      : cocoa;
 }
 
 abstract final class AppSpacing {

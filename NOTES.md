@@ -14,18 +14,4 @@ Preserve all valid existing work.
 gemini-3.6-flash
 gemini-3-pro-image
 
-Option 1 — Gemini analyzes the face shape ⭐⭐⭐⭐⭐ (Recommended)
-Flutter
-      ↓
-User uploads selfie
-      ↓
-Gemini Vision
-      ↓
-Returns:
-• Face Shape
-• Skin Tone
-• Undertone
-• Eye Shape
-• Lip Shape
-• Hair Color
-• Eye Color
+erun the important parts of 18, 20, 21, and 22 against the expanded app before you proceed to 23–26.

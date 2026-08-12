@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches AppColors.darkSurface so dark-mode launches do not flash white. -->
+    <color name="launch_background">#FF1A1517</color>
+</resources>

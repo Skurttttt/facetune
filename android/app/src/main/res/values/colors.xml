@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches AppColors.ivory so the launch window blends into the light theme. -->
+    <color name="launch_background">#FFFFFBF8</color>
+</resources>

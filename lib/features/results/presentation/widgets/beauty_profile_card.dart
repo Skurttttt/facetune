@@ -72,15 +72,24 @@ class BeautyProfileCard extends StatelessWidget {
                       children: [
                         Text(
                           attribute.label,
-                          style: Theme.of(context).textTheme.labelMedium,
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color: AppColors.onAccent(AppColors.petal),
+                              ),
                         ),
                         Text(
                           attribute.value,
-                          style: Theme.of(context).textTheme.titleSmall,
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
+                                color: AppColors.onAccent(AppColors.petal),
+                              ),
                         ),
                         Text(
                           '${(attribute.confidence * 100).round()}% confidence',
-                          style: Theme.of(context).textTheme.bodySmall,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: AppColors.onAccent(AppColors.petal),
+                              ),
                         ),
                       ],
                     ),

@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $configPath = Join-Path $projectRoot 'config\development.json'
 $apkPath = Join-Path $projectRoot 'build\app\outputs\flutter-apk\app-debug.apk'
-$applicationId = 'com.example.facetune'
+$applicationId = 'io.facetune.app'
 
 if (-not (Test-Path -LiteralPath $configPath)) {
   throw 'Missing config/development.json. Copy config/example.json and add the public client values.'

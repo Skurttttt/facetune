@@ -1,0 +1,18 @@
+# FaceTune release signing template.
+#
+# Copy to android/key.properties and fill in real values. That file is
+# git-ignored and MUST NOT be committed, and neither must the .jks keystore.
+#
+# Create the keystore first (keep the generated file and its passwords backed up
+# somewhere safe — losing them means you can never update the app on Play):
+#
+#   keytool -genkey -v -keystore facetune-upload.jks -storetype JKS \
+#     -keyalg RSA -keysize 2048 -validity 10000 -alias facetune
+#
+# storeFile is resolved relative to the android/app directory, so an absolute
+# path is usually clearest.
+
+storeFile=C:/secure/facetune-upload.jks
+storePassword=CHANGE_ME
+keyAlias=facetune
+keyPassword=CHANGE_ME
