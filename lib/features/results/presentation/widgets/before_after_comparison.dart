@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../shared/widgets/feedback/status_state.dart';
+import '../../../../shared/widgets/media/private_image.dart';
 import '../../../../theme/app_tokens.dart';
 
 class BeforeAfterComparison extends StatefulWidget {
@@ -110,18 +111,10 @@ class _ResultImage extends StatelessWidget {
   final String semanticsLabel;
 
   @override
-  Widget build(BuildContext context) => Image.network(
-    url,
-    fit: BoxFit.cover,
+  Widget build(BuildContext context) => PrivateImage(
+    url: url,
     semanticLabel: semanticsLabel,
-    frameBuilder: (context, child, frame, synchronouslyLoaded) {
-      if (synchronouslyLoaded || frame != null) return child;
-      return const ColoredBox(
-        color: AppColors.sand,
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-      );
-    },
-    errorBuilder: (context, error, stackTrace) => const ColoredBox(
+    errorChild: const ColoredBox(
       color: AppColors.sand,
       child: Center(
         child: Padding(

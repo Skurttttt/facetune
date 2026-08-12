@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../shared/widgets/app_ui.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../domain/entities/history_entry.dart';
 
@@ -36,24 +37,7 @@ class HistoryCard extends StatelessWidget {
               child: SizedBox(
                 width: 104,
                 height: 132,
-                child: Image.network(
-                  entry.thumbnailUrl,
-                  fit: BoxFit.cover,
-                  frameBuilder: (context, child, frame, synchronous) =>
-                      synchronous || frame != null
-                      ? child
-                      : const ColoredBox(
-                          color: AppColors.sand,
-                          child: Center(
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        ),
-                  errorBuilder: (context, error, stackTrace) =>
-                      const ColoredBox(
-                        color: AppColors.sand,
-                        child: Center(child: Icon(Icons.broken_image_outlined)),
-                      ),
-                ),
+                child: PrivateImage(url: entry.thumbnailUrl),
               ),
             ),
             const SizedBox(width: AppSpacing.md),

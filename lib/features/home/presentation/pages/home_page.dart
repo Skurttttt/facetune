@@ -22,8 +22,15 @@ class HomePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final authUser = ref.watch(authControllerProvider).user;
-    final profile = ref.watch(profileControllerProvider).profile;
+    // Selectors keep this dashboard off the rebuild path for unrelated auth and
+    // profile changes (feedback messages, in-flight operation flags), which
+    // otherwise rebuild the whole scroll view on every snackbar.
+    final authUser = ref.watch(
+      authControllerProvider.select((state) => state.user),
+    );
+    final profile = ref.watch(
+      profileControllerProvider.select((state) => state.profile),
+    );
     final historyState = ref.watch(historyControllerProvider);
     final name =
         profile?.displayName ?? authUser?.friendlyName ?? 'Beauty lover';
@@ -230,23 +237,9 @@ class _RecentLookCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Image.network(
-                entry.thumbnailUrl,
+              child: SizedBox(
                 width: double.infinity,
-                fit: BoxFit.cover,
-                frameBuilder: (context, child, frame, synchronous) =>
-                    synchronous || frame != null
-                    ? child
-                    : const ColoredBox(
-                        color: AppColors.sand,
-                        child: Center(
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      ),
-                errorBuilder: (context, error, stackTrace) => const ColoredBox(
-                  color: AppColors.sand,
-                  child: Center(child: Icon(Icons.broken_image_outlined)),
-                ),
+                child: PrivateImage(url: entry.thumbnailUrl),
               ),
             ),
             Padding(

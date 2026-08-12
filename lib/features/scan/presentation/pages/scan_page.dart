@@ -272,6 +272,8 @@ class _SelfieFrame extends StatelessWidget {
               Image.file(
                 File(selfie.originalPath),
                 fit: BoxFit.cover,
+                // The on-device original can be 2048 px; the preview box is 340.
+                cacheWidth: decodeWidthForSize(context, 340),
                 errorBuilder: (context, error, stackTrace) => const Center(
                   child: Text(
                     'Preview unavailable. Please choose another image.',

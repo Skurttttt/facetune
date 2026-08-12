@@ -6,5 +6,6 @@ export 'feedback/skeleton_card.dart';
 export 'feedback/status_state.dart';
 export 'layout/page_frame.dart';
 export 'media/beauty_image.dart';
+export 'media/private_image.dart';
 export 'overlays/app_overlays.dart';
 export 'surfaces/app_card.dart';

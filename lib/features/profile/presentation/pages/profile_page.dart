@@ -306,6 +306,9 @@ class _ProfileAvatar extends StatelessWidget {
                 : Image.network(
                     imageUrl!,
                     fit: BoxFit.cover,
+                    // A 2 MiB avatar drawn into a 96 px circle otherwise decodes
+                    // at full source resolution.
+                    cacheWidth: decodeWidthForSize(context, 96),
                     errorBuilder: (context, error, stackTrace) =>
                         _fallback(context),
                   ),

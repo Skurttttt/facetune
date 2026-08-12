@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../shared/widgets/app_ui.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../domain/entities/saved_look.dart';
 
@@ -31,24 +32,7 @@ class SavedLookCard extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Image.network(
-                  look.preview.generatedImageUrl,
-                  fit: BoxFit.cover,
-                  frameBuilder: (context, child, frame, synchronouslyLoaded) =>
-                      synchronouslyLoaded || frame != null
-                      ? child
-                      : const ColoredBox(
-                          color: AppColors.sand,
-                          child: Center(
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        ),
-                  errorBuilder: (context, error, stackTrace) =>
-                      const ColoredBox(
-                        color: AppColors.sand,
-                        child: Center(child: Icon(Icons.broken_image_outlined)),
-                      ),
-                ),
+                PrivateImage(url: look.preview.generatedImageUrl),
                 Positioned(
                   right: AppSpacing.xs,
                   top: AppSpacing.xs,
