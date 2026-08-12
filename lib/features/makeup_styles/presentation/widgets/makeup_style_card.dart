@@ -65,7 +65,9 @@ class MakeupStyleCard extends StatelessWidget {
                               ? Icons.check_circle_rounded
                               : Icons.circle_outlined,
                           key: ValueKey(isSelected),
-                          color: isSelected ? AppColors.rose : AppColors.taupe,
+                          color: isSelected
+                              ? AppColors.rose
+                              : AppColors.muted(context),
                         ),
                       ),
                     ],
@@ -80,9 +82,9 @@ class MakeupStyleCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       style.description,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall?.copyWith(color: AppColors.taupe),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.muted(context),
+                      ),
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),

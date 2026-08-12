@@ -59,7 +59,7 @@ class HomePage extends ConsumerWidget {
                             Text(
                               'What beauty mood are you in?',
                               style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(color: AppColors.taupe),
+                                  ?.copyWith(color: AppColors.muted(context)),
                             ),
                           ],
                         ),
@@ -129,7 +129,7 @@ class HomePage extends ConsumerWidget {
                         const Icon(
                           Icons.auto_awesome_outlined,
                           color: AppColors.gold,
-                          size: 32,
+                          size: AppIconSizes.lg,
                         ),
                         const SizedBox(width: AppSpacing.md),
                         Expanded(
@@ -266,7 +266,7 @@ class _RecentLookCard extends StatelessWidget {
                   if (entry.isFavorite)
                     const Icon(
                       Icons.favorite_rounded,
-                      size: 18,
+                      size: AppIconSizes.sm,
                       color: AppColors.rose,
                     ),
                 ],

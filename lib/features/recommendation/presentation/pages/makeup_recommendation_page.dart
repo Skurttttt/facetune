@@ -141,7 +141,7 @@ class _RecommendationContent extends StatelessWidget {
           '${_label(recommendation.styleCode)} · ${recommendation.overallIntensity} intensity',
           style: Theme.of(
             context,
-          ).textTheme.bodyLarge?.copyWith(color: AppColors.taupe),
+          ).textTheme.bodyLarge?.copyWith(color: AppColors.muted(context)),
         ),
         const SizedBox(height: AppSpacing.lg),
         ...recommendation.items.entries.expand(

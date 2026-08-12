@@ -112,7 +112,7 @@ class ProfilePage extends ConsumerWidget {
                             ? 'No email linked'
                             : user?.email ?? 'Email unavailable',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppColors.taupe,
+                          color: AppColors.muted(context),
                         ),
                       ),
                       const SizedBox(height: AppSpacing.sm),
@@ -121,7 +121,7 @@ class ProfilePage extends ConsumerWidget {
                           isGuest
                               ? Icons.hourglass_empty_rounded
                               : Icons.verified_user_outlined,
-                          size: 18,
+                          size: AppIconSizes.sm,
                         ),
                         label: Text(
                           isGuest ? 'Guest account' : 'Registered account',

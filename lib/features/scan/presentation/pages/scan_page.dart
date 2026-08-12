@@ -62,9 +62,9 @@ class ScanPage extends ConsumerWidget {
                 selfie == null
                     ? 'Use a clear, front-facing photo in soft natural light.'
                     : 'Make sure your face is clear before continuing.',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(color: AppColors.taupe),
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: AppColors.muted(context),
+                ),
               ),
               const SizedBox(height: AppSpacing.lg),
               _SelfieFrame(state: state),

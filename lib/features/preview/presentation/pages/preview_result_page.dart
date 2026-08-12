@@ -316,7 +316,7 @@ class _ResultHeader extends StatelessWidget {
         'Drag across the image to compare. AI identity preservation is a goal, so regenerate if the result does not feel like you.',
         style: Theme.of(
           context,
-        ).textTheme.bodyMedium?.copyWith(color: AppColors.taupe),
+        ).textTheme.bodyMedium?.copyWith(color: AppColors.muted(context)),
       ),
     ],
   );

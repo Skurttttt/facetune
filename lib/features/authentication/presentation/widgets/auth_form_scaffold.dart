@@ -38,9 +38,9 @@ class AuthFormScaffold extends StatelessWidget {
               Text(
                 subtitle,
                 textAlign: TextAlign.center,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(color: AppColors.taupe),
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: AppColors.muted(context),
+                ),
               ),
               const SizedBox(height: AppSpacing.xl),
               child,

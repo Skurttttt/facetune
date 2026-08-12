@@ -40,9 +40,9 @@ class StyleSelectionPage extends ConsumerWidget {
               const SizedBox(height: AppSpacing.sm),
               Text(
                 'Your analysis is saved for this scan, so you can go back and compare styles without rerunning it.',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: AppColors.taupe),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AppColors.muted(context),
+                ),
               ),
               const SizedBox(height: AppSpacing.lg),
               Expanded(

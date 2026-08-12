@@ -65,9 +65,9 @@ class HistoryCard extends StatelessWidget {
                       _details(entry),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall?.copyWith(color: AppColors.taupe),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.muted(context),
+                      ),
                     ),
                     const Spacer(),
                     if (isMutating)
@@ -172,7 +172,10 @@ class _StatusBadge extends StatelessWidget {
     return Semantics(
       label: 'Status: $label',
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xs,
+          vertical: AppSpacing.xxs,
+        ),
         decoration: BoxDecoration(
           color: color.withValues(alpha: .12),
           borderRadius: BorderRadius.circular(AppRadii.pill),
@@ -180,7 +183,7 @@ class _StatusBadge extends StatelessWidget {
         child: Text(
           label,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: color,
+            color: AppColors.onTint(context, color),
             fontWeight: FontWeight.w700,
           ),
         ),

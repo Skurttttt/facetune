@@ -9,11 +9,44 @@ abstract final class AppColors {
   static const sand = Color(0xFFF4ECE7);
   static const cocoa = Color(0xFF2E2225);
   static const taupe = Color(0xFF75686B);
+
+  /// Dark-theme counterpart to [taupe].
+  ///
+  /// [taupe] reaches only 3.4:1 against [darkSurface], below the 4.5:1 WCAG AA
+  /// minimum for body text. This lighter tone of the same hue reaches 5.8:1 on
+  /// [darkSurface] and 5.2:1 on [darkCard].
+  static const taupeLight = Color(0xFF9C8E92);
   static const gold = Color(0xFFB58A52);
   static const success = Color(0xFF557A68);
   static const error = Color(0xFFB64D56);
   static const darkSurface = Color(0xFF1A1517);
   static const darkCard = Color(0xFF261F22);
+
+  /// Dark-theme text variants of the accent colours.
+  ///
+  /// The brand accents are tuned for light surfaces and drop below the 4.5:1
+  /// WCAG AA text minimum on [darkCard] ([rose] 3.1:1, [success] 3.4:1). These
+  /// lighter tones of the same hues clear 6:1.
+  static const roseLight = Color(0xFFE08BA3);
+  static const successLight = Color(0xFF8FBBA6);
+
+  /// Readable text colour for an [accent] drawn on its own tinted chip.
+  ///
+  /// The tint keeps the accent hue in both themes; only the label lightens.
+  static Color onTint(BuildContext context, Color accent) {
+    if (Theme.of(context).brightness != Brightness.dark) return accent;
+    if (accent == rose) return roseLight;
+    if (accent == success) return successLight;
+    if (accent == taupe) return taupeLight;
+    return accent;
+  }
+
+  /// Secondary text colour for the active theme.
+  ///
+  /// Use for supporting copy — subtitles, timestamps, helper text — so it stays
+  /// legible in dark mode instead of sinking into the background.
+  static Color muted(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark ? taupeLight : taupe;
 
   /// Foreground that stays readable on a fixed [background] in either theme.
   ///

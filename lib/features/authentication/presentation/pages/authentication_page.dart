@@ -54,9 +54,9 @@ class AuthenticationPage extends ConsumerWidget {
                 Text(
                   'Personalized makeup inspiration, guided by your unique features.',
                   textAlign: TextAlign.center,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyLarge?.copyWith(color: AppColors.taupe),
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: AppColors.muted(context),
+                  ),
                 ),
                 if (authState.status == AuthStatus.configurationMissing) ...[
                   const SizedBox(height: AppSpacing.lg),

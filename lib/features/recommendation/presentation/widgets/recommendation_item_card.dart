@@ -52,7 +52,7 @@ class RecommendationItemCard extends StatelessWidget {
           item.reasoning,
           style: Theme.of(
             context,
-          ).textTheme.bodyMedium?.copyWith(color: AppColors.taupe),
+          ).textTheme.bodyMedium?.copyWith(color: AppColors.muted(context)),
         ),
       ],
     ),
