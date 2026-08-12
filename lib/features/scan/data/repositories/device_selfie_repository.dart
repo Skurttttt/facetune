@@ -59,7 +59,7 @@ class DeviceSelfieRepository implements SelfieRepository {
     final sourceFile = File(selected.path);
     final size = await sourceFile.length();
     final randomAccessFile = await sourceFile.open();
-    late final List<int> header;
+    late final Uint8List header;
     try {
       header = await randomAccessFile.read(16);
     } finally {

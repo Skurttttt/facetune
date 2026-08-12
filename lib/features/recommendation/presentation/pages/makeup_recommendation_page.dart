@@ -53,13 +53,15 @@ class MakeupRecommendationPage extends ConsumerWidget {
                 message: state.message ?? 'Please try again.',
                 icon: Icons.error_outline_rounded,
                 actionLabel:
-                    state.failureType == RecommendationFailureType.authentication
+                    state.failureType ==
+                        RecommendationFailureType.authentication
                     ? 'Sign in again'
                     : state.retryable
                     ? 'Try again'
                     : null,
                 onAction:
-                    state.failureType == RecommendationFailureType.authentication
+                    state.failureType ==
+                        RecommendationFailureType.authentication
                     ? () => ref
                           .read(authControllerProvider.notifier)
                           .recoverExpiredSession()
@@ -69,11 +71,13 @@ class MakeupRecommendationPage extends ConsumerWidget {
                           .retry()
                     : null,
                 secondaryActionLabel:
-                    state.failureType == RecommendationFailureType.authentication
+                    state.failureType ==
+                        RecommendationFailureType.authentication
                     ? null
                     : 'Choose another style',
                 onSecondaryAction:
-                    state.failureType == RecommendationFailureType.authentication
+                    state.failureType ==
+                        RecommendationFailureType.authentication
                     ? null
                     : () => context.go(AppConstants.stylesRoute),
               ),

@@ -158,8 +158,7 @@ GeneratedPreview _preview(MakeupRecommendation recommendation, int number) =>
       analysisId: recommendation.analysisId,
       recommendationId: recommendation.id,
       originalImagePath: 'user/analyses/id/original/image.jpg',
-      generatedImagePath:
-          'user/analyses/id/generated/preview_$number.png',
+      generatedImagePath: 'user/analyses/id/generated/preview_$number.png',
       originalImageUrl: 'https://signed.example/original',
       generatedImageUrl: 'https://signed.example/preview-$number',
       generationNumber: number,

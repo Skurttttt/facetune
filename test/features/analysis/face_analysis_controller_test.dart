@@ -30,25 +30,28 @@ void main() {
   );
   final analysis = FaceAnalysisDto.fromResponse(validAnalysisResponse).analysis;
 
-  test('clear ignores a late analysis completion and progress update', () async {
-    final pending = Completer<FaceAnalysis>();
-    final repository = _FakeFaceAnalysisRepository(completer: pending);
-    final controller = FaceAnalysisController(AnalyzeFace(repository));
+  test(
+    'clear ignores a late analysis completion and progress update',
+    () async {
+      final pending = Completer<FaceAnalysis>();
+      final repository = _FakeFaceAnalysisRepository(completer: pending);
+      final controller = FaceAnalysisController(AnalyzeFace(repository));
 
-    final operation = controller.analyze(
-      selfie: selfie,
-      localValidation: localValidation,
-    );
-    expect(controller.state.status, FaceAnalysisStatus.uploading);
+      final operation = controller.analyze(
+        selfie: selfie,
+        localValidation: localValidation,
+      );
+      expect(controller.state.status, FaceAnalysisStatus.uploading);
 
-    controller.clear();
-    repository.emitProgress(AnalysisProgress.secureProcessing);
-    pending.complete(analysis);
-    await operation;
+      controller.clear();
+      repository.emitProgress(AnalysisProgress.secureProcessing);
+      pending.complete(analysis);
+      await operation;
 
-    expect(controller.state.status, FaceAnalysisStatus.idle);
-    expect(controller.state.analysis, isNull);
-  });
+      expect(controller.state.status, FaceAnalysisStatus.idle);
+      expect(controller.state.analysis, isNull);
+    },
+  );
 
   test('restore is not overwritten by a prior late completion', () async {
     final pending = Completer<FaceAnalysis>();
@@ -83,10 +86,7 @@ void main() {
     );
     final controller = FaceAnalysisController(AnalyzeFace(repository));
 
-    await controller.analyze(
-      selfie: selfie,
-      localValidation: localValidation,
-    );
+    await controller.analyze(selfie: selfie, localValidation: localValidation);
 
     expect(controller.state.status, FaceAnalysisStatus.serverFailure);
     expect(controller.state.retryable, isTrue);

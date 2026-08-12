@@ -13,14 +13,12 @@ final makeupRecommendationControllerProvider =
     StateNotifierProvider<
       MakeupRecommendationController,
       MakeupRecommendationState
-    >(
-      (ref) {
-        ref.watch(authControllerProvider.select((state) => state.user?.id));
-        return MakeupRecommendationController(
-          ref.watch(generateMakeupRecommendationProvider),
-        );
-      },
-    );
+    >((ref) {
+      ref.watch(authControllerProvider.select((state) => state.user?.id));
+      return MakeupRecommendationController(
+        ref.watch(generateMakeupRecommendationProvider),
+      );
+    });
 
 class MakeupRecommendationController
     extends StateNotifier<MakeupRecommendationState> {

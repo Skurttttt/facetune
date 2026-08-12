@@ -106,20 +106,23 @@ void main() {
     expect(controller.state.errorMessage, failure.message);
   });
 
-  test('canceling replacement preserves the complete validated state', () async {
-    final repository = _FakeSelfieRepository(result: selfie);
-    final controller = _controller(repository, validationResult: validImage);
-    await controller.chooseFromGallery();
-    await controller.validateForAnalysis();
-    repository.result = null;
+  test(
+    'canceling replacement preserves the complete validated state',
+    () async {
+      final repository = _FakeSelfieRepository(result: selfie);
+      final controller = _controller(repository, validationResult: validImage);
+      await controller.chooseFromGallery();
+      await controller.validateForAnalysis();
+      repository.result = null;
 
-    final changed = await controller.chooseFromGallery();
+      final changed = await controller.chooseFromGallery();
 
-    expect(changed, isFalse);
-    expect(controller.state.stage, ScanStage.readyForSecureValidation);
-    expect(controller.state.selfie, same(selfie));
-    expect(controller.state.localValidation, same(validImage));
-  });
+      expect(changed, isFalse);
+      expect(controller.state.stage, ScanStage.readyForSecureValidation);
+      expect(controller.state.selfie, same(selfie));
+      expect(controller.state.localValidation, same(validImage));
+    },
+  );
 
   test('cleanup failure does not reject a successful replacement', () async {
     final repository = _FakeSelfieRepository(result: selfie);
@@ -144,58 +147,67 @@ void main() {
     expect(controller.state.isBusy, isFalse);
   });
 
-  test('unexpected acquisition error never leaves the controller busy', () async {
-    final repository = _FakeSelfieRepository(
-      unexpectedFailure: StateError('plugin failure'),
-    );
-    final controller = _controller(repository);
+  test(
+    'unexpected acquisition error never leaves the controller busy',
+    () async {
+      final repository = _FakeSelfieRepository(
+        unexpectedFailure: StateError('plugin failure'),
+      );
+      final controller = _controller(repository);
 
-    await controller.chooseFromGallery();
+      await controller.chooseFromGallery();
 
-    expect(controller.state.stage, ScanStage.idle);
-    expect(controller.state.isBusy, isFalse);
-    expect(controller.state.errorMessage, contains('could not open'));
-    expect(controller.state.errorMessage, isNot(contains('plugin failure')));
-  });
+      expect(controller.state.stage, ScanStage.idle);
+      expect(controller.state.isBusy, isFalse);
+      expect(controller.state.errorMessage, contains('could not open'));
+      expect(controller.state.errorMessage, isNot(contains('plugin failure')));
+    },
+  );
 
-  test('beginning a new scan discards an acquisition that completes late', () async {
-    final pending = Completer<PreparedSelfie?>();
-    final repository = _FakeSelfieRepository(acquireCompleter: pending);
-    final controller = _controller(repository);
+  test(
+    'beginning a new scan discards an acquisition that completes late',
+    () async {
+      final pending = Completer<PreparedSelfie?>();
+      final repository = _FakeSelfieRepository(acquireCompleter: pending);
+      final controller = _controller(repository);
 
-    final acquisition = controller.chooseFromGallery();
-    await Future<void>.delayed(Duration.zero);
-    await controller.beginNewScan();
-    pending.complete(selfie);
-    await acquisition;
+      final acquisition = controller.chooseFromGallery();
+      await Future<void>.delayed(Duration.zero);
+      await controller.beginNewScan();
+      pending.complete(selfie);
+      await acquisition;
 
-    expect(controller.state.stage, ScanStage.idle);
-    expect(controller.state.selfie, isNull);
-    expect(repository.discarded, contains(same(selfie)));
-  });
+      expect(controller.state.stage, ScanStage.idle);
+      expect(controller.state.selfie, isNull);
+      expect(repository.discarded, contains(same(selfie)));
+    },
+  );
 
-  test('beginning a new scan ignores local validation that completes late', () async {
-    final pending = Completer<LocalImageValidation>();
-    final repository = _FakeSelfieRepository(result: selfie);
-    final validationRepository = _FakeImageValidationRepository(
-      result: validImage,
-      completer: pending,
-    );
-    final controller = ScanController(
-      selfieRepository: repository,
-      validationRepository: validationRepository,
-    );
-    await controller.chooseFromGallery();
+  test(
+    'beginning a new scan ignores local validation that completes late',
+    () async {
+      final pending = Completer<LocalImageValidation>();
+      final repository = _FakeSelfieRepository(result: selfie);
+      final validationRepository = _FakeImageValidationRepository(
+        result: validImage,
+        completer: pending,
+      );
+      final controller = ScanController(
+        selfieRepository: repository,
+        validationRepository: validationRepository,
+      );
+      await controller.chooseFromGallery();
 
-    final validation = controller.validateForAnalysis();
-    await Future<void>.delayed(Duration.zero);
-    await controller.beginNewScan();
-    pending.complete(validImage);
-    await validation;
+      final validation = controller.validateForAnalysis();
+      await Future<void>.delayed(Duration.zero);
+      await controller.beginNewScan();
+      pending.complete(validImage);
+      await validation;
 
-    expect(controller.state.stage, ScanStage.idle);
-    expect(controller.state.localValidation, isNull);
-  });
+      expect(controller.state.stage, ScanStage.idle);
+      expect(controller.state.localValidation, isNull);
+    },
+  );
 }
 
 ScanController _controller(

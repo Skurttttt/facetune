@@ -235,9 +235,7 @@ class ScanPage extends ConsumerWidget {
   }
 
   Future<void> _recoverExpiredSession(WidgetRef ref) {
-    return ref
-        .read(authControllerProvider.notifier)
-        .recoverExpiredSession();
+    return ref.read(authControllerProvider.notifier).recoverExpiredSession();
   }
 }
 

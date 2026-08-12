@@ -6,6 +6,7 @@ import 'package:facetune/features/scan/domain/entities/local_image_validation.da
 import 'package:facetune/features/scan/domain/entities/prepared_selfie.dart';
 import 'package:facetune/features/scan/domain/entities/selfie_source.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../helpers/analysis_response_fixture.dart';
 
@@ -213,6 +214,64 @@ void main() {
             .having((failure) => failure.retryable, 'retryable', isTrue),
       ),
     );
+  });
+
+  test('recovers from a transient storage upload failure', () async {
+    final remote = _FakeRemoteDataSource(
+      uploadFailure: const StorageException(
+        'bucket policy denied for service_key=do-not-expose',
+        statusCode: '500',
+      ),
+    );
+    final repository = SupabaseFaceAnalysisRepository(remote);
+
+    await expectLater(
+      () => repository.analyze(
+        selfie: selfie,
+        localValidation: localValidation,
+        onProgress: (_) {},
+      ),
+      throwsA(
+        isA<AnalysisFailure>()
+            .having(
+              (failure) => failure.type,
+              'type',
+              AnalysisFailureType.server,
+            )
+            .having((failure) => failure.retryable, 'retryable', isTrue)
+            .having(
+              (failure) => failure.message,
+              'sanitized message',
+              isNot(contains('service_key')),
+            ),
+      ),
+    );
+    expect(remote.invokeCount, 0);
+  });
+
+  test('maps an unauthorized storage upload to session recovery', () async {
+    final remote = _FakeRemoteDataSource(
+      uploadFailure: const StorageException('denied', statusCode: '403'),
+    );
+    final repository = SupabaseFaceAnalysisRepository(remote);
+
+    await expectLater(
+      () => repository.analyze(
+        selfie: selfie,
+        localValidation: localValidation,
+        onProgress: (_) {},
+      ),
+      throwsA(
+        isA<AnalysisFailure>()
+            .having(
+              (failure) => failure.type,
+              'type',
+              AnalysisFailureType.authentication,
+            )
+            .having((failure) => failure.retryable, 'retryable', isFalse),
+      ),
+    );
+    expect(remote.invokeCount, 0);
   });
 }
 

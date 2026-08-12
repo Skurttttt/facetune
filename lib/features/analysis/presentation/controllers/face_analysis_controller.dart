@@ -11,12 +11,10 @@ import '../../domain/usecases/analyze_face.dart';
 import 'face_analysis_state.dart';
 
 final faceAnalysisControllerProvider =
-    StateNotifierProvider<FaceAnalysisController, FaceAnalysisState>(
-      (ref) {
-        ref.watch(authControllerProvider.select((state) => state.user?.id));
-        return FaceAnalysisController(ref.watch(analyzeFaceProvider));
-      },
-    );
+    StateNotifierProvider<FaceAnalysisController, FaceAnalysisState>((ref) {
+      ref.watch(authControllerProvider.select((state) => state.user?.id));
+      return FaceAnalysisController(ref.watch(analyzeFaceProvider));
+    });
 
 class FaceAnalysisController extends StateNotifier<FaceAnalysisState> {
   FaceAnalysisController(this._analyzeFace) : super(const FaceAnalysisState());

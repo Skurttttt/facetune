@@ -15,7 +15,11 @@ final settingsControllerProvider =
       final controller = SettingsController(
         ref.watch(settingsRepositoryProvider),
       );
-      if (userId != null) controller.load();
+      if (userId != null) {
+        controller.load();
+      } else {
+        controller.markSignedOut();
+      }
       return controller;
     });
 
@@ -54,6 +58,21 @@ class SettingsController extends StateNotifier<SettingsState> {
     } finally {
       _isLoading = false;
     }
+  }
+
+  /// Presents a terminal signed-out state.
+  ///
+  /// Without this the controller keeps its initial loading state whenever no
+  /// account is active, leaving preferences behind a loader that can never
+  /// resolve.
+  void markSignedOut() {
+    _isLoading = false;
+    state = SettingsState(
+      status: SettingsStatus.failure,
+      message: 'Sign in again to manage your FaceTune preferences.',
+      failureKind: SettingsFailureKind.sessionExpired,
+      retryable: false,
+    );
   }
 
   Future<void> updateTheme(AppThemePreference theme) => _update(

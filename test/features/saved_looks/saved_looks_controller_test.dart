@@ -54,24 +54,27 @@ void main() {
     expect(repository.removedId, look.id);
   });
 
-  test('duplicate favorite taps are ignored while the item is mutating', () async {
-    final look = _look('look-1');
-    final completer = Completer<SavedLook>();
-    final repository = _PendingMutationRepository(look, completer);
-    final controller = SavedLooksController(repository);
-    addTearDown(controller.dispose);
-    await controller.loadInitial();
+  test(
+    'duplicate favorite taps are ignored while the item is mutating',
+    () async {
+      final look = _look('look-1');
+      final completer = Completer<SavedLook>();
+      final repository = _PendingMutationRepository(look, completer);
+      final controller = SavedLooksController(repository);
+      addTearDown(controller.dispose);
+      await controller.loadInitial();
 
-    final first = controller.toggleFavorite(look);
-    final second = controller.toggleFavorite(look);
-    expect(repository.favoriteCalls, 1);
-    expect(controller.state.mutatingIds, contains(look.id));
+      final first = controller.toggleFavorite(look);
+      final second = controller.toggleFavorite(look);
+      expect(repository.favoriteCalls, 1);
+      expect(controller.state.mutatingIds, contains(look.id));
 
-    completer.complete(look.copyWith(isFavorite: true));
-    await Future.wait([first, second]);
-    expect(controller.state.mutatingIds, isNot(contains(look.id)));
-    expect(controller.state.items.single.isFavorite, isTrue);
-  });
+      completer.complete(look.copyWith(isFavorite: true));
+      await Future.wait([first, second]);
+      expect(controller.state.mutatingIds, isNot(contains(look.id)));
+      expect(controller.state.items.single.isFavorite, isTrue);
+    },
+  );
 
   test('a stale initial load cannot overwrite a newer refresh', () async {
     final first = Completer<SavedLooksPageResult>();
@@ -86,9 +89,7 @@ void main() {
       SavedLooksPageResult(items: [_look('new')], hasMore: false),
     );
     await newLoad;
-    first.complete(
-      SavedLooksPageResult(items: [_look('old')], hasMore: false),
-    );
+    first.complete(SavedLooksPageResult(items: [_look('old')], hasMore: false));
     await oldLoad;
 
     expect(controller.state.items.single.id, 'new');

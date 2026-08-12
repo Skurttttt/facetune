@@ -9,12 +9,10 @@ import '../../domain/usecases/generate_makeup_preview.dart';
 import 'makeup_preview_state.dart';
 
 final makeupPreviewControllerProvider =
-    StateNotifierProvider<MakeupPreviewController, MakeupPreviewState>(
-      (ref) {
-        ref.watch(authControllerProvider.select((state) => state.user?.id));
-        return MakeupPreviewController(ref.watch(generateMakeupPreviewProvider));
-      },
-    );
+    StateNotifierProvider<MakeupPreviewController, MakeupPreviewState>((ref) {
+      ref.watch(authControllerProvider.select((state) => state.user?.id));
+      return MakeupPreviewController(ref.watch(generateMakeupPreviewProvider));
+    });
 
 class MakeupPreviewController extends StateNotifier<MakeupPreviewState> {
   MakeupPreviewController(this._generate) : super(const MakeupPreviewState());
@@ -29,8 +27,8 @@ class MakeupPreviewController extends StateNotifier<MakeupPreviewState> {
     final candidatePreview = state.status == MakeupPreviewStatus.success
         ? state.preview
         : state.previousPreview;
-    final previousPreview = candidatePreview?.recommendationId ==
-            recommendation.id
+    final previousPreview =
+        candidatePreview?.recommendationId == recommendation.id
         ? candidatePreview
         : null;
     final operation = ++_operationEpoch;

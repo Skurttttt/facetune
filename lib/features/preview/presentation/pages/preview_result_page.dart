@@ -53,7 +53,8 @@ class PreviewResultPage extends ConsumerWidget {
     ) {
       if (next.feedback == null || next.feedback == previous?.feedback) return;
       final currentPreview = ref.read(makeupPreviewControllerProvider).preview;
-      final canRetrySavedStatus = !next.sessionExpired &&
+      final canRetrySavedStatus =
+          !next.sessionExpired &&
           currentPreview != null &&
           next.failedPreviewIds.contains(currentPreview.id);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -71,7 +72,7 @@ class PreviewResultPage extends ConsumerWidget {
                   label: 'Retry',
                   onPressed: () => ref
                       .read(resultActionsControllerProvider.notifier)
-                      .retrySavedStatus(currentPreview!),
+                      .retrySavedStatus(currentPreview),
                 )
               : null,
         ),

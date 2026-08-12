@@ -114,11 +114,16 @@ class HistoryController extends StateNotifier<HistoryState> {
   }
 
   Future<void> _ensureVisible(int generation) async {
+    // Paging stops as soon as a page fails to advance the offset, so a backend
+    // that keeps reporting `hasMore` can never trap this in an endless loop.
+    var previousOffset = -1;
     while (mounted &&
         generation == _filterGeneration &&
         state.visibleItems.isEmpty &&
         state.hasMore &&
+        state.nextOffset != previousOffset &&
         state.status == HistoryLoadStatus.ready) {
+      previousOffset = state.nextOffset;
       await loadMore();
     }
   }
@@ -132,10 +137,9 @@ class HistoryController extends StateNotifier<HistoryState> {
           ? await _savedLooksRepository
                 .save(preview, favorite: true)
                 .timeout(_mutationTimeout)
-          : await _savedLooksRepository.setFavorite(
-              entry.savedLook!,
-              !entry.savedLook!.isFavorite,
-            ).timeout(_mutationTimeout);
+          : await _savedLooksRepository
+                .setFavorite(entry.savedLook!, !entry.savedLook!.isFavorite)
+                .timeout(_mutationTimeout);
       if (!mounted) return;
       state = _state(
         status: HistoryLoadStatus.ready,
@@ -165,8 +169,7 @@ class HistoryController extends StateNotifier<HistoryState> {
       if (!mounted) return;
       state = _state(
         mutatingIds: {...state.mutatingIds}..remove(entry.id),
-        feedback:
-            'Updating the favorite took too long. Check your connection.',
+        feedback: 'Updating the favorite took too long. Check your connection.',
         feedbackIsError: true,
         sessionExpired: false,
       );

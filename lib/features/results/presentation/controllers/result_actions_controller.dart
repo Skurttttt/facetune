@@ -13,16 +13,14 @@ import '../../domain/services/result_share_service.dart';
 import 'result_actions_state.dart';
 
 final resultActionsControllerProvider =
-    StateNotifierProvider<ResultActionsController, ResultActionsState>(
-      (ref) {
-        ref.watch(authControllerProvider.select((state) => state.user?.id));
-        return ResultActionsController(
-          ref.watch(resultShareServiceProvider),
-          ref.watch(savedLooksRepositoryProvider),
-          () => ref.read(savedLooksRevisionProvider.notifier).state++,
-        );
-      },
-    );
+    StateNotifierProvider<ResultActionsController, ResultActionsState>((ref) {
+      ref.watch(authControllerProvider.select((state) => state.user?.id));
+      return ResultActionsController(
+        ref.watch(resultShareServiceProvider),
+        ref.watch(savedLooksRepositoryProvider),
+        () => ref.read(savedLooksRevisionProvider.notifier).state++,
+      );
+    });
 
 class ResultActionsController extends StateNotifier<ResultActionsState> {
   ResultActionsController(
@@ -44,9 +42,9 @@ class ResultActionsController extends StateNotifier<ResultActionsState> {
       return;
     }
     try {
-      final saved = await _savedLooksRepository.findByGeneratedImageId(
-        preview.id,
-      ).timeout(_operationTimeout);
+      final saved = await _savedLooksRepository
+          .findByGeneratedImageId(preview.id)
+          .timeout(_operationTimeout);
       if (!mounted) return;
       final looks = {...state.savedLooksByPreviewId};
       if (saved != null) looks[preview.id] = saved;
@@ -114,9 +112,9 @@ class ResultActionsController extends StateNotifier<ResultActionsState> {
             .save(preview)
             .timeout(_operationTimeout);
       } else {
-        await _savedLooksRepository.remove(existing.id).timeout(
-          _operationTimeout,
-        );
+        await _savedLooksRepository
+            .remove(existing.id)
+            .timeout(_operationTimeout);
         looks.remove(preview.id);
       }
       if (mounted) {

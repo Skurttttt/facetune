@@ -97,12 +97,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
           child: RefreshIndicator(
             onRefresh: () =>
                 ref.read(historyControllerProvider.notifier).refresh(),
-            child: _content(
-              context,
-              state,
-              isGuest,
-              previewIsGenerating,
-            ),
+            child: _content(context, state, isGuest, previewIsGenerating),
           ),
         ),
       ),

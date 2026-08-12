@@ -115,6 +115,32 @@ void main() {
       expect(find.text('Try again'), findsOneWidget);
       expect(find.text('Sign out'), findsOneWidget);
     });
+
+    testWidgets('a signed-out account never waits on an unresolved loader', (
+      tester,
+    ) async {
+      final authRepository = FakeAuthRepository();
+      addTearDown(authRepository.dispose);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            supabaseAvailableProvider.overrideWithValue(true),
+            authRepositoryProvider.overrideWithValue(authRepository),
+            settingsRepositoryProvider.overrideWithValue(
+              FakeSettingsRepository(),
+            ),
+            appVersionProvider.overrideWith((ref) async => '1.0.0+1'),
+          ],
+          child: const MaterialApp(home: SettingsPage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('Settings unavailable'), findsOneWidget);
+      expect(find.text('Sign in again'), findsOneWidget);
+    });
   });
 }
 

@@ -67,10 +67,9 @@ class SavedLooksController extends StateNotifier<SavedLooksState> {
     required int generation,
   }) async {
     try {
-      final result = await _repository.loadPage(
-        offset: offset,
-        limit: pageSize,
-      ).timeout(_operationTimeout);
+      final result = await _repository
+          .loadPage(offset: offset, limit: pageSize)
+          .timeout(_operationTimeout);
       if (!mounted || generation != _loadGeneration) return;
       state = SavedLooksState(
         status: SavedLooksStatus.ready,
@@ -181,7 +180,10 @@ class SavedLooksController extends StateNotifier<SavedLooksState> {
         'Removing the look took too long. Check your connection.',
       );
     } catch (_) {
-      _mutationFailed(look.id, 'The saved look could not be removed right now.');
+      _mutationFailed(
+        look.id,
+        'The saved look could not be removed right now.',
+      );
     }
   }
 

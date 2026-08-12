@@ -15,10 +15,23 @@ import '../../helpers/fake_account_repositories.dart';
 import '../../helpers/fake_auth_repository.dart';
 import '../../helpers/fake_history_repository.dart';
 
+/// Home is a tall scrolling dashboard. The default 800x600 test surface leaves
+/// the recent-looks section outside the viewport, so give these tests a surface
+/// tall enough to assert on the whole page at once.
+void _useTallSurface(WidgetTester tester) {
+  tester.view.physicalSize = const Size(1200, 2400);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(() {
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
+}
+
 void main() {
   testWidgets('home shows an honest empty library without fabricated advice', (
     tester,
   ) async {
+    _useTallSurface(tester);
     final authRepository = FakeAuthRepository(
       user: const AuthUser(id: 'test-user', isAnonymous: false),
     );
@@ -30,9 +43,7 @@ void main() {
           supabaseAvailableProvider.overrideWithValue(true),
           authRepositoryProvider.overrideWithValue(authRepository),
           profileRepositoryProvider.overrideWithValue(FakeProfileRepository()),
-          historyRepositoryProvider.overrideWithValue(
-            FakeHistoryRepository(),
-          ),
+          historyRepositoryProvider.overrideWithValue(FakeHistoryRepository()),
           savedLooksRepositoryProvider.overrideWithValue(
             const UnavailableSavedLooksRepository(),
           ),
@@ -51,6 +62,7 @@ void main() {
   testWidgets('home keeps Start Scan available when history is offline', (
     tester,
   ) async {
+    _useTallSurface(tester);
     final authRepository = FakeAuthRepository(
       user: const AuthUser(id: 'test-user', isAnonymous: false),
     );

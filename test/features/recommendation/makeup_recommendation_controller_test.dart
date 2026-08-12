@@ -47,7 +47,9 @@ void main() {
       GenerateMakeupRecommendation(_PendingRepository(completer.future)),
     );
     addTearDown(controller.dispose);
-    final analysis = FaceAnalysisDto.fromResponse(validAnalysisResponse).analysis;
+    final analysis = FaceAnalysisDto.fromResponse(
+      validAnalysisResponse,
+    ).analysis;
     final style = MakeupStyleCatalog.styles[3];
 
     final operation = controller.generate(analysis: analysis, style: style);

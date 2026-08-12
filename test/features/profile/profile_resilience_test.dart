@@ -112,6 +112,32 @@ void main() {
 
       expect(authRepository.user, isNull);
     });
+
+    testWidgets('a signed-out account never waits on an unresolved loader', (
+      tester,
+    ) async {
+      final authRepository = FakeAuthRepository();
+      addTearDown(authRepository.dispose);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            supabaseAvailableProvider.overrideWithValue(true),
+            authRepositoryProvider.overrideWithValue(authRepository),
+            profileRepositoryProvider.overrideWithValue(
+              FakeProfileRepository(),
+            ),
+            avatarPickerProvider.overrideWithValue(const FakeAvatarPicker()),
+          ],
+          child: const MaterialApp(home: ProfilePage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('Profile unavailable'), findsOneWidget);
+      expect(find.text('Sign in again'), findsOneWidget);
+    });
   });
 }
 

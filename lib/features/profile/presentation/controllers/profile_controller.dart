@@ -16,7 +16,11 @@ final profileControllerProvider =
         ref.watch(profileRepositoryProvider),
         ref.watch(avatarPickerProvider),
       );
-      if (userId != null) controller.load();
+      if (userId != null) {
+        controller.load();
+      } else {
+        controller.markSignedOut();
+      }
       return controller;
     });
 
@@ -57,6 +61,21 @@ class ProfileController extends StateNotifier<ProfileState> {
     } finally {
       _isLoading = false;
     }
+  }
+
+  /// Presents a terminal signed-out state.
+  ///
+  /// Without this the controller keeps its initial loading state whenever no
+  /// account is active, leaving the profile behind a loader that can never
+  /// resolve.
+  void markSignedOut() {
+    _isLoading = false;
+    state = const ProfileState(
+      status: ProfileStatus.failure,
+      message: 'Sign in again to view your FaceTune profile.',
+      failureKind: ProfileFailureKind.sessionExpired,
+      retryable: false,
+    );
   }
 
   Future<void> updateDisplayName(String displayName) async {

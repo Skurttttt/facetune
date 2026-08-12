@@ -66,33 +66,36 @@ void main() {
     expect(savedRevisions, 2);
   });
 
-  test('automatic filtered pagination stops after failure and retries once', () async {
-    final analysisOnly = _entry('analysis-only');
-    final favorite = _entry('favorite', complete: true, favorite: true);
-    final history = _OutcomeHistoryRepository([
-      HistoryPageResult(items: [analysisOnly], hasMore: true, nextOffset: 1),
-      const HistoryFailure('Check your connection and try again.'),
-      HistoryPageResult(items: [favorite], hasMore: false, nextOffset: 2),
-    ]);
-    final controller = HistoryController(
-      history,
-      _FakeSavedLooksRepository(),
-      () {},
-    );
-    addTearDown(controller.dispose);
-    await controller.loadInitial();
+  test(
+    'automatic filtered pagination stops after failure and retries once',
+    () async {
+      final analysisOnly = _entry('analysis-only');
+      final favorite = _entry('favorite', complete: true, favorite: true);
+      final history = _OutcomeHistoryRepository([
+        HistoryPageResult(items: [analysisOnly], hasMore: true, nextOffset: 1),
+        const HistoryFailure('Check your connection and try again.'),
+        HistoryPageResult(items: [favorite], hasMore: false, nextOffset: 2),
+      ]);
+      final controller = HistoryController(
+        history,
+        _FakeSavedLooksRepository(),
+        () {},
+      );
+      addTearDown(controller.dispose);
+      await controller.loadInitial();
 
-    await controller.setFilter(HistoryFilter.favorites);
-    expect(controller.state.status, HistoryLoadStatus.failure);
-    expect(history.calls, 2);
+      await controller.setFilter(HistoryFilter.favorites);
+      expect(controller.state.status, HistoryLoadStatus.failure);
+      expect(history.calls, 2);
 
-    await Future<void>.delayed(Duration.zero);
-    expect(history.calls, 2);
+      await Future<void>.delayed(Duration.zero);
+      expect(history.calls, 2);
 
-    await controller.retryLoadMore();
-    expect(history.calls, 3);
-    expect(controller.state.visibleItems, [favorite]);
-  });
+      await controller.retryLoadMore();
+      expect(history.calls, 3);
+      expect(controller.state.visibleItems, [favorite]);
+    },
+  );
 }
 
 HistoryEntry _entry(String id, {bool complete = false, bool favorite = false}) {

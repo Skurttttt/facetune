@@ -38,10 +38,9 @@ class SupabaseHistoryRepository implements HistoryRepository {
       );
     }
     try {
-      final analyses = await _remote.selectAnalyses(
-        offset: offset,
-        limit: limit,
-      ).timeout(_loadTimeout);
+      final analyses = await _remote
+          .selectAnalyses(offset: offset, limit: limit)
+          .timeout(_loadTimeout);
       if (analyses.isEmpty) {
         return HistoryPageResult(
           items: const [],
@@ -156,9 +155,9 @@ class SupabaseHistoryRepository implements HistoryRepository {
       throw const FormatException('Unknown historical makeup style.');
     }
 
-    final originalUrlFuture = _remote.createSignedUrl(
-      analysis.originalImagePath,
-    ).timeout(_loadTimeout);
+    final originalUrlFuture = _remote
+        .createSignedUrl(analysis.originalImagePath)
+        .timeout(_loadTimeout);
     if (previewRow == null || recommendation == null || style == null) {
       final originalUrl = await originalUrlFuture;
       return HistoryEntry(

@@ -205,6 +205,7 @@ class SupabaseFaceAnalysisRepository implements FaceAnalysisRepository {
         'The selfie is not clear enough for a reliable analysis. Try another photo.',
     'invalid_image_size': 'The selfie has an unsupported file size.',
     'invalid_image_type': 'Choose a supported selfie image.',
-    'gemini_refusal': 'This image could not be analyzed. Choose another selfie.',
+    'gemini_refusal':
+        'This image could not be analyzed. Choose another selfie.',
   };
 }
