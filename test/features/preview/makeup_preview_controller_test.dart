@@ -96,6 +96,48 @@ void main() {
     expect(controller.state.status, MakeupPreviewStatus.idle);
     expect(controller.state.preview, isNull);
   });
+
+  test('a second request while one is in flight is ignored', () async {
+    // Guards against duplicate billed generations from rapid Try Again /
+    // Generate Another taps while a request is still running.
+    final repository = _BlockingPreviewRepository();
+    final controller = MakeupPreviewController(
+      GenerateMakeupPreview(repository),
+    );
+    addTearDown(controller.dispose);
+    final recommendation = MakeupRecommendationDto.fromResponse(
+      validRecommendationResponse,
+    ).recommendation;
+
+    final first = controller.generate(recommendation: recommendation);
+    expect(controller.state.status, MakeupPreviewStatus.generating);
+
+    await controller.generate(recommendation: recommendation);
+    await controller.generateVariation();
+    await controller.retry();
+    expect(repository.calls, 1, reason: 'Only one generation may be in flight');
+
+    repository.release(_preview(recommendation, 1));
+    await first;
+
+    expect(controller.state.status, MakeupPreviewStatus.success);
+    expect(repository.calls, 1);
+  });
+}
+
+class _BlockingPreviewRepository implements MakeupPreviewRepository {
+  final _completer = Completer<GeneratedPreview>();
+  int calls = 0;
+
+  void release(GeneratedPreview preview) => _completer.complete(preview);
+
+  @override
+  Future<GeneratedPreview> generate({
+    required MakeupRecommendation recommendation,
+  }) {
+    calls += 1;
+    return _completer.future;
+  }
 }
 
 class _FakePreviewRepository implements MakeupPreviewRepository {

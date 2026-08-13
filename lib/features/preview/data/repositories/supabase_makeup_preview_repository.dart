@@ -11,13 +11,41 @@ import '../data_sources/preview_remote_data_source.dart';
 import '../models/generated_preview_dto.dart';
 
 class SupabaseMakeupPreviewRepository implements MakeupPreviewRepository {
+  /// Client budget for one preview generation.
+  ///
+  /// Derived from the Edge Function's worst case rather than chosen by feel:
+  ///
+  ///   Gemini total budget (all attempts)      135s
+  ///   cold start                              ~2s
+  ///   auth + two metadata reads               ~1s
+  ///   source download, generation number,
+  ///     and quota (now concurrent)            ~2s
+  ///   generated image upload to Storage       ~3s
+  ///   identity check + row insert             ~1s
+  ///   ------------------------------------------
+  ///   backend worst case                      ~144s
+  ///   mobile transport and retry headroom     ~36s
+  ///
+  /// Previously this was 150s while the backend could run two unbounded 90s
+  /// attempts (180s), so the client could abandon a request the server was
+  /// still paying for. The user then saw a failure, retried, and triggered a
+  /// second billed generation.
+  static const generationTimeout = Duration(seconds: 180);
+
+  /// Signed URL creation is a fast metadata call and must not inherit the
+  /// generation budget, or a stalled URL request would hang for three minutes.
+  static const signedUrlTimeout = Duration(seconds: 30);
+
   const SupabaseMakeupPreviewRepository(
     this._remoteDataSource, {
-    Duration timeout = const Duration(seconds: 150),
-  }) : _timeout = timeout;
+    Duration timeout = generationTimeout,
+    Duration urlTimeout = signedUrlTimeout,
+  }) : _timeout = timeout,
+       _urlTimeout = urlTimeout;
 
   final PreviewRemoteDataSource _remoteDataSource;
   final Duration _timeout;
+  final Duration _urlTimeout;
 
   @override
   Future<GeneratedPreview> generate({
@@ -42,7 +70,7 @@ class SupabaseMakeupPreviewRepository implements MakeupPreviewRepository {
       final urls = await Future.wait([
         _remoteDataSource.createSignedUrl(dto.originalImagePath),
         _remoteDataSource.createSignedUrl(dto.generatedImagePath),
-      ]).timeout(_timeout);
+      ]).timeout(_urlTimeout);
       return dto.toDomain(
         originalImageUrl: urls[0],
         generatedImageUrl: urls[1],

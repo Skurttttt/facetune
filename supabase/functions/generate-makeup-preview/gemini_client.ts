@@ -3,14 +3,27 @@ import type { GeneratedImage } from "./types.ts";
 import { FunctionFailure } from "./types.ts";
 import { validateGeneratedImage } from "./image_validation.ts";
 
-const requestTimeoutMs = 90000;
+/// Ceiling for a single Gemini attempt. Unchanged: a slow but successful
+/// generation must never be abandoned early.
+const attemptTimeoutMs = 90000;
+
+/// Ceiling for all attempts combined.
+///
+/// Two unbounded attempts could run 180s, which exceeds the Supabase Edge
+/// Function wall-clock window on some plans and leaves the caller waiting for a
+/// response the platform will never deliver. The budget only ever shortens a
+/// retry — the first attempt always gets the full [attemptTimeoutMs].
+const totalBudgetMs = 135000;
+
 const maximumAttempts = 2;
 
 function encodeBase64(bytes: Uint8Array): string {
   const chunkSize = 0x8000;
   let binary = "";
   for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+    binary += String.fromCharCode(
+      ...bytes.subarray(offset, offset + chunkSize),
+    );
   }
   return btoa(binary);
 }
@@ -18,7 +31,9 @@ function encodeBase64(bytes: Uint8Array): string {
 function generatedImage(payload: unknown): GeneratedImage {
   const response = payload as {
     candidates?: Array<{
-      content?: { parts?: Array<{ inlineData?: { data?: unknown; mimeType?: unknown } }> };
+      content?: {
+        parts?: Array<{ inlineData?: { data?: unknown; mimeType?: unknown } }>;
+      };
       finishReason?: string;
     }>;
     promptFeedback?: { blockReason?: string };
@@ -60,62 +75,79 @@ export async function requestGeminiPreview(
   recommendation: Record<string, unknown>,
   variationNumber: number,
 ): Promise<GeneratedImage> {
-  const endpoint = `https://generativelanguage.googleapis.com/v1/models/${encodeURIComponent(model)}:generateContent`;
+  const endpoint = `https://generativelanguage.googleapis.com/v1/models/${
+    encodeURIComponent(model)
+  }:generateContent`;
   const body = JSON.stringify({
     contents: [{
       role: "user",
       parts: [
         { text: makeupPreviewPrompt(style, recommendation, variationNumber) },
-        { inlineData: { mimeType: originalMimeType, data: encodeBase64(originalBytes) } },
+        {
+          inlineData: {
+            mimeType: originalMimeType,
+            data: encodeBase64(originalBytes),
+          },
+        },
       ],
     }],
   });
-  for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
-    try {
-      console.log(
-        `[Phase10] gemini_request_started model=${model} attempt=${attempt}`,
-      );
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
-        body,
-        signal: AbortSignal.timeout(requestTimeoutMs),
-      });
-      console.log(`[Phase10] gemini_status=${response.status}`);
-      if (response.ok) return generatedImage(await response.json());
-      const errorPayload = await safeErrorPayload(response);
-      const classification = classifyGeminiFailure(
-        response.status,
-        errorPayload,
-      );
-      const transient = response.status === 429 || response.status >= 500;
-      console.error(
-        `[Phase10] gemini_failure code=${classification.code} status=${response.status} message=${classification.logMessage}`,
-      );
-      if (transient && attempt < maximumAttempts) continue;
-      throw new FunctionFailure(
-        classification.httpStatus,
-        classification.code,
-        `[${classification.code}] ${classification.userMessage}`,
-        transient,
-      );
-    } catch (error) {
-      if (error instanceof FunctionFailure) throw error;
-      if (attempt < maximumAttempts) continue;
-      throw new FunctionFailure(
-        504,
-        "GEMINI_TIMEOUT",
-        "[GEMINI_TIMEOUT] Preview generation took too long. Please try again.",
-        true,
-      );
+  const budgetStartedAt = Date.now();
+  {
+    for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+      const remainingBudgetMs = totalBudgetMs - (Date.now() - budgetStartedAt);
+      if (remainingBudgetMs <= 0) break;
+      const attemptTimeout = Math.min(attemptTimeoutMs, remainingBudgetMs);
+      try {
+        console.log(
+          `[Phase10] gemini_request_started model=${model} attempt=${attempt} budget_ms=${attemptTimeout}`,
+        );
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-goog-api-key": apiKey,
+          },
+          body,
+          signal: AbortSignal.timeout(attemptTimeout),
+        });
+        console.log(`[Phase10] gemini_status=${response.status}`);
+        if (response.ok) return generatedImage(await response.json());
+        const errorPayload = await safeErrorPayload(response);
+        const classification = classifyGeminiFailure(
+          response.status,
+          errorPayload,
+        );
+        const transient = response.status === 429 || response.status >= 500;
+        console.error(
+          `[Phase10] gemini_failure code=${classification.code} status=${response.status} message=${classification.logMessage}`,
+        );
+        if (transient && attempt < maximumAttempts) continue;
+        throw new FunctionFailure(
+          classification.httpStatus,
+          classification.code,
+          `[${classification.code}] ${classification.userMessage}`,
+          transient,
+        );
+      } catch (error) {
+        if (error instanceof FunctionFailure) throw error;
+        if (attempt < maximumAttempts) continue;
+        throw new FunctionFailure(
+          504,
+          "GEMINI_TIMEOUT",
+          "[GEMINI_TIMEOUT] Preview generation took too long. Please try again.",
+          true,
+        );
+      }
     }
+    // Reached only when the shared budget is exhausted before a retry can run.
+    throw new FunctionFailure(
+      504,
+      "GEMINI_TIMEOUT",
+      "[GEMINI_TIMEOUT] Preview generation took too long. Please try again.",
+      true,
+    );
   }
-  throw new FunctionFailure(
-    503,
-    "GEMINI_API_FAILURE",
-    "[GEMINI_API_FAILURE] The image service is unavailable.",
-    true,
-  );
 }
 
 async function safeErrorPayload(response: Response): Promise<string> {
@@ -157,7 +189,8 @@ function classifyGeminiFailure(
     return {
       code: "GEMINI_BILLING_REQUIRED",
       httpStatus: 502,
-      userMessage: "Gemini image generation requires billing for this Google project.",
+      userMessage:
+        "Gemini image generation requires billing for this Google project.",
       logMessage: detail,
     };
   }
@@ -165,7 +198,8 @@ function classifyGeminiFailure(
     return {
       code: "GEMINI_ACCESS_DENIED",
       httpStatus: 502,
-      userMessage: "The Google project cannot access the configured image model.",
+      userMessage:
+        "The Google project cannot access the configured image model.",
       logMessage: detail,
     };
   }

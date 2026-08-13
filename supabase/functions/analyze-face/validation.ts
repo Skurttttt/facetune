@@ -67,7 +67,27 @@ const allowed = {
 } satisfies Record<keyof AttributePayload, Set<string>>;
 
 const attributeKeys = Object.keys(allowed) as (keyof AttributePayload)[];
-const minimumConfidence = 0.45;
+
+/// Attributes that drive shade matching and placement. A weak reading here
+/// makes the whole makeup plan unreliable, so the scan is rejected.
+const coreAttributes = new Set<keyof AttributePayload>([
+  "skinTone",
+  "undertone",
+  "faceShape",
+]);
+
+/// Secondary attributes refine the plan but do not determine shade matching.
+/// They are routinely occluded by eyewear, hair, or crop, so a moderate score
+/// is accepted and surfaced to the user through the stored confidence values
+/// rather than failing an otherwise usable scan.
+const coreMinimumConfidence = 0.45;
+const secondaryMinimumConfidence = 0.25;
+
+function minimumConfidenceFor(key: keyof AttributePayload): number {
+  return coreAttributes.has(key)
+    ? coreMinimumConfidence
+    : secondaryMinimumConfidence;
+}
 
 function record(value: unknown): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -216,7 +236,7 @@ export function parseAndValidateGeminiText(
         "The analysis service returned invalid confidence values.",
       );
     }
-    if (score < minimumConfidence) {
+    if (score < minimumConfidenceFor(key)) {
       throw new FunctionFailure(
         422,
         "low_confidence",

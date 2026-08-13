@@ -88,3 +88,40 @@ Deno.test("rejects a low-confidence response", () => {
     confidence: { ...validPayload.confidence, undertone: 0.2 },
   }, "low_confidence");
 });
+
+Deno.test("rejects a weak reading of a shade-matching attribute", () => {
+  // Skin tone, undertone, and face shape drive shade matching and placement, so
+  // a weak reading there makes the whole plan unreliable.
+  for (const key of ["skinTone", "undertone", "faceShape"] as const) {
+    expectFailure({
+      ...validPayload,
+      confidence: { ...validPayload.confidence, [key]: 0.4 },
+    }, "low_confidence");
+  }
+});
+
+Deno.test("accepts an occluded secondary attribute", () => {
+  // Eyewear, hair, or crop routinely obscure one refinement attribute. That
+  // used to fail the whole scan even when shade matching was confident.
+  for (
+    const key of ["eyeColor", "eyeShape", "hairColor", "lipShape"] as const
+  ) {
+    const result = parseAndValidateGeminiText(
+      JSON.stringify({
+        ...validPayload,
+        confidence: { ...validPayload.confidence, [key]: 0.3 },
+      }),
+    );
+    assert(
+      result.confidence[key] === 0.3,
+      `Expected the low ${key} confidence to be reported honestly`,
+    );
+  }
+});
+
+Deno.test("still rejects a secondary attribute that is a guess", () => {
+  expectFailure({
+    ...validPayload,
+    confidence: { ...validPayload.confidence, eyeColor: 0.1 },
+  }, "low_confidence");
+});

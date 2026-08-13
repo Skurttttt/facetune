@@ -47,6 +47,11 @@ export async function requestGeminiRecommendation(
       responseMimeType: "application/json",
       responseJsonSchema: MAKEUP_RECOMMENDATION_SCHEMA,
       maxOutputTokens: 4096,
+      // Low enough to keep shade names, HEX values, and intensity coherent
+      // across a plan, but not so low that every style reads identically.
+      temperature: 0.4,
+      topP: 0.9,
+      candidateCount: 1,
     },
   });
   for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
@@ -62,7 +67,15 @@ export async function requestGeminiRecommendation(
       });
       if (response.ok) return responseText(await response.json());
       const transient = response.status === 429 || response.status >= 500;
-      if (transient && attempt < maximumAttempts) continue;
+      console.error(
+        `[generate-makeup-recommendation] Gemini request failed status=${response.status} attempt=${attempt}`,
+      );
+      if (transient && attempt < maximumAttempts) {
+        // Back off before the retry; an immediate second call to a rate-limited
+        // endpoint is very likely to be rejected again.
+        await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+        continue;
+      }
       throw new FunctionFailure(
         response.status === 429 ? 503 : 502,
         response.status === 429
@@ -74,10 +87,20 @@ export async function requestGeminiRecommendation(
     } catch (error) {
       if (error instanceof FunctionFailure) throw error;
       if (attempt < maximumAttempts) continue;
+      if (error instanceof DOMException && error.name === "TimeoutError") {
+        throw new FunctionFailure(
+          504,
+          "gemini_timeout",
+          "Recommendation generation took too long. Please try again.",
+          true,
+        );
+      }
+      // Previously every transport failure was reported as a timeout, which
+      // misdirected both the user-facing copy and the diagnostics.
       throw new FunctionFailure(
-        504,
-        "gemini_timeout",
-        "Recommendation generation took too long. Please try again.",
+        503,
+        "gemini_network_error",
+        "The recommendation service could not be reached.",
         true,
       );
     }

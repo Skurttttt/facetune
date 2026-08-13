@@ -13,12 +13,13 @@ export interface QuotaDecision {
 /**
  * Minimal view of the Supabase client this helper needs.
  *
- * Declaring only `rpc` keeps the helper independent of the client's generic
- * database typing, which differs per function.
+ * The signature is intentionally loose. Without generated database types the
+ * client's `rpc` resolves its argument type to `undefined`, so a more precise
+ * declaration here is not assignable from the real client.
  */
 export interface QuotaClient {
   // deno-lint-ignore no-explicit-any
-  rpc(name: string, args: Record<string, unknown>): PromiseLike<any>;
+  rpc: (...args: any[]) => any;
 }
 
 /**
@@ -67,7 +68,9 @@ export async function consumeAiQuota(
   }
 
   if (typeof payload !== "object" || payload === null) {
-    console.error(`[ai-quota] Quota check returned no decision operation=${operation}`);
+    console.error(
+      `[ai-quota] Quota check returned no decision operation=${operation}`,
+    );
     return {
       allowed: false,
       reason: "quota_unavailable",

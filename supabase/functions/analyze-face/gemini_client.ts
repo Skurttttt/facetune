@@ -67,6 +67,12 @@ export async function requestGeminiAnalysis(
       responseMimeType: "application/json",
       responseJsonSchema: FACE_ANALYSIS_SCHEMA,
       maxOutputTokens: 2048,
+      // Attribute classification must be repeatable: the same selfie should
+      // yield the same enum values across runs. The API default temperature is
+      // tuned for creative text and makes classification drift between scans.
+      temperature: 0.1,
+      topP: 0.8,
+      candidateCount: 1,
     },
   });
 

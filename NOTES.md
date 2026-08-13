@@ -15,3 +15,6 @@ gemini-3.6-flash
 gemini-3-pro-image
 
 erun the important parts of 18, 20, 21, and 22 against the expanded app before you proceed to 23–26.
+
+
+The existing Makeup Recommendation flow is frozen. My Makeup Kit must be additive, isolated, and must not modify the behavior of the existing recommendation system.

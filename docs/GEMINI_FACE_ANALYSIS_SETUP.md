@@ -49,6 +49,8 @@ run local validation, and tap **Analyze selfie**. Confirm that:
    `{userId}/analyses/{analysisId}/original/{imageId}.jpg`.
 2. The function returns typed attributes or a friendly suitability failure.
 3. A successful request creates exactly one RLS-protected `analyses` row with
-   `gemini-3.6-flash` (or the configured override) and `face_analysis_v1`.
+   `gemini-3.6-flash` (or the configured override) and the current
+   `FACE_ANALYSIS_PROMPT_VERSION` (`face_analysis_v2`). Rows written by an
+   earlier prompt keep their original version; see `docs/AI_QUALITY_NOTES.md`.
 
 Do not use a service-role key in Flutter or disable RLS for testing.

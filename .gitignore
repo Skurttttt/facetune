@@ -54,3 +54,8 @@ app.*.map.json
 # Supabase CLI local state.
 /supabase/.branches/
 /supabase/.temp/
+
+# Deno resolves npm dependencies into this directory when running the Edge
+# Function tests (deno.json sets nodeModulesDir: auto). deno.lock is the
+# committed source of truth; these resolved packages are build output.
+/supabase/functions/node_modules/
