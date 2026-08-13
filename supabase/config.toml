@@ -9,5 +9,11 @@ verify_jwt = true
 [functions.generate-makeup-preview]
 verify_jwt = true
 
+[functions.generate-kit-makeup-recommendation]
+verify_jwt = true
+
+[functions.generate-kit-makeup-preview]
+verify_jwt = true
+
 [functions.delete-history-item]
 verify_jwt = true

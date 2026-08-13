@@ -18,11 +18,17 @@ class AppConstants {
   static const String resetPasswordRoute = '/auth/reset-password';
   static const String scanRoute = '/scan';
   static const String stylesRoute = '/styles';
+  static const String recommendationModeRoute = '/recommendation-mode';
   static const String recommendationRoute = '/recommendation';
   static const String analysisRoute = '/analysis';
   static const String previewRoute = '/preview';
   static const String savedRoute = '/saved';
   static const String historyRoute = '/history';
+  static const String makeupKitRoute = '/makeup-kit';
+  static const String makeupKitAddProductRoute = '/makeup-kit/add-product';
+  static const String makeupKitProductRoute = '/makeup-kit/product/:productId';
+  static const String makeupKitRecommendationEntryRoute =
+      '/makeup-kit/recommendation-entry';
   static const String profileRoute = '/profile';
   static const String settingsRoute = '/settings';
 

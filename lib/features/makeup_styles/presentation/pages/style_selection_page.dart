@@ -4,8 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../analysis/presentation/controllers/face_analysis_controller.dart';
-import '../../../recommendation/presentation/controllers/makeup_recommendation_controller.dart';
-import '../../../recommendation/presentation/controllers/makeup_recommendation_state.dart';
 import '../../../../shared/widgets/app_ui.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../domain/catalog/makeup_style_catalog.dart';
@@ -21,11 +19,6 @@ class StyleSelectionPage extends ConsumerWidget {
     final controller = ref.read(
       makeupStyleSelectionControllerProvider.notifier,
     );
-    final recommendationStatus = ref.watch(
-      makeupRecommendationControllerProvider.select((state) => state.status),
-    );
-    final isGenerating =
-        recommendationStatus == MakeupRecommendationStatus.generating;
     return Scaffold(
       appBar: AppBar(title: const Text('Choose your style')),
       body: SafeArea(
@@ -64,9 +57,7 @@ class StyleSelectionPage extends ConsumerWidget {
                           key: ValueKey(style.code),
                           style: style,
                           isSelected: state.selectedStyle?.id == style.id,
-                          onSelected: isGenerating
-                              ? null
-                              : () => controller.select(style),
+                          onSelected: () => controller.select(style),
                         );
                       },
                     );
@@ -95,9 +86,7 @@ class StyleSelectionPage extends ConsumerWidget {
                 const SizedBox(height: AppSpacing.sm),
               ],
               PrimaryButton(
-                label: isGenerating
-                    ? 'Creating your makeup plan…'
-                    : state.isConfirmed
+                label: state.isConfirmed
                     ? '${state.selectedStyle!.name} selected'
                     : state.selectedStyle == null
                     ? 'Select a style to continue'
@@ -105,7 +94,7 @@ class StyleSelectionPage extends ConsumerWidget {
                 icon: state.isConfirmed
                     ? Icons.check_rounded
                     : Icons.arrow_forward_rounded,
-                onPressed: state.selectedStyle == null || isGenerating
+                onPressed: state.selectedStyle == null
                     ? null
                     : () {
                         final analysis = ref
@@ -127,15 +116,7 @@ class StyleSelectionPage extends ConsumerWidget {
                           return;
                         }
                         controller.confirm();
-                        ref
-                            .read(
-                              makeupRecommendationControllerProvider.notifier,
-                            )
-                            .generate(
-                              analysis: analysis,
-                              style: state.selectedStyle!,
-                            );
-                        context.push(AppConstants.recommendationRoute);
+                        context.push(AppConstants.recommendationModeRoute);
                       },
               ),
             ],

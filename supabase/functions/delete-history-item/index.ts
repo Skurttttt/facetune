@@ -1,8 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import {
-  createClient,
-  type SupabaseClient,
-} from "npm:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 
 import {
   assertOwnedHistoryPaths,
@@ -210,11 +207,24 @@ Deno.serve(async (request) => {
         true,
       );
     }
+    const { data: kitGenerated, error: kitGeneratedError } = await client
+      .from("kit_generated_images")
+      .select("storage_path")
+      .eq("analysis_id", analysisId);
+    if (kitGeneratedError) {
+      throw new FunctionFailure(
+        500,
+        "kit_preview_lookup_failed",
+        "This history item's kit previews could not be verified.",
+        true,
+      );
+    }
     const recordedPaths = [
       ...(analysis?.original_image_path
         ? [analysis.original_image_path as string]
         : []),
       ...((generated ?? []).map((row) => row.storage_path as string)),
+      ...((kitGenerated ?? []).map((row) => row.storage_path as string)),
     ];
     try {
       assertOwnedHistoryPaths(recordedPaths, prefix);
