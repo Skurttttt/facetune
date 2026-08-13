@@ -1,4 +1,4 @@
-# My Makeup Kit — Architecture Contract (MK-1, MK-2, MK-3)
+# My Makeup Kit — Architecture Contract (MK-1, MK-2, MK-3, MK-4, MK-5)
 
 This document records the isolated feature boundary established for My
 Makeup Kit and must be read before implementing any later `MK-*` phase.
@@ -358,3 +358,242 @@ layers — see Files Created below.
 
 No UI (`presentation/pages`, `presentation/widgets` do not exist), no
 Gemini/kit-recommendation logic, and no change to any existing feature.
+
+---
+
+## MK-4 — Kit Overview & Category UX
+
+The premium inventory-browsing screen, read-only. No Gemini/kit
+recommendation logic, no add/edit/delete flow yet (MK-5/MK-6) — the "Add
+Product" affordances intentionally show a "coming in the next update"
+message rather than reaching into unbuilt scope.
+
+### Files added
+
+```text
+lib/features/makeup_kit/presentation/
+  utils/
+    makeup_kit_display.dart        category/finish/depth/undertone display labels + icons,
+                                    NormalizedHexColor -> Color conversion
+  widgets/
+    makeup_kit_color_swatch.dart   circular color preview
+    makeup_kit_product_tile.dart   one product row (swatch, title, subtitle)
+    makeup_kit_category_section.dart  one category's header + products/empty state
+  pages/
+    makeup_kit_overview_page.dart  loading / error / empty / populated states
+```
+
+Display labels/icons were deliberately withheld from the domain layer in
+MK-1 pending the first phase that actually needed them — this is that
+phase, and they live in `presentation/utils`, not on the domain enums
+themselves, so the domain layer stays free of Flutter (`dart:ui`)
+dependencies.
+
+### Files modified (additive only)
+
+- `lib/core/constants/app_constants.dart` — added `makeupKitRoute`.
+- `lib/app/router/app_router.dart` — added one `GoRoute` entry. No
+  existing route's path, name, builder, or the `redirect`/auth-guard logic
+  was touched.
+- `lib/features/profile/presentation/pages/profile_page.dart` — added one
+  `ListTile` ("My Makeup Kit") to the existing "Your library" card,
+  alongside "Saved looks" and "FaceTune history", using the same
+  `context.push` pattern already used there for "Settings and privacy".
+  No existing tile, card, or profile behavior was changed.
+
+`lib/shared/widgets/app_shell.dart` (the bottom navigation bar) was
+deliberately **not** touched — My Makeup Kit is a pushed sub-page like
+Settings, not a fifth bottom-nav tab, so the four existing tabs and their
+indices are unaffected.
+
+### Screens / components
+
+`MakeupKitOverviewPage`: `Scaffold` + `AppBar` + `FloatingActionButton.extended`
+("Add Product") — same shape as `SettingsPage`, not `AppShell` (no bottom
+nav, since this isn't a tab). Body switches on
+`MakeupKitProductsStatus`:
+
+- **loading** — three `SkeletonCard(imageHeight: 0)` rows (reused
+  as-is, not a new skeleton component).
+- **failure** — `StatusState` with a session-expiry-aware retry action,
+  matching the exact pattern in `SettingsPage`/`ProfilePage`/
+  `SavedLooksPage`.
+- **ready, empty kit** — `StatusState` ("Your kit is empty") with an Add
+  Product action.
+- **ready, populated** — one `AppCard` containing all ten categories in a
+  fixed, stable order (`MakeupKitCategory.values`), each rendered via
+  `MakeupKitCategorySection`: category icon/label, a count (or "No
+  products"), and either its product tiles or "No products in this
+  category yet." Multiple products per category render as a plain list —
+  no artificial one-per-category assumption anywhere.
+- **guest accounts** — the same-style `AppCard(color: AppColors.petal)`
+  notice used on `SavedLooksPage`, reworded for kit context, satisfying
+  the master guide's "guest data must be handled safely" requirement.
+
+### Navigation
+
+Entry point: Profile → "Your library" → "My Makeup Kit" (`context.push`).
+Route `/makeup-kit`, name `makeupKit`. Already auth-gated for free by the
+router's existing global `redirect` (not in the `publicRoutes` allow-list).
+
+### State integration
+
+Uses MK-3's `makeupKitProductsControllerProvider` unmodified — no new
+providers or state fields were needed for a read-only overview.
+`RefreshIndicator` calls the existing `refresh()`.
+
+### Bug found and fixed during testing
+
+`MakeupKitProductTile`'s title falls back to `finish.label` when a product
+has neither a name nor a color label; the initial subtitle logic still
+unconditionally included `finish.label` too, so an unnamed product's card
+showed the finish word twice (once as title, once as subtitle) — caught by
+a widget test asserting `find.text('Satin')` was unique. Fixed by only
+including the finish label in the subtitle when a title (name or color
+label) is actually present, falling back to the product's HEX value in the
+rare case neither is set. Also replaced a stringly-typed
+`product.category.code == 'foundation'` check with a type-safe
+`product.category == MakeupKitCategory.foundation` comparison while fixing
+this.
+
+### Tests
+
+`test/features/makeup_kit/makeup_kit_overview_page_test.dart` — loading
+(skeletons), empty kit (+ Add Product action), populated (category labels,
+product title/subtitle, empty-category text), and retryable error (+
+successful retry) states, all via a fake `MakeupKitProductsRepository`
+override — no real Supabase/network involved.
+
+### Non-goals confirmed for MK-4
+
+No recommendation-mode selector, no Gemini call, no add/edit/delete
+mutation UI (Add Product shows an honest "coming in the next update"
+message instead), no change to `AppShell`'s bottom navigation, no change
+to any frozen Makeup Recommendation file.
+
+---
+
+## MK-5 — Add Product & Visual Color Picker
+
+Implements the real Add Product flow that MK-4 deferred. Edit/Delete
+remain out of scope (MK-6).
+
+### Files added
+
+```text
+lib/features/makeup_kit/presentation/
+  utils/
+    makeup_kit_curated_shades.dart   CuratedShade + per-category palette
+  widgets/
+    makeup_kit_color_picker.dart     curated shades + HSV sliders + advanced HEX
+    makeup_kit_finish_selector.dart  single-select chips, pre-filtered by category
+    makeup_kit_foundation_attributes_selector.dart  Depth + Undertone chips
+  pages/
+    add_makeup_kit_product_page.dart  the single reactive form
+```
+
+### Files modified
+
+- `lib/features/makeup_kit/presentation/pages/makeup_kit_overview_page.dart`
+  — the FAB and empty-state "Add Product" actions now `context.push` the
+  real route instead of showing MK-4's placeholder SnackBar. This is
+  completing MK-4's own documented deferral, not touching unrelated
+  behavior.
+- `lib/core/constants/app_constants.dart` / `lib/app/router/app_router.dart`
+  — added `makeupKitAddProductRoute` and its `GoRoute`. No existing route
+  changed.
+- `lib/features/makeup_kit/presentation/controllers/makeup_kit_products_controller.dart`
+  — see "Bug found and fixed" below. This is the one MK-3 file this phase
+  had to touch, and only to fix a genuine correctness bug this phase's own
+  testing surfaced — not a refactor.
+
+### Color picker
+
+`MakeupKitColorPicker` combines, per FACETUNE_MY_MAKEUP_KIT_GUIDE.md §7:
+
+- **Curated shades** — `MakeupKitCuratedShades.forCategory(category)`, a
+  brand-neutral, hand-picked reference palette per category (e.g. Lipstick:
+  Nude Rose, Peach Nude, Soft Pink, Terracotta, Deep Red, Berry). Tapping
+  one sets both the color and its label in one action — no HEX literacy
+  required.
+- **Selected-color preview** — swatch + "Selected: <label or HEX>".
+- **Precise adjustment** — three `Slider`s (Hue/Saturation/Brightness)
+  driven by `HSVColor`, with no new package dependency: Flutter's built-in
+  `HSVColor`/`HSVColor.toColor()` already do the color math; only the
+  reverse direction (`Color` → HEX string) needed a small helper, written
+  against `Color.toARGB32()` (Flutter 3.38 — `.value`/`.red`/`.green`/
+  `.blue` are deprecated in this SDK in favor of the `.r`/`.g`/`.b` double
+  API and `.toARGB32()`, confirmed by reading the installed
+  `dropdown.dart`/`Color` source directly rather than assuming).
+- **Advanced HEX entry** — an optional `TextField`; `NormalizedHexColor.tryParse`
+  gates it, so an invalid value shows an inline error and never reaches
+  `onColorSelected` — invalid HEX cannot be saved, by construction.
+- Adjusting a slider or entering a valid HEX clears the curated label
+  (the color is no longer a named shade); tapping a curated shade always
+  wins back both the color and the label together.
+
+### Category-specific form
+
+`AddMakeupKitProductPage` is one reactive form, not a wizard: picking a
+category immediately re-filters `MakeupKitFinishSelector`'s options via
+`MakeupKitFinishCatalog.allowedFinishes` (MK-1) and shows/hides
+`MakeupKitFoundationAttributesSelector`. Switching category also resets
+color to that category's first curated shade and clears an
+now-incompatible finish/Depth/Undertone selection — this is the same
+mechanism that will satisfy MK-6's "no stale foundation metadata after a
+category change" requirement, since a draft is always built fresh from
+current form state, never patched.
+
+### Save behavior
+
+- **Validation**: category/finish combinations are impossible to
+  mis-select in the UI (chips are pre-filtered); `NormalizedHexColor` makes
+  an invalid color unrepresentable in state; `MakeupKitProductValidator`
+  (MK-1/MK-3) still re-validates in the repository as defense in depth.
+- **Loading**: the Save button shows "Saving…" and disables while
+  `state.isCreating`.
+- **Duplicate-submit protection**: reuses MK-3's existing
+  `if (state.isCreating) return` guard in the controller — no new
+  mechanism needed.
+- **Success feedback**: SnackBar via the same `ref.listen` pattern used on
+  every other page, then the screen pops back to the kit overview (which
+  already shows the new product — same shared controller state, no manual
+  refresh).
+- **Recoverable-failure preservation**: the form's fields live in
+  `AddMakeupKitProductPage`'s own `State` and are never cleared except on
+  confirmed success, so a failed save leaves every entered value in place.
+
+### Bug found and fixed during testing
+
+A widget test for the failure path (`a failed save keeps the user on the
+page...`) caught a real race condition: `_submit()` originally awaited
+`createProduct()` and then re-read `ref.read(controllerProvider).feedbackIsError`
+to decide whether to pop. But the page's own `ref.listen` reacts to that
+*same* state change synchronously and calls `clearFeedback()` — which
+resets `feedbackIsError` back to `false` — before the `await` in `_submit`
+resumes. The result: a **failed** save was incorrectly treated as
+successful, popping the form. Fixed by changing
+`MakeupKitProductsController.createProduct` (and, for the same reason,
+`updateProduct`/`deleteProduct`) to return `Future<bool>` reporting the
+outcome directly, so the caller never needs to re-read racy ambient state.
+This is a backward-compatible signature change — existing MK-3 callers
+that `await` without using the return value are unaffected, confirmed by
+rerunning `makeup_kit_products_controller_test.dart`.
+
+### Tests
+
+- `makeup_kit_color_picker_test.dart` — curated shade selection, valid/invalid
+  HEX entry, slider-driven custom color, category-specific palette contents.
+- `add_makeup_kit_product_page_test.dart` — default Foundation state shows
+  Depth/Undertone; Lipstick/Eyeshadow/Blush/Eyeliner each show exactly
+  their documented finishes and nothing else; switching away from
+  Foundation clears Depth/Undertone from the submitted draft; successful
+  save pops back to the caller; a failed save keeps the page and entered
+  values (the bug above); duplicate taps while saving submit exactly once.
+- `makeup_kit_overview_page_test.dart` updated: the old "coming soon"
+  assertion is replaced with a real navigation check now that MK-5 exists.
+
+### Non-goals confirmed for MK-5
+
+No camera-based shade detection. No Edit/Delete UI (MK-6). No brand
+field. No change to any frozen Makeup Recommendation file.

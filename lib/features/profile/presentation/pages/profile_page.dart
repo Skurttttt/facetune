@@ -193,6 +193,17 @@ class ProfilePage extends ConsumerWidget {
                         trailing: const Icon(Icons.chevron_right_rounded),
                         onTap: () => context.go(AppConstants.historyRoute),
                       ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(
+                          Icons.inventory_2_outlined,
+                          color: AppColors.rose,
+                        ),
+                        title: const Text('My Makeup Kit'),
+                        subtitle: const Text('Makeup products you own'),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => context.push(AppConstants.makeupKitRoute),
+                      ),
                     ],
                   ),
                 ),

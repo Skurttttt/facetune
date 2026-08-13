@@ -23,6 +23,9 @@ class AppConstants {
   static const String previewRoute = '/preview';
   static const String savedRoute = '/saved';
   static const String historyRoute = '/history';
+  static const String makeupKitRoute = '/makeup-kit';
+  static const String makeupKitAddProductRoute = '/makeup-kit/add-product';
+  static const String makeupKitProductRoute = '/makeup-kit/product/:productId';
   static const String profileRoute = '/profile';
   static const String settingsRoute = '/settings';
 
