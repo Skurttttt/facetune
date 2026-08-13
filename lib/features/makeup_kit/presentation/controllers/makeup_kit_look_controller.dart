@@ -109,6 +109,25 @@ class MakeupKitLookController extends StateNotifier<MakeupKitLookState> {
     state = const MakeupKitLookState();
   }
 
+  void restore({
+    required KitMakeupRecommendation recommendation,
+    required KitGeneratedPreview preview,
+  }) {
+    if (recommendation.analysisId != preview.analysisId ||
+        recommendation.id != preview.kitRecommendationId) {
+      throw ArgumentError('Kit result linkage is invalid.');
+    }
+    _operationEpoch += 1;
+    _analysisId = recommendation.analysisId;
+    _styleCode = recommendation.styleCode;
+    _recommendation = recommendation;
+    state = MakeupKitLookState(
+      status: MakeupKitLookStatus.success,
+      recommendation: recommendation,
+      preview: preview,
+    );
+  }
+
   Future<void> _generatePreview(
     KitMakeupRecommendation recommendation, {
     required int operation,

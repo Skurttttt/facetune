@@ -31,12 +31,41 @@ class KitMakeupRecommendationDto {
           );
         })
         .toList(growable: false);
+    final snapshotValues = data['productSnapshot'];
+    if (snapshotValues is! List || snapshotValues.isEmpty) {
+      throw const FormatException('productSnapshot must be a non-empty list.');
+    }
+    final snapshots = snapshotValues
+        .map((value) {
+          final item = _object(value, 'productSnapshot item');
+          final colorHex = _string(item, 'colorHex');
+          if (!RegExp(r'^#[0-9A-F]{6}$').hasMatch(colorHex)) {
+            throw const FormatException('snapshot colorHex is invalid.');
+          }
+          return KitProductSnapshot(
+            productId: _string(item, 'productId'),
+            category: _string(item, 'category'),
+            productName: _nullableString(item['productName']),
+            colorHex: colorHex,
+            colorLabel: _nullableString(item['colorLabel']),
+            finish: _string(item, 'finish'),
+            foundationDepth: _nullableString(item['foundationDepth']),
+            foundationUndertone: _nullableString(item['foundationUndertone']),
+          );
+        })
+        .toList(growable: false);
+    final snapshotIds = snapshots.map((item) => item.productId).toSet();
+    if (snapshotIds.length != snapshots.length ||
+        selections.any((item) => !snapshotIds.contains(item.productId))) {
+      throw const FormatException('Product snapshot linkage is invalid.');
+    }
     return KitMakeupRecommendationDto(
       KitMakeupRecommendation(
         id: _string(data, 'id'),
         analysisId: _string(data, 'analysisId'),
         styleCode: _string(data, 'style'),
         selections: List.unmodifiable(selections),
+        productSnapshots: List.unmodifiable(snapshots),
         overallIntensity: _string(plan, 'overallIntensity'),
         summary: _string(plan, 'summary'),
         modelId: _string(data, 'modelId'),
@@ -57,5 +86,12 @@ class KitMakeupRecommendationDto {
       throw FormatException('$key must be a non-empty string.');
     }
     return value.trim();
+  }
+
+  static String? _nullableString(Object? value) {
+    if (value == null) return null;
+    if (value is! String) throw const FormatException('Expected text.');
+    final normalized = value.trim();
+    return normalized.isEmpty ? null : normalized;
   }
 }

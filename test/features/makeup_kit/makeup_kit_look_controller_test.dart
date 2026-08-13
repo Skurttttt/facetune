@@ -116,6 +116,15 @@ final recommendation = KitMakeupRecommendation(
       intensity: 'soft',
     ),
   ],
+  productSnapshots: [
+    KitProductSnapshot(
+      productId: '11111111-1111-4111-8111-111111111111',
+      category: 'lipstick',
+      productName: 'Rose lipstick',
+      colorHex: '#A45B67',
+      finish: 'matte',
+    ),
+  ],
   overallIntensity: 'soft',
   summary: 'A soft look.',
   modelId: 'gemini-3.6-flash',

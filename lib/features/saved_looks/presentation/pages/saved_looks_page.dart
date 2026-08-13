@@ -9,6 +9,12 @@ import '../../../../theme/app_tokens.dart';
 import '../../../analysis/presentation/controllers/face_analysis_controller.dart';
 import '../../../authentication/presentation/controllers/auth_controller.dart';
 import '../../../makeup_styles/presentation/controllers/makeup_style_selection_controller.dart';
+import '../../../makeup_kit/domain/entities/kit_look_result.dart';
+import '../../../makeup_kit/presentation/controllers/makeup_kit_library_state.dart';
+import '../../../makeup_kit/presentation/controllers/makeup_kit_look_controller.dart';
+import '../../../makeup_kit/presentation/controllers/makeup_kit_result_actions_controller.dart';
+import '../../../makeup_kit/presentation/controllers/makeup_kit_saved_controller.dart';
+import '../../../makeup_kit/presentation/widgets/kit_saved_look_card.dart';
 import '../../../preview/presentation/controllers/makeup_preview_controller.dart';
 import '../../../recommendation/presentation/controllers/makeup_recommendation_controller.dart';
 import '../../../results/presentation/controllers/result_actions_controller.dart';
@@ -36,6 +42,7 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
   void _loadMore() {
     if (_scrollController.position.extentAfter < 500) {
       ref.read(savedLooksControllerProvider.notifier).loadMore();
+      ref.read(makeupKitSavedControllerProvider.notifier).loadMore();
     }
   }
 
@@ -50,6 +57,7 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(savedLooksControllerProvider);
+    final kitState = ref.watch(makeupKitSavedControllerProvider);
     final isGuest = ref.watch(authControllerProvider).user?.isAnonymous == true;
     ref.listen<SavedLooksState>(savedLooksControllerProvider, (previous, next) {
       if (next.feedback == null || next.feedback == previous?.feedback) return;
@@ -68,14 +76,30 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
       );
       ref.read(savedLooksControllerProvider.notifier).clearFeedback();
     });
+    ref.listen<MakeupKitSavedState>(makeupKitSavedControllerProvider, (
+      previous,
+      next,
+    ) {
+      if (next.feedback == null || next.feedback == previous?.feedback) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(next.feedback!)));
+      ref.read(makeupKitSavedControllerProvider.notifier).clearFeedback();
+    });
     return AppShell(
       index: 1,
       child: SafeArea(
         child: PageFrame(
           child: RefreshIndicator(
-            onRefresh: () =>
+            onRefresh: () async {
+              await Future.wait([
                 ref.read(savedLooksControllerProvider.notifier).refresh(),
-            child: _buildContent(context, state, isGuest),
+                ref
+                    .read(makeupKitSavedControllerProvider.notifier)
+                    .loadInitial(),
+              ]);
+            },
+            child: _buildContent(context, state, kitState, isGuest),
           ),
         ),
       ),
@@ -85,6 +109,7 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
   Widget _buildContent(
     BuildContext context,
     SavedLooksState state,
+    MakeupKitSavedState kitState,
     bool isGuest,
   ) {
     if (state.status == SavedLooksStatus.loading) {
@@ -96,7 +121,9 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
         ],
       );
     }
-    if (state.status == SavedLooksStatus.failure && state.items.isEmpty) {
+    if (state.status == SavedLooksStatus.failure &&
+        state.items.isEmpty &&
+        kitState.items.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
@@ -162,7 +189,76 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
           ),
         ],
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
-        if (state.items.isEmpty)
+        if (kitState.status == MakeupKitLibraryStatus.loading)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: AppSpacing.lg),
+              child: Center(
+                child: LoadingState(label: 'Loading My Makeup Kit looks…'),
+              ),
+            ),
+          )
+        else if (kitState.items.isNotEmpty) ...[
+          SliverToBoxAdapter(
+            child: Text(
+              'My Makeup Kit',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.sm)),
+          SliverLayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.crossAxisExtent;
+              final columns = width >= 1000
+                  ? 4
+                  : width >= 700
+                  ? 3
+                  : 2;
+              return SliverGrid(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: columns,
+                  childAspectRatio: .68,
+                  crossAxisSpacing: AppSpacing.sm,
+                  mainAxisSpacing: AppSpacing.sm,
+                ),
+                delegate: SliverChildBuilderDelegate((context, index) {
+                  final look = kitState.items[index];
+                  return KitSavedLookCard(
+                    look: look,
+                    isMutating: kitState.mutatingIds.contains(look.id),
+                    onOpen: () => _openKitResult(look),
+                    onFavorite: () => ref
+                        .read(makeupKitSavedControllerProvider.notifier)
+                        .toggleFavorite(look),
+                    onRemove: () => _confirmRemoveKit(look),
+                  );
+                }, childCount: kitState.items.length),
+              );
+            },
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
+        ] else if (kitState.status == MakeupKitLibraryStatus.failure)
+          SliverToBoxAdapter(
+            child: StatusState(
+              title: 'My Makeup Kit looks unavailable',
+              message: kitState.message ?? 'Pull to refresh and try again.',
+              icon: Icons.inventory_2_outlined,
+              actionLabel: 'Try again',
+              onAction: () => ref
+                  .read(makeupKitSavedControllerProvider.notifier)
+                  .loadInitial(),
+            ),
+          ),
+        if (state.items.isNotEmpty) ...[
+          SliverToBoxAdapter(
+            child: Text(
+              'Makeup Recommendations',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.sm)),
+        ],
+        if (state.items.isEmpty && kitState.items.isEmpty)
           const SliverFillRemaining(
             hasScrollBody: false,
             child: StatusState(
@@ -172,7 +268,7 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
               icon: Icons.bookmark_border_rounded,
             ),
           )
-        else
+        else if (state.items.isNotEmpty)
           SliverLayoutBuilder(
             builder: (context, constraints) {
               final width = constraints.crossAxisExtent;
@@ -208,6 +304,13 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
               child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
             ),
           ),
+        if (kitState.status == MakeupKitLibraryStatus.loadingMore)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(AppSpacing.lg),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
+          ),
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xl)),
       ],
     );
@@ -226,6 +329,24 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
         .restore(look.preview, recommendation: look.recommendation);
     ref.read(resultActionsControllerProvider.notifier).restoreSavedLook(look);
     context.push(AppConstants.previewRoute);
+  }
+
+  void _openKitResult(KitSavedLook look) {
+    final result = look.result;
+    ref.read(faceAnalysisControllerProvider.notifier).restore(result.analysis);
+    ref
+        .read(makeupStyleSelectionControllerProvider.notifier)
+        .restore(result.style);
+    ref
+        .read(makeupKitLookControllerProvider.notifier)
+        .restore(
+          recommendation: result.recommendation,
+          preview: result.preview,
+        );
+    ref
+        .read(makeupKitResultActionsControllerProvider.notifier)
+        .restoreSavedLook(look);
+    context.push(AppConstants.makeupKitRecommendationEntryRoute);
   }
 
   Future<void> _toggleFavorite(SavedLook look) async {
@@ -274,6 +395,31 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
             .read(resultActionsControllerProvider.notifier)
             .forgetSavedLook(look.preview.id);
       }
+    }
+  }
+
+  Future<void> _confirmRemoveKit(KitSavedLook look) async {
+    final remove = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove saved kit look?'),
+        content: Text(
+          '${look.result.style.name} will be removed from Saved Looks. Its product snapshot and preview remain in private history.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (remove == true) {
+      await ref.read(makeupKitSavedControllerProvider.notifier).remove(look);
     }
   }
 }

@@ -162,7 +162,14 @@ void main() {
     expect(harness.recommendation.calls, 0);
     expect(harness.kitLook.recommendationCalls, 1);
     expect(harness.kitLook.previewCalls, 1);
-    expect(find.text('Your kit-based preview'), findsOneWidget);
+    expect(find.text('Your My Makeup Kit look'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('My lipstick'),
+      500,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('My lipstick'), findsOneWidget);
+    expect(find.textContaining('#B86F72'), findsOneWidget);
   });
 
   testWidgets(
@@ -265,6 +272,15 @@ class _FakeKitLookRepository implements MakeupKitLookRepository {
           placement: 'Across the lips',
           technique: 'Apply a thin layer',
           intensity: 'soft',
+        ),
+      ],
+      productSnapshots: const [
+        KitProductSnapshot(
+          productId: 'product-1',
+          category: 'lipstick',
+          productName: 'My lipstick',
+          colorHex: '#B86F72',
+          finish: 'matte',
         ),
       ],
       overallIntensity: 'soft',

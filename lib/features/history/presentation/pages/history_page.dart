@@ -9,6 +9,13 @@ import '../../../../theme/app_tokens.dart';
 import '../../../analysis/presentation/controllers/face_analysis_controller.dart';
 import '../../../authentication/presentation/controllers/auth_controller.dart';
 import '../../../makeup_styles/presentation/controllers/makeup_style_selection_controller.dart';
+import '../../../makeup_kit/domain/entities/kit_look_result.dart';
+import '../../../makeup_kit/data/providers/makeup_kit_library_providers.dart';
+import '../../../makeup_kit/presentation/controllers/makeup_kit_history_controller.dart';
+import '../../../makeup_kit/presentation/controllers/makeup_kit_library_state.dart';
+import '../../../makeup_kit/presentation/controllers/makeup_kit_look_controller.dart';
+import '../../../makeup_kit/presentation/controllers/makeup_kit_result_actions_controller.dart';
+import '../../../makeup_kit/presentation/widgets/kit_history_card.dart';
 import '../../../preview/presentation/controllers/makeup_preview_controller.dart';
 import '../../../preview/presentation/controllers/makeup_preview_state.dart';
 import '../../../recommendation/presentation/controllers/makeup_recommendation_controller.dart';
@@ -38,6 +45,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   void _loadMore() {
     if (_scrollController.position.extentAfter < 500) {
       ref.read(historyControllerProvider.notifier).loadMore();
+      ref.read(makeupKitHistoryControllerProvider.notifier).loadMore();
     }
   }
 
@@ -52,6 +60,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(historyControllerProvider);
+    final kitState = ref.watch(makeupKitHistoryControllerProvider);
     final isGuest = ref.watch(authControllerProvider).user?.isAnonymous == true;
     final previewIsGenerating = ref.watch(
       makeupPreviewControllerProvider.select(
@@ -75,9 +84,24 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       );
       ref.read(historyControllerProvider.notifier).clearFeedback();
     });
+    ref.listen<MakeupKitHistoryState>(makeupKitHistoryControllerProvider, (
+      previous,
+      next,
+    ) {
+      if (next.feedback == null || next.feedback == previous?.feedback) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(next.feedback!)));
+      ref.read(makeupKitHistoryControllerProvider.notifier).clearFeedback();
+    });
     ref.listen<int>(savedLooksRevisionProvider, (previous, next) {
       if (previous != null && previous != next) {
         ref.read(historyControllerProvider.notifier).refresh();
+      }
+    });
+    ref.listen<int>(makeupKitLibraryRevisionProvider, (previous, next) {
+      if (previous != null && previous != next) {
+        ref.read(makeupKitHistoryControllerProvider.notifier).loadInitial();
       }
     });
     ref.listen<MakeupPreviewState>(makeupPreviewControllerProvider, (
@@ -95,9 +119,21 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       child: SafeArea(
         child: PageFrame(
           child: RefreshIndicator(
-            onRefresh: () =>
+            onRefresh: () async {
+              await Future.wait([
                 ref.read(historyControllerProvider.notifier).refresh(),
-            child: _content(context, state, isGuest, previewIsGenerating),
+                ref
+                    .read(makeupKitHistoryControllerProvider.notifier)
+                    .loadInitial(),
+              ]);
+            },
+            child: _content(
+              context,
+              state,
+              kitState,
+              isGuest,
+              previewIsGenerating,
+            ),
           ),
         ),
       ),
@@ -107,10 +143,12 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   Widget _content(
     BuildContext context,
     HistoryState state,
+    MakeupKitHistoryState kitState,
     bool isGuest,
     bool previewIsGenerating,
   ) {
-    if (state.status == HistoryLoadStatus.loading) {
+    if (state.status == HistoryLoadStatus.loading &&
+        kitState.status == MakeupKitLibraryStatus.loading) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: const [
@@ -119,7 +157,9 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
         ],
       );
     }
-    if (state.status == HistoryLoadStatus.failure && state.items.isEmpty) {
+    if (state.status == HistoryLoadStatus.failure &&
+        state.items.isEmpty &&
+        kitState.items.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
@@ -142,6 +182,43 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     }
 
     final visibleItems = state.visibleItems;
+    final normalizedQuery = state.query.trim().toLowerCase();
+    final visibleKitItems = kitState.items
+        .where((entry) {
+          final matchesFilter = switch (state.filter) {
+            HistoryFilter.all || HistoryFilter.completed => true,
+            HistoryFilter.favorites => entry.isFavorite,
+          };
+          if (!matchesFilter) return false;
+          if (normalizedQuery.isEmpty) return true;
+          final attributes = entry.result.analysis.attributes;
+          final searchable = [
+            entry.result.style.name,
+            entry.result.style.code,
+            entry.result.recommendation.overallIntensity,
+            entry.result.recommendation.summary,
+            ...entry.result.recommendation.productSnapshots.expand(
+              (snapshot) => [
+                snapshot.category,
+                snapshot.productName,
+                snapshot.colorLabel,
+                snapshot.colorHex,
+                snapshot.finish,
+                snapshot.foundationDepth,
+                snapshot.foundationUndertone,
+              ],
+            ),
+            attributes.faceShape.name,
+            attributes.skinTone.name,
+            attributes.undertone.name,
+            attributes.eyeShape.name,
+            attributes.lipShape.name,
+            attributes.hairColor.name,
+            attributes.eyeColor.name,
+          ].whereType<String>().join(' ').toLowerCase();
+          return searchable.contains(normalizedQuery);
+        })
+        .toList(growable: false);
     return CustomScrollView(
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
@@ -224,14 +301,66 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
           ),
         ],
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
-        if (visibleItems.isEmpty)
+        if (kitState.status == MakeupKitLibraryStatus.loading)
+          const SliverToBoxAdapter(
+            child: Center(
+              child: LoadingState(label: 'Loading My Makeup Kit history…'),
+            ),
+          )
+        else if (visibleKitItems.isNotEmpty) ...[
+          SliverToBoxAdapter(
+            child: Text(
+              'My Makeup Kit',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.sm)),
+          SliverList(
+            delegate: SliverChildBuilderDelegate((context, index) {
+              if (index.isOdd) {
+                return const SizedBox(height: AppSpacing.sm);
+              }
+              final entry = visibleKitItems[index ~/ 2];
+              return KitHistoryCard(
+                entry: entry,
+                isMutating: kitState.mutatingIds.contains(
+                  entry.result.analysis.id,
+                ),
+                onOpen: () => _openKit(entry),
+                onDelete: () => _confirmDeleteKit(entry),
+              );
+            }, childCount: visibleKitItems.length * 2 - 1),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
+        ] else if (kitState.status == MakeupKitLibraryStatus.failure)
+          SliverToBoxAdapter(
+            child: StatusState(
+              title: 'My Makeup Kit history unavailable',
+              message: kitState.message ?? 'Pull to refresh and try again.',
+              icon: Icons.inventory_2_outlined,
+              actionLabel: 'Try again',
+              onAction: () => ref
+                  .read(makeupKitHistoryControllerProvider.notifier)
+                  .loadInitial(),
+            ),
+          ),
+        if (visibleItems.isNotEmpty) ...[
+          SliverToBoxAdapter(
+            child: Text(
+              'Makeup Recommendations',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.sm)),
+        ],
+        if (visibleItems.isEmpty && visibleKitItems.isEmpty)
           SliverFillRemaining(
             hasScrollBody: false,
             child: StatusState(
-              title: state.items.isEmpty
+              title: state.items.isEmpty && kitState.items.isEmpty
                   ? 'No FaceTune history yet'
                   : 'No matching sessions',
-              message: state.items.isEmpty
+              message: state.items.isEmpty && kitState.items.isEmpty
                   ? 'Complete a selfie analysis to begin your private history.'
                   : 'Try another search or filter.',
               icon: state.items.isEmpty
@@ -239,7 +368,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                   : Icons.search_off_rounded,
             ),
           )
-        else
+        else if (visibleItems.isNotEmpty)
           SliverList(
             delegate: SliverChildBuilderDelegate((context, index) {
               if (index.isOdd) {
@@ -263,6 +392,13 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
             }, childCount: visibleItems.length * 2 - 1),
           ),
         if (state.status == HistoryLoadStatus.loadingMore)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(AppSpacing.lg),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
+          ),
+        if (kitState.status == MakeupKitLibraryStatus.loadingMore)
           const SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.all(AppSpacing.lg),
@@ -333,6 +469,27 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     );
   }
 
+  void _openKit(KitHistoryEntry entry) {
+    final result = entry.result;
+    ref.read(faceAnalysisControllerProvider.notifier).restore(result.analysis);
+    ref
+        .read(makeupStyleSelectionControllerProvider.notifier)
+        .restore(result.style);
+    ref
+        .read(makeupKitLookControllerProvider.notifier)
+        .restore(
+          recommendation: result.recommendation,
+          preview: result.preview,
+        );
+    final saved = entry.savedLook;
+    if (saved != null) {
+      ref
+          .read(makeupKitResultActionsControllerProvider.notifier)
+          .restoreSavedLook(saved);
+    }
+    context.push(AppConstants.makeupKitRecommendationEntryRoute);
+  }
+
   Future<void> _regenerate(HistoryEntry entry) async {
     final recommendation = entry.recommendation;
     if (recommendation == null ||
@@ -379,6 +536,41 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       ref.read(makeupStyleSelectionControllerProvider.notifier).clear();
       ref.read(makeupRecommendationControllerProvider.notifier).clear();
       ref.read(makeupPreviewControllerProvider.notifier).clear();
+    }
+  }
+
+  Future<void> _confirmDeleteKit(KitHistoryEntry entry) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete this history session?'),
+        content: const Text(
+          'This permanently removes the original selfie, standard and My Makeup Kit previews, recommendations, and saved looks in this session.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete permanently'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final deleted = await ref
+        .read(makeupKitHistoryControllerProvider.notifier)
+        .delete(entry);
+    if (!deleted || !mounted) return;
+    if (ref.read(faceAnalysisControllerProvider).analysis?.id ==
+        entry.result.analysis.id) {
+      ref.read(faceAnalysisControllerProvider.notifier).clear();
+      ref.read(makeupStyleSelectionControllerProvider.notifier).clear();
+      ref.read(makeupRecommendationControllerProvider.notifier).clear();
+      ref.read(makeupPreviewControllerProvider.notifier).clear();
+      ref.read(makeupKitLookControllerProvider.notifier).clear();
     }
   }
 }

@@ -10,11 +10,13 @@ import '../../../authentication/presentation/controllers/auth_controller.dart';
 import '../../../makeup_styles/presentation/controllers/makeup_style_selection_controller.dart';
 import '../../../preview/domain/errors/preview_failure.dart';
 import '../../../results/presentation/widgets/before_after_comparison.dart';
-import '../../domain/entities/kit_makeup_recommendation.dart';
 import '../controllers/makeup_kit_look_controller.dart';
 import '../controllers/makeup_kit_look_state.dart';
 import '../controllers/makeup_kit_products_controller.dart';
 import '../controllers/makeup_kit_products_state.dart';
+import '../controllers/makeup_kit_result_actions_controller.dart';
+import '../controllers/makeup_kit_result_actions_state.dart';
+import '../widgets/kit_result_product_card.dart';
 
 class MakeupKitRecommendationEntryPage extends ConsumerWidget {
   const MakeupKitRecommendationEntryPage({super.key});
@@ -27,88 +29,135 @@ class MakeupKitRecommendationEntryPage extends ConsumerWidget {
         .selectedStyle;
     final kit = ref.watch(makeupKitProductsControllerProvider);
     final look = ref.watch(makeupKitLookControllerProvider);
-    final isReady =
+    final actions = ref.watch(makeupKitResultActionsControllerProvider);
+    final kitReady =
         analysis != null &&
         style != null &&
         kit.status == MakeupKitProductsStatus.ready &&
         kit.items.isNotEmpty;
+    final resultReady =
+        look.status == MakeupKitLookStatus.success &&
+        analysis != null &&
+        style != null &&
+        _linksMatch(look, analysis.id, style.code);
+    final preview = look.preview;
+    if (preview != null && !actions.loadedPreviewIds.contains(preview.id)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref
+            .read(makeupKitResultActionsControllerProvider.notifier)
+            .loadSavedStatus(preview);
+      });
+    }
+    ref.listen<MakeupKitResultActionsState>(
+      makeupKitResultActionsControllerProvider,
+      (previous, next) {
+        if (next.feedback == null || next.feedback == previous?.feedback) {
+          return;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(next.feedback!),
+            action: next.sessionExpired
+                ? SnackBarAction(
+                    label: 'Sign in again',
+                    onPressed: () => ref
+                        .read(authControllerProvider.notifier)
+                        .recoverExpiredSession(),
+                  )
+                : null,
+          ),
+        );
+        ref
+            .read(makeupKitResultActionsControllerProvider.notifier)
+            .clearFeedback();
+      },
+    );
 
     return Scaffold(
       appBar: AppBar(title: const Text('My Makeup Kit look')),
       body: SafeArea(
         child: PageFrame(
-          child: !isReady
+          child: resultReady
+              ? _KitPreviewContent(
+                  state: look,
+                  styleName: style.name,
+                  actions: actions,
+                  onSave: () => ref
+                      .read(makeupKitResultActionsControllerProvider.notifier)
+                      .toggleSaved(preview!),
+                  onFavorite: () => ref
+                      .read(makeupKitResultActionsControllerProvider.notifier)
+                      .toggleFavorite(preview!),
+                  onGenerateAnother: () => ref
+                      .read(makeupKitLookControllerProvider.notifier)
+                      .generateVariation(),
+                  onChangeMode: () {
+                    ref.read(makeupKitLookControllerProvider.notifier).clear();
+                    context.pop();
+                  },
+                  onReturnHome: () => context.go(AppConstants.homeRoute),
+                )
+              : !kitReady
               ? _NotReadyState(kit: kit)
-              : switch (look.status) {
-                  MakeupKitLookStatus.idle => _ReadyState(
-                    styleName: style.name,
-                    productCount: kit.items.length,
-                    onGenerate: () => ref
-                        .read(makeupKitLookControllerProvider.notifier)
-                        .generate(
-                          analysisId: analysis.id,
-                          styleCode: style.code,
-                        ),
-                  ),
-                  MakeupKitLookStatus.generatingRecommendation => const Center(
-                    child: LoadingState(
-                      label: 'Choosing the best products from your kit…',
-                    ),
-                  ),
-                  MakeupKitLookStatus.generatingPreview => const Center(
-                    child: LoadingState(
-                      label: 'Applying your owned shades to the preview…',
-                    ),
-                  ),
-                  MakeupKitLookStatus.failure => _FailureState(
-                    state: look,
-                    onRetry: () => ref
-                        .read(makeupKitLookControllerProvider.notifier)
-                        .retry(),
-                    onCreateNewPlan: () {
-                      final controller = ref.read(
-                        makeupKitLookControllerProvider.notifier,
-                      );
-                      controller.clear();
-                      controller.generate(
-                        analysisId: analysis.id,
-                        styleCode: style.code,
-                      );
-                    },
-                    onShowPrevious: () => ref
-                        .read(makeupKitLookControllerProvider.notifier)
-                        .showPreviousResult(),
-                  ),
-                  MakeupKitLookStatus.success
-                      when _linksMatch(look, analysis.id, style.code) =>
-                    _KitPreviewContent(
-                      state: look,
-                      styleName: style.name,
-                      onGenerateAnother: () => ref
-                          .read(makeupKitLookControllerProvider.notifier)
-                          .generateVariation(),
-                      onChangeMode: () {
-                        ref
-                            .read(makeupKitLookControllerProvider.notifier)
-                            .clear();
-                        context.pop();
-                      },
-                    ),
-                  _ => Center(
-                    child: StatusState(
-                      title: 'Kit preview unavailable',
-                      message:
-                          'This preview no longer matches the active analysis and style.',
-                      icon: Icons.link_off_rounded,
-                      actionLabel: 'Choose a mode',
-                      onAction: context.pop,
-                    ),
-                  ),
-                },
+              : _activeState(
+                  context,
+                  ref,
+                  look,
+                  analysis.id,
+                  style.code,
+                  style.name,
+                  kit.items.length,
+                ),
         ),
       ),
     );
   }
+
+  Widget _activeState(
+    BuildContext context,
+    WidgetRef ref,
+    MakeupKitLookState look,
+    String analysisId,
+    String styleCode,
+    String styleName,
+    int productCount,
+  ) => switch (look.status) {
+    MakeupKitLookStatus.idle => _ReadyState(
+      styleName: styleName,
+      productCount: productCount,
+      onGenerate: () => ref
+          .read(makeupKitLookControllerProvider.notifier)
+          .generate(analysisId: analysisId, styleCode: styleCode),
+    ),
+    MakeupKitLookStatus.generatingRecommendation => const Center(
+      child: LoadingState(label: 'Choosing the best products from your kit…'),
+    ),
+    MakeupKitLookStatus.generatingPreview => const Center(
+      child: LoadingState(label: 'Applying your owned shades to the preview…'),
+    ),
+    MakeupKitLookStatus.failure => _FailureState(
+      state: look,
+      onRetry: () => ref.read(makeupKitLookControllerProvider.notifier).retry(),
+      onCreateNewPlan: () {
+        final controller = ref.read(makeupKitLookControllerProvider.notifier);
+        controller.clear();
+        controller.generate(analysisId: analysisId, styleCode: styleCode);
+      },
+      onShowPrevious: () => ref
+          .read(makeupKitLookControllerProvider.notifier)
+          .showPreviousResult(),
+    ),
+    _ => Center(
+      child: StatusState(
+        title: 'Kit preview unavailable',
+        message:
+            'This preview no longer matches the active analysis and style.',
+        icon: Icons.link_off_rounded,
+        actionLabel: 'Choose a mode',
+        onAction: context.pop,
+      ),
+    ),
+  };
 
   static bool _linksMatch(
     MakeupKitLookState state,
@@ -236,14 +285,22 @@ class _KitPreviewContent extends StatelessWidget {
   const _KitPreviewContent({
     required this.state,
     required this.styleName,
+    required this.actions,
+    required this.onSave,
+    required this.onFavorite,
     required this.onGenerateAnother,
     required this.onChangeMode,
+    required this.onReturnHome,
   });
 
   final MakeupKitLookState state;
   final String styleName;
+  final MakeupKitResultActionsState actions;
+  final VoidCallback onSave;
+  final VoidCallback onFavorite;
   final VoidCallback onGenerateAnother;
   final VoidCallback onChangeMode;
+  final VoidCallback onReturnHome;
 
   @override
   Widget build(BuildContext context) {
@@ -252,7 +309,7 @@ class _KitPreviewContent extends StatelessWidget {
     return ListView(
       children: [
         Text(
-          'Your kit-based preview',
+          'Your My Makeup Kit look',
           style: Theme.of(context).textTheme.headlineMedium,
         ),
         const SizedBox(height: AppSpacing.xs),
@@ -264,76 +321,76 @@ class _KitPreviewContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.lg),
+        const AppCard(
+          color: AppColors.petal,
+          child: Row(
+            children: [
+              Icon(Icons.inventory_2_outlined, color: AppColors.rose),
+              SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'Created only from products registered in My Makeup Kit.',
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
         BeforeAfterComparison(
           originalImageUrl: preview.originalImageUrl,
           generatedImageUrl: preview.generatedImageUrl,
         ),
         const SizedBox(height: AppSpacing.lg),
-        AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                recommendation.summary,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                '${recommendation.selections.length} owned product${recommendation.selections.length == 1 ? '' : 's'} selected · ${recommendation.overallIntensity} intensity',
-              ),
-              const SizedBox(height: AppSpacing.md),
-              ...recommendation.selections.map(_SelectionRow.new),
-            ],
-          ),
+        Text(
+          recommendation.summary,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          '${recommendation.selections.length} owned product${recommendation.selections.length == 1 ? '' : 's'} selected · ${recommendation.overallIntensity} intensity',
         ),
         const SizedBox(height: AppSpacing.md),
+        ...recommendation.selections.expand(
+          (selection) => [
+            KitResultProductCard(
+              selection: selection,
+              snapshot: recommendation.snapshotFor(selection.productId),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
         PrimaryButton(
+          label: actions.isSaved(preview.id) ? 'Saved' : 'Save look',
+          icon: actions.isSaved(preview.id)
+              ? Icons.bookmark_rounded
+              : Icons.bookmark_border_rounded,
+          onPressed: actions.isMutating ? null : onSave,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        SecondaryButton(
+          label: actions.isFavorite(preview.id) ? 'Favorited' : 'Favorite',
+          icon: actions.isFavorite(preview.id)
+              ? Icons.favorite_rounded
+              : Icons.favorite_border_rounded,
+          onPressed: actions.isMutating ? null : onFavorite,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        SecondaryButton(
           label: 'Generate another variation',
           icon: Icons.refresh_rounded,
           onPressed: onGenerateAnother,
         ),
         const SizedBox(height: AppSpacing.sm),
         SecondaryButton(label: 'Change mode', onPressed: onChangeMode),
+        const SizedBox(height: AppSpacing.sm),
+        TextButton.icon(
+          onPressed: onReturnHome,
+          icon: const Icon(Icons.home_outlined),
+          label: const Text('Return home'),
+        ),
         const SizedBox(height: AppSpacing.xl),
       ],
     );
-  }
-}
-
-class _SelectionRow extends StatelessWidget {
-  const _SelectionRow(this.selection);
-
-  final KitMakeupSelection selection;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-    child: Row(
-      children: [
-        Container(
-          width: 28,
-          height: 28,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Color(
-              int.parse(selection.colorHex.substring(1), radix: 16) |
-                  0xFF000000,
-            ),
-            border: Border.all(color: Theme.of(context).dividerColor),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: Text(
-            '${_label(selection.category)} · ${_label(selection.finish)} · ${selection.intensity}',
-          ),
-        ),
-      ],
-    ),
-  );
-
-  static String _label(String value) {
-    final words = value.replaceAll('_', ' ');
-    return '${words[0].toUpperCase()}${words.substring(1)}';
   }
 }
