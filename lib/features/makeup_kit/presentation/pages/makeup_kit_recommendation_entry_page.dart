@@ -98,7 +98,11 @@ class MakeupKitRecommendationEntryPage extends ConsumerWidget {
                   onReturnHome: () => context.go(AppConstants.homeRoute),
                 )
               : !kitReady
-              ? _NotReadyState(kit: kit)
+              ? _NotReadyState(
+                  kit: kit,
+                  analysisReady: analysis != null,
+                  styleReady: style != null,
+                )
               : _activeState(
                   context,
                   ref,
@@ -129,11 +133,19 @@ class MakeupKitRecommendationEntryPage extends ConsumerWidget {
           .read(makeupKitLookControllerProvider.notifier)
           .generate(analysisId: analysisId, styleCode: styleCode),
     ),
-    MakeupKitLookStatus.generatingRecommendation => const Center(
-      child: LoadingState(label: 'Choosing the best products from your kit…'),
+    MakeupKitLookStatus.generatingRecommendation => _GeneratingState(
+      label: 'Choosing the best products from your kit…',
+      onCancel: () {
+        ref.read(makeupKitLookControllerProvider.notifier).clear();
+        context.pop();
+      },
     ),
-    MakeupKitLookStatus.generatingPreview => const Center(
-      child: LoadingState(label: 'Applying your owned shades to the preview…'),
+    MakeupKitLookStatus.generatingPreview => _GeneratingState(
+      label: 'Applying your owned shades to the preview…',
+      onCancel: () {
+        ref.read(makeupKitLookControllerProvider.notifier).clear();
+        context.pop();
+      },
     ),
     MakeupKitLookStatus.failure => _FailureState(
       state: look,
@@ -146,6 +158,10 @@ class MakeupKitRecommendationEntryPage extends ConsumerWidget {
       onShowPrevious: () => ref
           .read(makeupKitLookControllerProvider.notifier)
           .showPreviousResult(),
+      onChangeMode: () {
+        ref.read(makeupKitLookControllerProvider.notifier).clear();
+        context.pop();
+      },
     ),
     _ => Center(
       child: StatusState(
@@ -175,23 +191,94 @@ class MakeupKitRecommendationEntryPage extends ConsumerWidget {
   }
 }
 
-class _NotReadyState extends StatelessWidget {
-  const _NotReadyState({required this.kit});
+class _NotReadyState extends ConsumerWidget {
+  const _NotReadyState({
+    required this.kit,
+    required this.analysisReady,
+    required this.styleReady,
+  });
 
   final MakeupKitProductsState kit;
+  final bool analysisReady;
+  final bool styleReady;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (kit.status == MakeupKitProductsStatus.loading) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const LoadingState(label: 'Checking your makeup kit…'),
+            const SizedBox(height: AppSpacing.sm),
+            TextButton(
+              onPressed: context.pop,
+              child: const Text('Change mode'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (kit.status == MakeupKitProductsStatus.failure) {
+      return Center(
+        child: StatusState(
+          title: 'Your kit could not be checked',
+          message: kit.message ?? 'Please try again.',
+          icon: Icons.cloud_off_outlined,
+          actionLabel: kit.sessionExpired ? 'Sign in again' : 'Try again',
+          onAction: kit.sessionExpired
+              ? () => ref
+                    .read(authControllerProvider.notifier)
+                    .recoverExpiredSession()
+              : () => ref
+                    .read(makeupKitProductsControllerProvider.notifier)
+                    .refresh(),
+          secondaryActionLabel: 'Change mode',
+          onSecondaryAction: context.pop,
+        ),
+      );
+    }
+    final journeyReady = analysisReady && styleReady;
+    return Center(
+      child: StatusState(
+        title: kit.items.isEmpty
+            ? 'Your kit is empty'
+            : 'Your scan is not ready',
+        message: kit.items.isEmpty
+            ? 'Add at least one product before creating a kit-based look.'
+            : 'Complete your analysis and style selection first.',
+        icon: Icons.inventory_2_outlined,
+        actionLabel: kit.items.isEmpty ? 'Add Product' : 'Change mode',
+        onAction: kit.items.isEmpty
+            ? () => context.push(AppConstants.makeupKitAddProductRoute)
+            : context.pop,
+        secondaryActionLabel: kit.items.isEmpty && journeyReady
+            ? 'Change mode'
+            : null,
+        onSecondaryAction: context.pop,
+      ),
+    );
+  }
+}
+
+class _GeneratingState extends StatelessWidget {
+  const _GeneratingState({required this.label, required this.onCancel});
+
+  final String label;
+  final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) => Center(
-    child: StatusState(
-      title: 'Your kit is not ready',
-      message: kit.items.isEmpty
-          ? 'Add at least one product before creating a kit-based look.'
-          : 'Return to your analysis and style selection.',
-      icon: Icons.inventory_2_outlined,
-      actionLabel: kit.items.isEmpty ? 'Add Product' : 'Change mode',
-      onAction: kit.items.isEmpty
-          ? () => context.push(AppConstants.makeupKitAddProductRoute)
-          : context.pop,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        LoadingState(label: label),
+        const SizedBox(height: AppSpacing.sm),
+        TextButton(
+          onPressed: onCancel,
+          child: const Text('Cancel and change mode'),
+        ),
+      ],
     ),
   );
 }
@@ -228,12 +315,14 @@ class _FailureState extends ConsumerWidget {
     required this.onRetry,
     required this.onCreateNewPlan,
     required this.onShowPrevious,
+    required this.onChangeMode,
   });
 
   final MakeupKitLookState state;
   final VoidCallback onRetry;
   final VoidCallback onCreateNewPlan;
   final VoidCallback onShowPrevious;
+  final VoidCallback onChangeMode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -275,6 +364,8 @@ class _FailureState extends ConsumerWidget {
               label: const Text('View previous result'),
             ),
           ],
+          const SizedBox(height: AppSpacing.xs),
+          TextButton(onPressed: onChangeMode, child: const Text('Change mode')),
         ],
       ),
     );

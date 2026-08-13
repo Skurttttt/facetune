@@ -105,6 +105,14 @@ class SupabaseMakeupKitLookRepository implements MakeupKitLookRepository {
     }
     if (error is MakeupKitLookRemoteFailure) {
       final code = error.code.trim().toUpperCase();
+      if (error.status <= 0) {
+        return PreviewFailure(
+          PreviewFailureType.network,
+          'Check your connection and try again.',
+          retryable: true,
+          technicalCode: code.isEmpty ? 'NETWORK_UNAVAILABLE' : code,
+        );
+      }
       if (error.status == 401) {
         return const PreviewFailure(
           PreviewFailureType.authentication,
@@ -158,6 +166,12 @@ class SupabaseMakeupKitLookRepository implements MakeupKitLookRepository {
       );
     }
     if (error is StorageException) {
+      if (int.tryParse(error.statusCode.toString()) == 401) {
+        return const PreviewFailure(
+          PreviewFailureType.authentication,
+          'Your session expired. Sign in again.',
+        );
+      }
       return const PreviewFailure(
         PreviewFailureType.server,
         'The private kit preview could not be loaded.',

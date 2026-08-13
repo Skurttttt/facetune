@@ -131,6 +131,10 @@ void main() {
     expect(find.text('My Nude Lipstick'), findsOneWidget);
     expect(find.text('Matte'), findsOneWidget);
     expect(find.text('Satin'), findsOneWidget);
+    expect(
+      find.text('2 products across 2 categories. Incomplete kits are welcome.'),
+      findsOneWidget,
+    );
     expect(find.text('No products in this category yet.'), findsWidgets);
     expect(find.text('Your kit is empty'), findsNothing);
   });
@@ -148,6 +152,7 @@ void main() {
     expect(find.text('My Makeup Kit unavailable'), findsOneWidget);
     expect(find.text('Your makeup kit could not be loaded.'), findsOneWidget);
     expect(find.text('Try again'), findsOneWidget);
+    expect(find.byType(FloatingActionButton), findsNothing);
 
     repository.loadError = null;
     repository.items = [_product('a')];

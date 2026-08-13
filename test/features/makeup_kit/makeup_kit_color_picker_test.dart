@@ -35,6 +35,11 @@ class _HarnessState extends State<_Harness> {
   );
 }
 
+Future<void> _openFineTune(WidgetTester tester) async {
+  await tester.tap(find.text('Fine-tune shade'));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets('starts on the initial curated shade', (tester) async {
     final shades = MakeupKitCuratedShades.forCategory(
@@ -72,9 +77,10 @@ void main() {
     await tester.pumpWidget(
       _Harness(category: MakeupKitCategory.lipstick, initial: shades.first),
     );
+    await _openFineTune(tester);
 
     await tester.enterText(
-      find.widgetWithText(TextField, 'Advanced: HEX reference'),
+      find.widgetWithText(TextField, 'HEX reference'),
       'AABBCC',
     );
     await tester.testTextInput.receiveAction(TextInputAction.done);
@@ -93,9 +99,10 @@ void main() {
       await tester.pumpWidget(
         _Harness(category: MakeupKitCategory.lipstick, initial: shades.first),
       );
+      await _openFineTune(tester);
 
       await tester.enterText(
-        find.widgetWithText(TextField, 'Advanced: HEX reference'),
+        find.widgetWithText(TextField, 'HEX reference'),
         'ZZZZZZ',
       );
       await tester.testTextInput.receiveAction(TextInputAction.done);
@@ -113,6 +120,7 @@ void main() {
     await tester.pumpWidget(
       _Harness(category: MakeupKitCategory.lipstick, initial: shades.first),
     );
+    await _openFineTune(tester);
 
     await tester.drag(find.byType(Slider).first, const Offset(120, 0));
     await tester.pumpAndSettle();
@@ -132,5 +140,20 @@ void main() {
     for (final shade in shades) {
       expect(find.text(shade.label), findsOneWidget);
     }
+  });
+
+  testWidgets('keeps technical controls optional and collapsed initially', (
+    tester,
+  ) async {
+    final shades = MakeupKitCuratedShades.forCategory(
+      MakeupKitCategory.lipstick,
+    );
+    await tester.pumpWidget(
+      _Harness(category: MakeupKitCategory.lipstick, initial: shades.first),
+    );
+
+    expect(find.text('Fine-tune shade'), findsOneWidget);
+    expect(find.byType(Slider), findsNothing);
+    expect(find.widgetWithText(TextField, 'HEX reference'), findsNothing);
   });
 }

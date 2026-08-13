@@ -21,11 +21,14 @@ class MakeupKitOverviewPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('My Makeup Kit')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push(AppConstants.makeupKitAddProductRoute),
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('Add Product'),
-      ),
+      floatingActionButton: state.status == MakeupKitProductsStatus.ready
+          ? FloatingActionButton.extended(
+              onPressed: () =>
+                  context.push(AppConstants.makeupKitAddProductRoute),
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Add Product'),
+            )
+          : null,
       body: SafeArea(
         child: PageFrame(
           child: RefreshIndicator(
@@ -84,6 +87,9 @@ class MakeupKitOverviewPage extends ConsumerWidget {
 
     final isEmpty = state.items.isEmpty;
     final categories = MakeupKitCategory.values;
+    final populatedCategoryCount = categories
+        .where((category) => state.byCategory(category).isNotEmpty)
+        .length;
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -113,7 +119,25 @@ class MakeupKitOverviewPage extends ConsumerWidget {
             actionLabel: 'Add Product',
             onAction: () => context.push(AppConstants.makeupKitAddProductRoute),
           )
-        else
+        else ...[
+          AppCard(
+            color: AppColors.petal,
+            child: Row(
+              children: [
+                const Icon(Icons.auto_awesome_rounded, color: AppColors.rose),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    '${state.items.length} product${state.items.length == 1 ? '' : 's'} across '
+                    '$populatedCategoryCount '
+                    'categor${populatedCategoryCount == 1 ? 'y' : 'ies'}. '
+                    'Incomplete kits are welcome.',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
           AppCard(
             padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.md,
@@ -135,6 +159,7 @@ class MakeupKitOverviewPage extends ConsumerWidget {
               ],
             ),
           ),
+        ],
         const SizedBox(height: AppSpacing.xxl),
       ],
     );

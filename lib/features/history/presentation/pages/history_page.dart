@@ -338,10 +338,16 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
               title: 'My Makeup Kit history unavailable',
               message: kitState.message ?? 'Pull to refresh and try again.',
               icon: Icons.inventory_2_outlined,
-              actionLabel: 'Try again',
-              onAction: () => ref
-                  .read(makeupKitHistoryControllerProvider.notifier)
-                  .loadInitial(),
+              actionLabel: kitState.sessionExpired
+                  ? 'Sign in again'
+                  : 'Try again',
+              onAction: kitState.sessionExpired
+                  ? () => ref
+                        .read(authControllerProvider.notifier)
+                        .recoverExpiredSession()
+                  : () => ref
+                        .read(makeupKitHistoryControllerProvider.notifier)
+                        .loadInitial(),
             ),
           ),
         if (visibleItems.isNotEmpty) ...[

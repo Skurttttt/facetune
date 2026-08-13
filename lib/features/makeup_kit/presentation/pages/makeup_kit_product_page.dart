@@ -143,6 +143,7 @@ class MakeupKitProductPage extends ConsumerWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(foregroundColor: AppColors.error),
           onPressed: isMutating
               ? null
               : () => _confirmDelete(context, ref, product),
@@ -171,6 +172,10 @@ class MakeupKitProductPage extends ConsumerWidget {
             child: const Text('Cancel'),
           ),
           FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: AppColors.onAccent(AppColors.error),
+            ),
             onPressed: () => dialogContext.pop(true),
             child: const Text('Delete'),
           ),

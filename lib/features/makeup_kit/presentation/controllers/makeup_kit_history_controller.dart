@@ -28,13 +28,17 @@ final makeupKitHistoryControllerProvider =
     });
 
 class MakeupKitHistoryController extends StateNotifier<MakeupKitHistoryState> {
-  MakeupKitHistoryController(this._repository, this._notifyChanged)
-    : super(const MakeupKitHistoryState());
+  MakeupKitHistoryController(
+    this._repository,
+    this._notifyChanged, {
+    Duration timeout = const Duration(seconds: 30),
+  }) : _timeout = timeout,
+       super(const MakeupKitHistoryState());
 
   static const pageSize = 12;
-  static const _timeout = Duration(seconds: 30);
   final MakeupKitLibraryRepository _repository;
   final void Function() _notifyChanged;
+  final Duration _timeout;
   int _generation = 0;
 
   Future<void> loadInitial() async {
@@ -86,6 +90,14 @@ class MakeupKitHistoryController extends StateNotifier<MakeupKitHistoryState> {
         hasMore: append && state.hasMore,
         message: 'Loading My Makeup Kit history took too long.',
       );
+    } catch (_) {
+      if (!mounted || generation != _generation) return;
+      state = MakeupKitHistoryState(
+        status: MakeupKitLibraryStatus.failure,
+        items: append ? state.items : const [],
+        hasMore: append && state.hasMore,
+        message: 'My Makeup Kit history could not be loaded right now.',
+      );
     }
   }
 
@@ -112,6 +124,20 @@ class MakeupKitHistoryController extends StateNotifier<MakeupKitHistoryState> {
         mutatingIds: {...state.mutatingIds}..remove(analysisId),
         feedback: failure.message,
         sessionExpired: failure.sessionExpired,
+      );
+      return false;
+    } on TimeoutException {
+      if (!mounted) return false;
+      state = _copy(
+        mutatingIds: {...state.mutatingIds}..remove(analysisId),
+        feedback: 'Deleting the history session took too long.',
+      );
+      return false;
+    } catch (_) {
+      if (!mounted) return false;
+      state = _copy(
+        mutatingIds: {...state.mutatingIds}..remove(analysisId),
+        feedback: 'The history session could not be deleted right now.',
       );
       return false;
     }

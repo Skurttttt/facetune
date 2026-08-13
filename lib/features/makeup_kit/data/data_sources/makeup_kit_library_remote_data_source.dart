@@ -60,7 +60,7 @@ class SupabaseMakeupKitLibraryRemoteDataSource extends SupabaseRemoteDataSource
   const SupabaseMakeupKitLibraryRemoteDataSource(super.client);
 
   static const _savedColumns =
-      'id,kit_generated_image_id,is_favorite,created_at';
+      'id,user_id,kit_generated_image_id,is_favorite,created_at';
 
   @override
   String? get currentUserId => client.auth.currentUser?.id;

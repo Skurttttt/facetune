@@ -1,6 +1,7 @@
 import 'package:facetune/features/makeup_kit/data/data_sources/makeup_kit_library_remote_data_source.dart';
 import 'package:facetune/features/makeup_kit/data/repositories/supabase_makeup_kit_library_repository.dart';
 import 'package:facetune/features/makeup_kit/domain/entities/kit_generated_preview.dart';
+import 'package:facetune/features/makeup_kit/domain/errors/makeup_kit_library_failure.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../helpers/analysis_response_fixture.dart';
@@ -54,6 +55,26 @@ void main() {
       await repository.deleteSession(analysisId);
 
       expect(remote.deletedAnalysisId, analysisId);
+    },
+  );
+
+  test(
+    'rejects a cross-account row even if a remote query returns it',
+    () async {
+      final repository = SupabaseMakeupKitLibraryRepository(
+        _CrossAccountRemote(),
+      );
+
+      await expectLater(
+        repository.loadHistoryPage(offset: 0, limit: 12),
+        throwsA(
+          isA<MakeupKitLibraryFailure>().having(
+            (failure) => failure.retryable,
+            'retryable',
+            isFalse,
+          ),
+        ),
+      );
     },
   );
 }
@@ -156,6 +177,7 @@ class _FakeRemote implements MakeupKitLibraryRemoteDataSource {
 
   static Map<String, Object?> _savedRow(bool favorite) => {
     'id': 'saved-1',
+    'user_id': 'user-1',
     'kit_generated_image_id': previewId,
     'is_favorite': favorite,
     'created_at': '2026-08-14T06:00:00Z',
@@ -163,6 +185,7 @@ class _FakeRemote implements MakeupKitLibraryRemoteDataSource {
 
   static final Map<String, Object?> _previewRow = {
     'id': previewId,
+    'user_id': 'user-1',
     'analysis_id': analysisId,
     'kit_recommendation_id': recommendationId,
     'storage_path':
@@ -175,6 +198,7 @@ class _FakeRemote implements MakeupKitLibraryRemoteDataSource {
 
   static final Map<String, Object?> _recommendationRow = {
     'id': recommendationId,
+    'user_id': 'user-1',
     'analysis_id': analysisId,
     'makeup_style': 'soft_glam',
     'recommendation_json': {
@@ -216,6 +240,7 @@ class _FakeRemote implements MakeupKitLibraryRemoteDataSource {
     final attributes = source['attributes']! as Map<String, Object?>;
     return {
       'id': analysisId,
+      'user_id': 'user-1',
       'original_image_path': 'user/analyses/$analysisId/original/image.jpg',
       'face_shape': attributes['faceShape'],
       'skin_tone': attributes['skinTone'],
@@ -231,4 +256,14 @@ class _FakeRemote implements MakeupKitLibraryRemoteDataSource {
       'created_at': '2026-08-14T03:00:00Z',
     };
   }
+}
+
+class _CrossAccountRemote extends _FakeRemote {
+  @override
+  Future<List<Map<String, Object?>>> selectHistoryPreviews({
+    required int offset,
+    required int limit,
+  }) async => [
+    {..._FakeRemote._previewRow, 'user_id': 'another-user'},
+  ];
 }

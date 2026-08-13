@@ -24,12 +24,16 @@ final makeupKitResultActionsControllerProvider =
 
 class MakeupKitResultActionsController
     extends StateNotifier<MakeupKitResultActionsState> {
-  MakeupKitResultActionsController(this._repository, this._notifyChanged)
-    : super(const MakeupKitResultActionsState());
+  MakeupKitResultActionsController(
+    this._repository,
+    this._notifyChanged, {
+    Duration timeout = const Duration(seconds: 30),
+  }) : _timeout = timeout,
+       super(const MakeupKitResultActionsState());
 
-  static const _timeout = Duration(seconds: 30);
   final MakeupKitLibraryRepository _repository;
   final void Function() _notifyChanged;
+  final Duration _timeout;
   final Set<String> _loading = {};
 
   Future<void> loadSavedStatus(KitGeneratedPreview preview) async {
@@ -53,6 +57,8 @@ class MakeupKitResultActionsController
       _failed(failure.message, sessionExpired: failure.sessionExpired);
     } on TimeoutException {
       _failed('Saved status took too long to load.');
+    } catch (_) {
+      _failed('Saved status could not be loaded right now.');
     } finally {
       _loading.remove(preview.id);
       if (mounted && !state.loadedPreviewIds.contains(preview.id)) {
@@ -93,6 +99,8 @@ class MakeupKitResultActionsController
       _failed(failure.message, sessionExpired: failure.sessionExpired);
     } on TimeoutException {
       _failed('Saving took too long. Check your connection.');
+    } catch (_) {
+      _failed('The kit look could not be saved right now.');
     }
   }
 
@@ -125,6 +133,8 @@ class MakeupKitResultActionsController
       _failed(failure.message, sessionExpired: failure.sessionExpired);
     } on TimeoutException {
       _failed('Updating the favorite took too long.');
+    } catch (_) {
+      _failed('The favorite could not be updated right now.');
     }
   }
 

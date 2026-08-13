@@ -90,42 +90,48 @@ class _MakeupKitColorPickerState extends State<MakeupKitColorPicker> {
             ),
           ],
         ),
-        const SizedBox(height: AppSpacing.md),
-        Text(
-          'Customize',
-          style: Theme.of(
-            context,
-          ).textTheme.labelLarge?.copyWith(color: AppColors.muted(context)),
-        ),
-        Slider(
-          value: _hsv.hue,
-          min: 0,
-          max: 360,
-          label: 'Hue',
-          onChanged: (value) => _updateHsv(_hsv.withHue(value)),
-        ),
-        Slider(
-          value: _hsv.saturation,
-          label: 'Saturation',
-          onChanged: (value) => _updateHsv(_hsv.withSaturation(value)),
-        ),
-        Slider(
-          value: _hsv.value,
-          label: 'Brightness',
-          onChanged: (value) => _updateHsv(_hsv.withValue(value)),
-        ),
         const SizedBox(height: AppSpacing.sm),
-        TextField(
-          controller: _hexController,
-          decoration: InputDecoration(
-            labelText: 'Advanced: HEX reference',
-            prefixText: '#',
-            errorText: _hexError,
-            helperText: 'Optional — most people can skip this.',
+        ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: EdgeInsets.zero,
+          title: const Text('Fine-tune shade'),
+          subtitle: Text(
+            'Optional precise controls',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppColors.muted(context)),
           ),
-          textCapitalization: TextCapitalization.characters,
-          onSubmitted: _submitHex,
-          onEditingComplete: () => _submitHex(_hexController.text),
+          children: [
+            _LabeledSlider(
+              label: 'Hue',
+              value: _hsv.hue,
+              max: 360,
+              onChanged: (value) => _updateHsv(_hsv.withHue(value)),
+            ),
+            _LabeledSlider(
+              label: 'Saturation',
+              value: _hsv.saturation,
+              onChanged: (value) => _updateHsv(_hsv.withSaturation(value)),
+            ),
+            _LabeledSlider(
+              label: 'Brightness',
+              value: _hsv.value,
+              onChanged: (value) => _updateHsv(_hsv.withValue(value)),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            TextField(
+              controller: _hexController,
+              decoration: InputDecoration(
+                labelText: 'HEX reference',
+                prefixText: '#',
+                errorText: _hexError,
+                helperText: 'Optional technical reference.',
+              ),
+              textCapitalization: TextCapitalization.characters,
+              onSubmitted: _submitHex,
+              onEditingComplete: () => _submitHex(_hexController.text),
+            ),
+          ],
         ),
       ],
     );
@@ -170,6 +176,35 @@ class _MakeupKitColorPickerState extends State<MakeupKitColorPicker> {
       '#${rgb.toRadixString(16).padLeft(6, '0')}',
     );
   }
+}
+
+class _LabeledSlider extends StatelessWidget {
+  const _LabeledSlider({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    this.max = 1,
+  });
+
+  final String label;
+  final double value;
+  final double max;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: Theme.of(context).textTheme.labelMedium),
+      Slider(
+        value: value,
+        max: max,
+        label: label,
+        semanticFormatterCallback: (_) => label,
+        onChanged: onChanged,
+      ),
+    ],
+  );
 }
 
 class _ShadeChoice extends StatelessWidget {

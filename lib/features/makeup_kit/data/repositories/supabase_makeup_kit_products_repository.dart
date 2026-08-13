@@ -23,10 +23,10 @@ class SupabaseMakeupKitProductsRepository
 
   @override
   Future<List<MakeupKitProduct>> loadAll() async {
-    _requireSession();
+    final userId = _requireSession();
     try {
       final rows = await _remote.selectAll().timeout(operationTimeout);
-      return _mapRows(rows);
+      return _mapRows(rows, userId);
     } catch (error) {
       throw _failure(error);
     }
@@ -36,12 +36,12 @@ class SupabaseMakeupKitProductsRepository
   Future<List<MakeupKitProduct>> loadByCategory(
     MakeupKitCategory category,
   ) async {
-    _requireSession();
+    final userId = _requireSession();
     try {
       final rows = await _remote
           .selectByCategory(category.code)
           .timeout(operationTimeout);
-      return _mapRows(rows);
+      return _mapRows(rows, userId);
     } catch (error) {
       throw _failure(error);
     }
@@ -55,7 +55,7 @@ class SupabaseMakeupKitProductsRepository
       final row = await _remote
           .insert(MakeupKitProductDto.toInsertRow(userId: userId, draft: draft))
           .timeout(operationTimeout);
-      return MakeupKitProductDto.fromRow(row);
+      return _ownedProduct(row, userId);
     } catch (error) {
       throw _failure(error);
     }
@@ -67,12 +67,12 @@ class SupabaseMakeupKitProductsRepository
     MakeupKitProductDraft draft,
   ) async {
     MakeupKitProductValidator.validate(draft);
-    _requireSession();
+    final userId = _requireSession();
     try {
       final row = await _remote
           .update(productId, MakeupKitProductDto.toUpdateRow(draft))
           .timeout(operationTimeout);
-      return MakeupKitProductDto.fromRow(row);
+      return _ownedProduct(row, userId);
     } catch (error) {
       throw _failure(error);
     }
@@ -88,8 +88,18 @@ class SupabaseMakeupKitProductsRepository
     }
   }
 
-  List<MakeupKitProduct> _mapRows(List<Map<String, Object?>> rows) =>
-      List.unmodifiable(rows.map(MakeupKitProductDto.fromRow));
+  List<MakeupKitProduct> _mapRows(
+    List<Map<String, Object?>> rows,
+    String userId,
+  ) => List.unmodifiable(rows.map((row) => _ownedProduct(row, userId)));
+
+  MakeupKitProduct _ownedProduct(Map<String, Object?> row, String userId) {
+    final product = MakeupKitProductDto.fromRow(row);
+    if (product.userId != userId) {
+      throw const FormatException('Product ownership is invalid.');
+    }
+    return product;
+  }
 
   String _requireSession() {
     final userId = _remote.currentUserId;

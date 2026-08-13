@@ -1,7 +1,8 @@
-# My Makeup Kit — Architecture Contract (MK-1, MK-2, MK-3, MK-4, MK-5)
+# My Makeup Kit — Final Architecture & Operations Contract (MK-1 through MK-14)
 
-This document records the isolated feature boundary established for My
-Makeup Kit and must be read before implementing any later `MK-*` phase.
+This document records the isolated feature boundary and completed operating
+contract for My Makeup Kit. It must be read before maintaining or extending
+the feature.
 Source of truth for product behavior: `FACETUNE_MY_MAKEUP_KIT_GUIDE.md`.
 Phase sequencing: `FACETUNE_MY_MAKEUP_KIT_ROADMAP.md`.
 
@@ -177,13 +178,12 @@ same way `generated_images` chains through `recommendations`, guaranteeing
 at the database level that a referenced product can never belong to a
 different user.
 
-**Deliberate scope decision:** per-category finish validity (e.g. Lipstick
-cannot be Metallic) is enforced only in the Dart domain layer
-(`MakeupKitFinishCatalog.isValidCombination`, MK-1), not as a per-category
-SQL matrix. The database only enforces that `finish` is one of the 10 known
-finish codes overall. This follows the MK-2 instruction to avoid brittle
-category-specific SQL where typed application validation already owns the
-rule.
+**Final hardening:** MK-2 initially left per-category finish compatibility to
+the typed application layer. MK-12 later added the additive
+`makeup_kit_products_category_finish_valid` SQL check in migration
+`20260814000200_makeup_kit_hardening.sql`. The UI, Dart validator, Edge
+Functions, and PostgreSQL now enforce the same category/finish matrix so a
+direct authenticated REST mutation cannot bypass the rule.
 
 ### Indexes
 
@@ -597,3 +597,242 @@ rerunning `makeup_kit_products_controller_test.dart`.
 
 No camera-based shade detection. No Edit/Delete UI (MK-6). No brand
 field. No change to any frozen Makeup Recommendation file.
+
+---
+
+## Final implemented system (MK-6 through MK-14)
+
+The sections above preserve the phase-by-phase decisions through MK-5. This
+section is the current maintenance contract for the completed feature and
+supersedes historical “future phase” or “non-goal” wording above where later
+phases implemented that capability.
+
+### Current feature topology
+
+```text
+Profile -> My Makeup Kit
+  -> inventory overview (10 typed categories)
+  -> add / product details / edit / confirmed delete
+
+Scan -> Analysis -> Style -> Recommendation mode
+  -> Makeup Recommendation (existing frozen path)
+  -> My Makeup Kit
+       -> validate non-empty authenticated inventory
+       -> generate-kit-makeup-recommendation
+       -> generate-kit-makeup-preview
+       -> kit result / save / favorite / variation
+       -> Saved Looks / History / reopen
+```
+
+The implementation remains under `lib/features/makeup_kit/` except for the
+small additive routing, Profile entry, and kit sections in the shared Saved
+Looks and History pages. Standard recommendation domain models,
+repositories, prompts, endpoints, preview generation, and result behavior
+remain separate and unchanged.
+
+### Presentation and UX contract
+
+- The overview supports loading skeletons, pull-to-refresh, session-aware
+  recovery, intentional empty state, a guest-retention notice, multi-product
+  categories, product/category counts, and an explicit statement that
+  incomplete kits are welcome.
+- Add/Edit is one reactive form. Category selection limits visible finishes
+  and mounts Foundation depth/undertone only for Foundation. Changing away
+  from Foundation clears those fields before creating the replacement draft.
+- Visual curated shades are the primary color interaction. Optional precise
+  HSV controls and the technical HEX reference are collapsed under
+  “Fine-tune shade”; users never need to know or enter HEX.
+- Product details show the registered swatch, category, shade, finish, and
+  relevant Foundation metadata. Delete is visually destructive and requires
+  confirmation. Failed mutations retain the product/form and allow retry.
+- Mode selection uses two explicit, mutually exclusive cards. Standard mode
+  invokes the existing controller/repository path. Kit mode checks inventory,
+  offers Add Product for an empty kit, and never silently falls back.
+- Kit recommendation and preview states distinguish inventory loading,
+  offline/load failure, session expiry, generation progress, stale inventory,
+  retryable AI failure, prior valid result, and non-retryable failure. Loading
+  can be cancelled back to mode selection.
+- Kit results identify the mode and list only owned product snapshots with
+  category, optional name, swatch/color, finish, placement, technique,
+  intensity, and Foundation metadata where relevant.
+
+### Database schema and RLS
+
+The completed feature uses four additive owned tables:
+
+| Table | Purpose | Ownership |
+| --- | --- | --- |
+| `makeup_kit_products` | Active private inventory | `user_id = auth.uid()` |
+| `kit_makeup_recommendations` | Validated structured kit plans and immutable product snapshots | `user_id = auth.uid()` |
+| `kit_generated_images` | Kit-mode preview metadata and private storage path | `user_id = auth.uid()` |
+| `kit_saved_looks` | Save/favorite linkage for kit previews | `user_id = auth.uid()` |
+
+Migrations, in order:
+
+1. `20260813000100_makeup_kit_products.sql`
+2. `20260813000200_kit_makeup_recommendations.sql`
+3. `20260813000300_kit_generated_images.sql`
+4. `20260814000100_kit_saved_looks.sql`
+5. `20260814000200_makeup_kit_hardening.sql`
+
+Every table has RLS enabled; anonymous table privileges are revoked; and
+authenticated select/insert/update/delete policies use `auth.uid()` ownership
+checks as applicable. Composite owner foreign keys preserve same-owner links.
+The hardening migration makes the category/finish matrix a database invariant
+in addition to the UI/domain validation. Client repositories also reject a
+row whose `user_id` differs from the current authenticated user as defense in
+depth, but client checks never replace RLS.
+
+### Isolated AI contract
+
+Kit recommendations use the dedicated authenticated operation
+`generate-kit-makeup-recommendation` and prompt version
+`kit_makeup_recommendation_v2`. The server flow is:
+
+```text
+verify JWT -> Supabase auth.getUser -> validate analysis ownership/style
+-> load the caller's current kit under RLS -> structured Gemini request
+-> strict parse -> validate selected ID/owner/category/color/finish
+-> re-read inventory to detect mutation/deletion -> persist snapshot -> respond
+```
+
+Incomplete kits are valid. Structured category statuses distinguish selected,
+unavailable, and not-required categories. Empty inventory is an intentional
+non-retryable validation result. A malformed response, fabricated ID, foreign
+product, unsupported category, stored-attribute substitution, duplicate ID,
+or product changed during the request is rejected and never persisted as
+owned inventory.
+
+Kit previews use the separate authenticated operation
+`generate-kit-makeup-preview` and prompt version `kit_makeup_preview_v1`.
+The function loads the persisted validated plan, revalidates every selected
+product against current ownership and attributes, loads the owner-scoped
+original selfie, and asks the image model to apply only the normalized plan.
+It preserves the original object and writes a unique kit-generated object and
+record. Kit generation does not call or modify the standard preview endpoint.
+
+Gemini credentials are read only in Edge Functions. Flutter contains no
+Gemini secret or direct Gemini endpoint. Logs contain operation metadata, not
+JWTs, signed URLs, image bytes, or raw private inventory payloads.
+
+### Saved Looks, History, and product snapshots
+
+Kit saved/history rows remain separate from standard saved/history records and
+are composed in the UI without altering the existing record contracts. Each
+kit recommendation persists an immutable product snapshot. Reopened results
+therefore remain understandable if an active product is renamed, recolored,
+changed, or deleted later. Current inventory is revalidated only when a new
+preview is requested; historical display uses the snapshot truthfully.
+
+Signed URLs are created for private images on demand. History and Saved Looks
+are paginated. Signed URL pairs for a loaded page are hydrated concurrently
+within a bounded timeout. Deletion follows the existing owner-scoped
+`delete-history-item` convention so linked rows and storage objects are cleaned
+without allowing a caller to target another account's paths.
+
+### Recovery, concurrency, and state isolation
+
+- Repository and controller operations have bounded timeouts and sanitized
+  user messages for offline, Supabase, storage, authentication, quota, Gemini,
+  malformed-data, and unknown failures.
+- Generation controllers use operation epochs so clear/cancel/account changes
+  ignore stale asynchronous completions. Product and library controllers use
+  load generations and mutation locks. Duplicate taps do not create duplicate
+  client requests.
+- Riverpod user-scoped controllers watch the authenticated user ID. Logout or
+  account switching rebuilds product, look, saved-status, Saved Looks, and
+  History state rather than retaining another account's data.
+- A selected product edited or deleted between plan creation and preview is
+  reported as `INVENTORY_CHANGED`; it is never substituted silently.
+
+### Deployment requirements
+
+Local source completion is not remote deployment. For a configured Supabase
+project, an authorized operator must:
+
+```powershell
+supabase db push
+supabase functions deploy generate-kit-makeup-recommendation
+supabase functions deploy generate-kit-makeup-preview
+supabase functions deploy delete-history-item
+supabase secrets set GEMINI_API_KEY=<server-only-value>
+```
+
+Also verify the project-specific model environment variables and quota
+configuration expected by the existing Edge Function conventions. Both kit
+functions are explicitly configured with `verify_jwt = true` in
+`supabase/config.toml`. Never use `--no-verify-jwt` for these operations.
+
+After deployment, verify migration presence, function versions, authentication,
+RLS with two real accounts, private storage access, and one controlled live kit
+recommendation/preview. Automated ordinary tests intentionally mock AI and do
+not spend Gemini quota.
+
+### Maintenance checklist
+
+When adding a category or finish, update all of the following together:
+
+1. Dart enums and `MakeupKitFinishCatalog`.
+2. Curated visual shades and display labels/icons.
+3. Product validator and DTO tests.
+4. PostgreSQL category/finish constraints in a new additive migration.
+5. Kit recommendation schemas/types/prompt/validation tests.
+6. Kit preview normalization/validation tests if visually relevant.
+7. Result snapshot rendering and E2E inventory coverage.
+
+Never edit an already-applied migration. Never repurpose a standard
+recommendation prompt or endpoint. Prompt changes require a new kit prompt
+version and tests that retain strict supplied-ID rules.
+
+### Regression protection and validation
+
+`test/e2e/makeup_kit_journey_test.dart` connects authentication, inventory
+CRUD, scan, analysis, style, typed mode selection, owned-product plan, preview,
+save, Saved Looks, History, snapshot survival, and reopen through real
+controllers with repository-boundary fakes. Empty and one-product kits are
+covered without paid AI calls.
+
+`test/e2e/scan_journey_test.dart` remains the protected standard regression:
+selfie -> analysis -> style -> Makeup Recommendation -> standard preview ->
+result/save -> history restoration. Backend tests separately cover partial
+kits, multiple products in one category, malformed model output, fabricated
+and foreign IDs, attribute substitution, deleted/modified products, storage
+ownership, and standard prompt validation.
+
+Before merging future maintenance work, run:
+
+```powershell
+dart format .
+flutter analyze
+flutter test
+npx deno test <all relevant *_test.ts files>
+npx deno check supabase/functions/generate-kit-makeup-recommendation/index.ts
+npx deno check supabase/functions/generate-kit-makeup-preview/index.ts
+flutter build apk --debug --dart-define-from-file=config/development.json
+```
+
+### Known limitations
+
+- Camera-based physical product/shade recognition and barcode/catalog import
+  are not part of the completed feature.
+- Incomplete kits never mix in standard-mode or unregistered products. A
+  hybrid purchase suggestion mode would require a separate product decision.
+- Identity preservation and exact cosmetic rendering are model goals, not an
+  absolute pixel-level guarantee.
+- Separate devices can begin concurrent paid generation before database
+  uniqueness/ownership checks resolve the race; the losing request cannot
+  persist conflicting ownership, but upstream AI work may already have begun.
+- Remote migrations/functions, live RLS, real Gemini output, and device UX are
+  environment/deployment concerns and must not be claimed from local tests.
+- Guest inventory belongs to the anonymous Supabase account and may be lost
+  after sign-out, app-data clearing, or anonymous-account lifecycle cleanup.
+
+## Final feature status
+
+My Makeup Kit is complete in local source through MK-14: private inventory,
+multi-product categories, visual shades, typed finishes, Foundation metadata,
+CRUD, incomplete-kit support, explicit mode selection, isolated owned-only AI,
+anti-hallucination validation, identity-conscious kit preview, Saved Looks,
+History, recovery, security hardening, performance safeguards, and connected
+regression coverage are implemented. Remote deployment and physical-device
+acceptance remain explicit operational steps, not implied by source completion.

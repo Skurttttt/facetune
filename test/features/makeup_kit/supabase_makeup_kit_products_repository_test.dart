@@ -88,6 +88,24 @@ void main() {
         ),
       );
     });
+
+    test('rejects a row owned by another account', () async {
+      final remote = _FakeRemoteDataSource(
+        allRows: [_row(userId: 'another-user')],
+      );
+      final repository = SupabaseMakeupKitProductsRepository(remote);
+
+      await expectLater(
+        repository.loadAll(),
+        throwsA(
+          isA<MakeupKitFailure>().having(
+            (failure) => failure.kind,
+            'kind',
+            MakeupKitFailureKind.validation,
+          ),
+        ),
+      );
+    });
   });
 
   group('create', () {

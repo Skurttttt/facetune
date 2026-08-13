@@ -117,6 +117,22 @@ class _AddMakeupKitProductPageState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const AppCard(
+                  color: AppColors.petal,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.palette_outlined, color: AppColors.rose),
+                      SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Text(
+                          'Choose the closest visual shade first. You can fine-tune it only if you need to.',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.lg),
                 Text('Category', style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(height: AppSpacing.xs),
                 DropdownButtonFormField<MakeupKitCategory>(

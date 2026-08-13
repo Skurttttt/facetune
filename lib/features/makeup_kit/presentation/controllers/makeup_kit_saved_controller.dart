@@ -21,12 +21,15 @@ final makeupKitSavedControllerProvider =
     });
 
 class MakeupKitSavedController extends StateNotifier<MakeupKitSavedState> {
-  MakeupKitSavedController(this._repository)
-    : super(const MakeupKitSavedState());
+  MakeupKitSavedController(
+    this._repository, {
+    Duration timeout = const Duration(seconds: 30),
+  }) : _timeout = timeout,
+       super(const MakeupKitSavedState());
 
   static const pageSize = 12;
-  static const _timeout = Duration(seconds: 30);
   final MakeupKitLibraryRepository _repository;
+  final Duration _timeout;
   int _generation = 0;
 
   Future<void> loadInitial() async {
@@ -78,6 +81,14 @@ class MakeupKitSavedController extends StateNotifier<MakeupKitSavedState> {
         hasMore: append && state.hasMore,
         message: 'Loading My Makeup Kit looks took too long.',
       );
+    } catch (_) {
+      if (!mounted || generation != _generation) return;
+      state = MakeupKitSavedState(
+        status: MakeupKitLibraryStatus.failure,
+        items: append ? state.items : const [],
+        hasMore: append && state.hasMore,
+        message: 'My Makeup Kit looks could not be loaded right now.',
+      );
     }
   }
 
@@ -102,6 +113,20 @@ class MakeupKitSavedController extends StateNotifier<MakeupKitSavedState> {
       );
     } on MakeupKitLibraryFailure catch (failure) {
       _mutationFailed(look.id, failure);
+    } on TimeoutException {
+      _mutationFailed(
+        look.id,
+        const MakeupKitLibraryFailure(
+          'Updating the favorite took too long. Check your connection.',
+        ),
+      );
+    } catch (_) {
+      _mutationFailed(
+        look.id,
+        const MakeupKitLibraryFailure(
+          'The favorite could not be updated right now.',
+        ),
+      );
     }
   }
 
@@ -121,6 +146,20 @@ class MakeupKitSavedController extends StateNotifier<MakeupKitSavedState> {
       );
     } on MakeupKitLibraryFailure catch (failure) {
       _mutationFailed(look.id, failure);
+    } on TimeoutException {
+      _mutationFailed(
+        look.id,
+        const MakeupKitLibraryFailure(
+          'Removing the kit look took too long. Check your connection.',
+        ),
+      );
+    } catch (_) {
+      _mutationFailed(
+        look.id,
+        const MakeupKitLibraryFailure(
+          'The kit look could not be removed right now.',
+        ),
+      );
     }
   }
 

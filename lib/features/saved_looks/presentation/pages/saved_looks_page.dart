@@ -243,10 +243,16 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
               title: 'My Makeup Kit looks unavailable',
               message: kitState.message ?? 'Pull to refresh and try again.',
               icon: Icons.inventory_2_outlined,
-              actionLabel: 'Try again',
-              onAction: () => ref
-                  .read(makeupKitSavedControllerProvider.notifier)
-                  .loadInitial(),
+              actionLabel: kitState.sessionExpired
+                  ? 'Sign in again'
+                  : 'Try again',
+              onAction: kitState.sessionExpired
+                  ? () => ref
+                        .read(authControllerProvider.notifier)
+                        .recoverExpiredSession()
+                  : () => ref
+                        .read(makeupKitSavedControllerProvider.notifier)
+                        .loadInitial(),
             ),
           ),
         if (state.items.isNotEmpty) ...[

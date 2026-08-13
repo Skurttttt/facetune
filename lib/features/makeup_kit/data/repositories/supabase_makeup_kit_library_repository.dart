@@ -24,13 +24,13 @@ class SupabaseMakeupKitLibraryRepository implements MakeupKitLibraryRepository {
 
   @override
   Future<KitSavedLook?> findSaved(String kitGeneratedImageId) async {
-    _requireUser();
+    final userId = _requireUser();
     try {
       final row = await _remote
           .findSaved(kitGeneratedImageId)
           .timeout(_timeout);
       if (row == null) return null;
-      return (await _hydrateSaved([row])).single;
+      return (await _hydrateSaved([row], userId)).single;
     } catch (error) {
       throw _failure(error);
     }
@@ -68,7 +68,7 @@ class SupabaseMakeupKitLibraryRepository implements MakeupKitLibraryRepository {
       if (row == null) {
         throw const FormatException('Saved kit look is missing.');
       }
-      return (await _hydrateSaved([row])).single;
+      return (await _hydrateSaved([row], userId)).single;
     } catch (error) {
       throw _failure(error);
     }
@@ -76,11 +76,12 @@ class SupabaseMakeupKitLibraryRepository implements MakeupKitLibraryRepository {
 
   @override
   Future<KitSavedLook> setFavorite(KitSavedLook look, bool isFavorite) async {
-    _requireUser();
+    final userId = _requireUser();
     try {
-      await _remote
+      final row = await _remote
           .updateFavorite(savedLookId: look.id, favorite: isFavorite)
           .timeout(_timeout);
+      _assertOwnedRows([row], userId);
       return look.copyWith(isFavorite: isFavorite);
     } catch (error) {
       throw _failure(error);
@@ -102,13 +103,13 @@ class SupabaseMakeupKitLibraryRepository implements MakeupKitLibraryRepository {
     required int offset,
     required int limit,
   }) async {
-    _requireUser();
+    final userId = _requireUser();
     try {
       final rows = await _remote
           .selectSaved(offset: offset, limit: limit)
           .timeout(_timeout);
       return KitSavedLooksPageResult(
-        items: await _hydrateSaved(rows),
+        items: await _hydrateSaved(rows, userId),
         hasMore: rows.length == limit,
       );
     } catch (error) {
@@ -121,7 +122,7 @@ class SupabaseMakeupKitLibraryRepository implements MakeupKitLibraryRepository {
     required int offset,
     required int limit,
   }) async {
-    _requireUser();
+    final userId = _requireUser();
     try {
       final previewRows = await _remote
           .selectHistoryPreviews(offset: offset, limit: limit)
@@ -132,7 +133,8 @@ class SupabaseMakeupKitLibraryRepository implements MakeupKitLibraryRepository {
       final savedRows = await _remote
           .selectSavedForPreviews(previewIds)
           .timeout(_timeout);
-      final results = await _hydrateResults(previewRows);
+      _assertOwnedRows(savedRows, userId);
+      final results = await _hydrateResults(previewRows, userId);
       final savedByPreview = {
         for (final row in savedRows)
           _requiredString(row, 'kit_generated_image_id'): row,
@@ -173,15 +175,17 @@ class SupabaseMakeupKitLibraryRepository implements MakeupKitLibraryRepository {
 
   Future<List<KitSavedLook>> _hydrateSaved(
     List<Map<String, Object?>> savedRows,
+    String userId,
   ) async {
     if (savedRows.isEmpty) return const [];
+    _assertOwnedRows(savedRows, userId);
     final previewIds = savedRows
         .map((row) => _requiredString(row, 'kit_generated_image_id'))
         .toList();
     final previewRows = await _remote
         .selectPreviews(previewIds)
         .timeout(_timeout);
-    final results = await _hydrateResults(previewRows);
+    final results = await _hydrateResults(previewRows, userId);
     final resultByPreview = {
       for (final result in results) result.preview.id: result,
     };
@@ -197,8 +201,10 @@ class SupabaseMakeupKitLibraryRepository implements MakeupKitLibraryRepository {
 
   Future<List<KitLookResult>> _hydrateResults(
     List<Map<String, Object?>> previewRows,
+    String userId,
   ) async {
     if (previewRows.isEmpty) return const [];
+    _assertOwnedRows(previewRows, userId);
     final recommendationIds = previewRows
         .map((row) => _requiredString(row, 'kit_recommendation_id'))
         .toSet()
@@ -213,73 +219,74 @@ class SupabaseMakeupKitLibraryRepository implements MakeupKitLibraryRepository {
     ]).timeout(_timeout);
     final recommendations = {for (final row in linked[0]) row['id']: row};
     final analyses = {for (final row in linked[1]) row['id']: row};
-    final results = <KitLookResult>[];
-    for (final previewRow in previewRows) {
-      final recommendationRow =
-          recommendations[previewRow['kit_recommendation_id']];
-      final analysisRow = analyses[previewRow['analysis_id']];
-      if (recommendationRow == null || analysisRow == null) {
-        throw const FormatException('Missing linked kit result data.');
-      }
-      final analysis = FaceAnalysisDto.fromResponse({
-        'analysis': {
-          'id': analysisRow['id'],
-          'originalImagePath': analysisRow['original_image_path'],
-          'validation': _map(analysisRow['raw_ai_metadata'])['validation'],
-          'attributes': {
-            'faceShape': analysisRow['face_shape'],
-            'skinTone': analysisRow['skin_tone'],
-            'undertone': analysisRow['undertone'],
-            'eyeShape': analysisRow['eye_shape'],
-            'lipShape': analysisRow['lip_shape'],
-            'hairColor': analysisRow['hair_color'],
-            'eyeColor': analysisRow['eye_color'],
+    _assertOwnedRows(linked[0], userId);
+    _assertOwnedRows(linked[1], userId);
+    final hydrated = await Future.wait(
+      previewRows.map((previewRow) async {
+        final recommendationRow =
+            recommendations[previewRow['kit_recommendation_id']];
+        final analysisRow = analyses[previewRow['analysis_id']];
+        if (recommendationRow == null || analysisRow == null) {
+          throw const FormatException('Missing linked kit result data.');
+        }
+        final analysis = FaceAnalysisDto.fromResponse({
+          'analysis': {
+            'id': analysisRow['id'],
+            'originalImagePath': analysisRow['original_image_path'],
+            'validation': _map(analysisRow['raw_ai_metadata'])['validation'],
+            'attributes': {
+              'faceShape': analysisRow['face_shape'],
+              'skinTone': analysisRow['skin_tone'],
+              'undertone': analysisRow['undertone'],
+              'eyeShape': analysisRow['eye_shape'],
+              'lipShape': analysisRow['lip_shape'],
+              'hairColor': analysisRow['hair_color'],
+              'eyeColor': analysisRow['eye_color'],
+            },
+            'confidence': analysisRow['confidence_json'],
+            'modelId': _fallbackString(analysisRow['model_name'], 'unknown'),
+            'promptVersion': _fallbackString(
+              analysisRow['prompt_version'],
+              'legacy',
+            ),
+            'createdAt': analysisRow['created_at'],
           },
-          'confidence': analysisRow['confidence_json'],
-          'modelId': _fallbackString(analysisRow['model_name'], 'unknown'),
-          'promptVersion': _fallbackString(
-            analysisRow['prompt_version'],
-            'legacy',
-          ),
-          'createdAt': analysisRow['created_at'],
-        },
-      }).analysis;
-      final recommendation = KitMakeupRecommendationDto.fromResponse({
-        'recommendation': {
-          'id': recommendationRow['id'],
-          'analysisId': recommendationRow['analysis_id'],
-          'style': recommendationRow['makeup_style'],
-          'plan': recommendationRow['recommendation_json'],
-          'productSnapshot': recommendationRow['product_snapshot_json'],
-          'modelId': recommendationRow['model_name'],
-          'promptVersion': recommendationRow['prompt_version'],
-          'createdAt': recommendationRow['created_at'],
-        },
-      }).recommendation;
-      final previewDto = KitGeneratedPreviewDto.fromResponse({
-        'preview': {
-          'id': previewRow['id'],
-          'mode': 'makeup_kit',
-          'analysisId': previewRow['analysis_id'],
-          'kitRecommendationId': previewRow['kit_recommendation_id'],
-          'originalImagePath': analysis.originalImagePath,
-          'generatedImagePath': previewRow['storage_path'],
-          'generationNumber': previewRow['generation_number'],
-          'modelId': previewRow['model_name'],
-          'promptVersion': previewRow['prompt_version'],
-          'createdAt': previewRow['created_at'],
-        },
-      });
-      final urls = await Future.wait([
-        _remote.createSignedUrl(previewDto.originalImagePath),
-        _remote.createSignedUrl(previewDto.generatedImagePath),
-      ]).timeout(_timeout);
-      final style = MakeupStyleCatalog.styles
-          .where((candidate) => candidate.code == recommendation.styleCode)
-          .firstOrNull;
-      if (style == null) throw const FormatException('Unknown makeup style.');
-      results.add(
-        KitLookResult(
+        }).analysis;
+        final recommendation = KitMakeupRecommendationDto.fromResponse({
+          'recommendation': {
+            'id': recommendationRow['id'],
+            'analysisId': recommendationRow['analysis_id'],
+            'style': recommendationRow['makeup_style'],
+            'plan': recommendationRow['recommendation_json'],
+            'productSnapshot': recommendationRow['product_snapshot_json'],
+            'modelId': recommendationRow['model_name'],
+            'promptVersion': recommendationRow['prompt_version'],
+            'createdAt': recommendationRow['created_at'],
+          },
+        }).recommendation;
+        final previewDto = KitGeneratedPreviewDto.fromResponse({
+          'preview': {
+            'id': previewRow['id'],
+            'mode': 'makeup_kit',
+            'analysisId': previewRow['analysis_id'],
+            'kitRecommendationId': previewRow['kit_recommendation_id'],
+            'originalImagePath': analysis.originalImagePath,
+            'generatedImagePath': previewRow['storage_path'],
+            'generationNumber': previewRow['generation_number'],
+            'modelId': previewRow['model_name'],
+            'promptVersion': previewRow['prompt_version'],
+            'createdAt': previewRow['created_at'],
+          },
+        });
+        final urls = await Future.wait([
+          _remote.createSignedUrl(previewDto.originalImagePath),
+          _remote.createSignedUrl(previewDto.generatedImagePath),
+        ]).timeout(_timeout);
+        final style = MakeupStyleCatalog.styles
+            .where((candidate) => candidate.code == recommendation.styleCode)
+            .firstOrNull;
+        if (style == null) throw const FormatException('Unknown makeup style.');
+        return KitLookResult(
           analysis: analysis,
           style: style,
           recommendation: recommendation,
@@ -287,10 +294,10 @@ class SupabaseMakeupKitLibraryRepository implements MakeupKitLibraryRepository {
             originalImageUrl: urls[0],
             generatedImageUrl: urls[1],
           ),
-        ),
-      );
-    }
-    return List.unmodifiable(results);
+        );
+      }),
+    ).timeout(_timeout);
+    return List.unmodifiable(hydrated);
   }
 
   static KitSavedLook? _savedFromRow(
@@ -333,6 +340,11 @@ class SupabaseMakeupKitLibraryRepository implements MakeupKitLibraryRepository {
       );
     }
     if (error is MakeupKitLibraryRemoteFailure) {
+      if (error.status <= 0) {
+        return const MakeupKitLibraryFailure(
+          'Check your connection and try again.',
+        );
+      }
       if (error.status == 401) {
         return const MakeupKitLibraryFailure(
           'Your session expired. Sign in again.',
@@ -343,6 +355,21 @@ class SupabaseMakeupKitLibraryRepository implements MakeupKitLibraryRepository {
       return MakeupKitLibraryFailure(
         error.message,
         retryable: error.retryable || error.status >= 500,
+      );
+    }
+    if (error is PostgrestException && _isExpiredSession(error)) {
+      return const MakeupKitLibraryFailure(
+        'Your session expired. Sign in again.',
+        retryable: false,
+        sessionExpired: true,
+      );
+    }
+    if (error is StorageException &&
+        int.tryParse(error.statusCode.toString()) == 401) {
+      return const MakeupKitLibraryFailure(
+        'Your session expired. Sign in again.',
+        retryable: false,
+        sessionExpired: true,
       );
     }
     if (error is PostgrestException || error is StorageException) {
@@ -376,4 +403,18 @@ class SupabaseMakeupKitLibraryRepository implements MakeupKitLibraryRepository {
 
   static String _fallbackString(Object? value, String fallback) =>
       value is String && value.trim().isNotEmpty ? value.trim() : fallback;
+
+  static bool _isExpiredSession(PostgrestException error) {
+    final detail = '${error.code} ${error.message} ${error.details}'
+        .toLowerCase();
+    return error.code == 'PGRST301' ||
+        (detail.contains('jwt') &&
+            (detail.contains('expired') || detail.contains('invalid')));
+  }
+
+  static void _assertOwnedRows(List<Map<String, Object?>> rows, String userId) {
+    if (rows.any((row) => row['user_id'] != userId)) {
+      throw const FormatException('Result ownership is invalid.');
+    }
+  }
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:facetune/core/constants/app_constants.dart';
 import 'package:facetune/core/supabase/supabase_availability_provider.dart';
 import 'package:facetune/features/analysis/data/models/face_analysis_dto.dart';
@@ -41,9 +43,14 @@ Future<
     _FakeKitLookRepository kitLook,
   })
 >
-_pump(WidgetTester tester, {required bool hasProduct}) async {
+_pump(
+  WidgetTester tester, {
+  required bool hasProduct,
+  Object? kitLoadError,
+  _FakeKitLookRepository? lookRepository,
+}) async {
   final recommendation = _FakeRecommendationRepository();
-  final kitLook = _FakeKitLookRepository();
+  final kitLook = lookRepository ?? _FakeKitLookRepository();
   final container = ProviderContainer(
     overrides: [
       supabaseAvailableProvider.overrideWithValue(false),
@@ -53,7 +60,7 @@ _pump(WidgetTester tester, {required bool hasProduct}) async {
         ),
       ),
       makeupKitProductsRepositoryProvider.overrideWithValue(
-        _FakeKitRepository(hasProduct: hasProduct),
+        _FakeKitRepository(hasProduct: hasProduct, loadError: kitLoadError),
       ),
       makeupKitLookRepositoryProvider.overrideWithValue(kitLook),
       makeupRecommendationRepositoryProvider.overrideWithValue(recommendation),
@@ -189,6 +196,47 @@ void main() {
       expect(find.text('Add Product Form'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'kit load failure offers retry without claiming the kit is empty',
+    (tester) async {
+      await _pump(
+        tester,
+        hasProduct: false,
+        kitLoadError: StateError('offline'),
+      );
+
+      expect(find.text('Use Makeup Recommendation'), findsOneWidget);
+      expect(
+        find.text('Your makeup kit could not be loaded right now.'),
+        findsOneWidget,
+      );
+      expect(find.text('Try Again'), findsOneWidget);
+      expect(find.text('Add Product'), findsNothing);
+    },
+  );
+
+  testWidgets('generation can be cancelled back to mode selection', (
+    tester,
+  ) async {
+    final pending = Completer<KitMakeupRecommendation>();
+    final look = _FakeKitLookRepository(pendingRecommendation: pending);
+    await _pump(tester, hasProduct: true, lookRepository: look);
+
+    await tester.drag(find.byType(ListView), const Offset(0, -250));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Use My Makeup Kit'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create kit-based preview'));
+    await tester.pump();
+
+    expect(find.text('Cancel and change mode'), findsOneWidget);
+    await tester.tap(find.text('Cancel and change mode'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Use My Makeup Kit'), findsOneWidget);
+    expect(look.previewCalls, 0);
+  });
 }
 
 class _FakeRecommendationRepository implements MakeupRecommendationRepository {
@@ -209,9 +257,10 @@ class _FakeRecommendationRepository implements MakeupRecommendationRepository {
 }
 
 class _FakeKitRepository implements MakeupKitProductsRepository {
-  _FakeKitRepository({required this.hasProduct});
+  _FakeKitRepository({required this.hasProduct, this.loadError});
 
   final bool hasProduct;
+  final Object? loadError;
 
   List<MakeupKitProduct> get _items => hasProduct
       ? [
@@ -228,7 +277,10 @@ class _FakeKitRepository implements MakeupKitProductsRepository {
       : const [];
 
   @override
-  Future<List<MakeupKitProduct>> loadAll() async => _items;
+  Future<List<MakeupKitProduct>> loadAll() async {
+    if (loadError != null) throw loadError!;
+    return _items;
+  }
 
   @override
   Future<List<MakeupKitProduct>> loadByCategory(
@@ -250,6 +302,9 @@ class _FakeKitRepository implements MakeupKitProductsRepository {
 }
 
 class _FakeKitLookRepository implements MakeupKitLookRepository {
+  _FakeKitLookRepository({this.pendingRecommendation});
+
+  final Completer<KitMakeupRecommendation>? pendingRecommendation;
   int recommendationCalls = 0;
   int previewCalls = 0;
 
@@ -259,6 +314,9 @@ class _FakeKitLookRepository implements MakeupKitLookRepository {
     required String styleCode,
   }) async {
     recommendationCalls++;
+    if (pendingRecommendation != null) {
+      return pendingRecommendation!.future;
+    }
     return KitMakeupRecommendation(
       id: 'kit-recommendation-1',
       analysisId: analysisId,
