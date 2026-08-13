@@ -36,5 +36,5 @@ MK-13 → MK-14: Prove it works and finish it.
 We test the whole system—including the original Makeup Recommendation—and then polish the UI/UX.
 
 git add .
-git commit -m "feat(makeup-kit): complete MK-4 kit overview UX"
+git commit -m "MK-6 — Edit, Delete & Inventory Management"
 git push

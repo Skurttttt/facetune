@@ -17,6 +17,8 @@ import '../../features/home/presentation/pages/home_page.dart';
 import '../../features/makeup_kit/presentation/pages/add_makeup_kit_product_page.dart';
 import '../../features/makeup_kit/presentation/pages/makeup_kit_overview_page.dart';
 import '../../features/makeup_kit/presentation/pages/makeup_kit_product_page.dart';
+import '../../features/makeup_kit/presentation/pages/makeup_kit_recommendation_entry_page.dart';
+import '../../features/makeup_kit/presentation/pages/recommendation_mode_selection_page.dart';
 import '../../features/makeup_styles/presentation/pages/style_selection_page.dart';
 import '../../features/preview/presentation/pages/preview_result_page.dart';
 import '../../features/recommendation/presentation/pages/makeup_recommendation_page.dart';
@@ -110,6 +112,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const StyleSelectionPage(),
       ),
       GoRoute(
+        path: AppConstants.recommendationModeRoute,
+        name: 'recommendationMode',
+        builder: (context, state) => const RecommendationModeSelectionPage(),
+      ),
+      GoRoute(
         path: AppConstants.recommendationRoute,
         name: 'recommendation',
         builder: (context, state) => const MakeupRecommendationPage(),
@@ -149,6 +156,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: 'makeupKitProduct',
         builder: (context, state) =>
             MakeupKitProductPage(productId: state.pathParameters['productId']!),
+      ),
+      GoRoute(
+        path: AppConstants.makeupKitRecommendationEntryRoute,
+        name: 'makeupKitRecommendationEntry',
+        builder: (context, state) => const MakeupKitRecommendationEntryPage(),
       ),
       GoRoute(
         path: AppConstants.profileRoute,
