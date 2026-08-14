@@ -3,7 +3,21 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../../theme/app_tokens.dart';
+import '../../domain/entities/personalized_tutorial.dart';
 import '../../domain/entities/tutorial_placement_metadata.dart';
+import '../../domain/services/personalized_tutorial_overlay_metadata_renderer.dart';
+
+/// Spec-driven entry point for personalized tutorial overlays.
+class PersonalizedTutorialOverlayLayer extends StatelessWidget {
+  const PersonalizedTutorialOverlayLayer({required this.spec, super.key});
+
+  final PersonalizedTutorialStepSpec spec;
+
+  @override
+  Widget build(BuildContext context) => TutorialPlacementOverlayLayer(
+    metadata: PersonalizedTutorialOverlayMetadataRenderer.build(spec),
+  );
+}
 
 /// Paints a [TutorialPlacementMetadata]'s overlays on top of whatever it is
 /// stacked over (a placement image), scaled to fill this widget's box.
@@ -59,12 +73,14 @@ class _PlacementOverlayPainter extends CustomPainter {
             canvas,
             points,
             _colorFor(overlay, _defaultStrokeColor),
+            shortestSide,
           );
         case TutorialPlacementOverlayType.line:
           _paintPolyline(
             canvas,
             points,
             _colorFor(overlay, _defaultStrokeColor),
+            shortestSide,
           );
         case TutorialPlacementOverlayType.arrow:
           _paintArrow(
@@ -81,7 +97,7 @@ class _PlacementOverlayPainter extends CustomPainter {
             shortestSide,
           );
         case TutorialPlacementOverlayType.label:
-          _paintLabel(canvas, points.first, overlay.label);
+          _paintLabel(canvas, points.first, overlay.label, shortestSide);
       }
     }
   }
@@ -116,11 +132,16 @@ class _PlacementOverlayPainter extends CustomPainter {
     canvas.drawPath(_closedPath(points), fill);
   }
 
-  void _paintBoundary(Canvas canvas, List<Offset> points, Color color) {
+  void _paintBoundary(
+    Canvas canvas,
+    List<Offset> points,
+    Color color,
+    double shortestSide,
+  ) {
     final stroke = Paint()
       ..color = color.withValues(alpha: 0.9)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5
+      ..strokeWidth = shortestSide * 0.006
       ..strokeJoin = StrokeJoin.round;
     canvas.drawPath(
       points.length < 3
@@ -130,11 +151,16 @@ class _PlacementOverlayPainter extends CustomPainter {
     );
   }
 
-  void _paintPolyline(Canvas canvas, List<Offset> points, Color color) {
+  void _paintPolyline(
+    Canvas canvas,
+    List<Offset> points,
+    Color color,
+    double shortestSide,
+  ) {
     final stroke = Paint()
       ..color = color.withValues(alpha: 0.9)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5
+      ..strokeWidth = shortestSide * 0.006
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
     canvas.drawPath(Path()..addPolygon(points, false), stroke);
@@ -151,7 +177,7 @@ class _PlacementOverlayPainter extends CustomPainter {
     final stroke = Paint()
       ..color = color.withValues(alpha: 0.9)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5
+      ..strokeWidth = shortestSide * 0.006
       ..strokeCap = StrokeCap.round;
     canvas.drawLine(start, end, stroke);
 
@@ -190,16 +216,21 @@ class _PlacementOverlayPainter extends CustomPainter {
     }
   }
 
-  void _paintLabel(Canvas canvas, Offset anchor, String? text) {
+  void _paintLabel(
+    Canvas canvas,
+    Offset anchor,
+    String? text,
+    double shortestSide,
+  ) {
     if (text == null || text.isEmpty) return;
     final painter = TextPainter(
       text: TextSpan(
         text: text,
-        style: const TextStyle(color: Colors.white, fontSize: 11),
+        style: TextStyle(color: Colors.white, fontSize: shortestSide * 0.032),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
-    const padding = 4.0;
+    final padding = shortestSide * 0.012;
     final rect = Rect.fromLTWH(
       anchor.dx,
       anchor.dy,
@@ -207,7 +238,7 @@ class _PlacementOverlayPainter extends CustomPainter {
       painter.height + padding * 2,
     );
     canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(4)),
+      RRect.fromRectAndRadius(rect, Radius.circular(shortestSide * 0.012)),
       Paint()..color = Colors.black54,
     );
     painter.paint(canvas, Offset(anchor.dx + padding, anchor.dy + padding));

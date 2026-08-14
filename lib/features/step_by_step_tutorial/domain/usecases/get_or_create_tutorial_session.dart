@@ -135,6 +135,7 @@ class GetOrCreateTutorialSession {
         title: plannedStep.title,
         instruction: plannedStep.instruction,
         placementMetadata: plannedStep.placementMetadata,
+        personalizedSpec: plannedStep.personalizedSpec,
       );
       final reusablePath = plannedStep.reusableResultImagePath;
       if (reusablePath != null) {

@@ -1,5 +1,6 @@
 import '../entities/tutorial_generation_status.dart';
 import '../entities/tutorial_instruction.dart';
+import '../entities/personalized_tutorial.dart';
 import '../entities/tutorial_placement_metadata.dart';
 import '../entities/tutorial_session.dart';
 import '../entities/tutorial_source_mode.dart';
@@ -59,6 +60,7 @@ abstract interface class TutorialRepository {
     required String title,
     required TutorialInstruction instruction,
     TutorialPlacementMetadata? placementMetadata,
+    PersonalizedTutorialStepSpec? personalizedSpec,
   });
 
   /// Persists a step's placement/result image references and AI metadata

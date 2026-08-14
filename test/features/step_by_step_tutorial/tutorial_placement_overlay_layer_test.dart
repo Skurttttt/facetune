@@ -1,4 +1,7 @@
+import 'package:facetune/features/step_by_step_tutorial/domain/entities/personalized_tutorial.dart';
+import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_face_geometry.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_placement_metadata.dart';
+import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_step_category.dart';
 import 'package:facetune/features/step_by_step_tutorial/presentation/widgets/tutorial_placement_overlay_layer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,6 +18,67 @@ Future<void> _pump(WidgetTester tester, TutorialPlacementMetadata metadata) =>
     );
 
 void main() {
+  testWidgets(
+    'personalized layer renders the same normalized spec at multiple sizes',
+    (tester) async {
+      final spec = PersonalizedTutorialStepSpec(
+        stepNumber: 1,
+        what: PersonalizedTutorialWhat(
+          category: TutorialStepCategory.foundation,
+          colorHex: '#E58C87',
+        ),
+        where: PersonalizedTutorialWhere(
+          description: 'Broad face coverage',
+          regions: const {TutorialPlacementRegion.fullFace},
+          side: TutorialPlacementSide.full,
+          geometryConfidence: TutorialPlacementConfidence.high,
+          placementConfidence: TutorialPlacementConfidence.high,
+          overlays: [
+            PersonalizedTutorialOverlay(
+              type: TutorialPlacementOverlayType.zone,
+              region: TutorialPlacementRegion.fullFace,
+              colorHex: '#E58C87',
+            ),
+            PersonalizedTutorialOverlay(
+              type: TutorialPlacementOverlayType.arrow,
+              region: TutorialPlacementRegion.fullFace,
+            ),
+          ],
+          geometryAnchors: [
+            PersonalizedTutorialGeometryAnchor(
+              region: TutorialPlacementRegion.fullFace,
+              side: TutorialGeometrySide.center,
+              points: [
+                TutorialNormalizedPoint(x: 0.2, y: 0.15),
+                TutorialNormalizedPoint(x: 0.8, y: 0.15),
+                TutorialNormalizedPoint(x: 0.75, y: 0.85),
+                TutorialNormalizedPoint(x: 0.25, y: 0.85),
+              ],
+            ),
+          ],
+        ),
+        how: PersonalizedTutorialHow(
+          direction: TutorialDirection.outward,
+          intensity: TutorialIntensity.medium,
+          technique: TutorialTechnique('Blend outward.'),
+        ),
+      );
+
+      for (final size in [const Size(256, 256), const Size(512, 768)]) {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: SizedBox.fromSize(
+              size: size,
+              child: PersonalizedTutorialOverlayLayer(spec: spec),
+            ),
+          ),
+        );
+        expect(tester.takeException(), isNull);
+        expect(find.byType(CustomPaint), findsWidgets);
+      }
+    },
+  );
+
   test('empty overlays renders no painter (SizedBox.shrink)', () async {
     // No pump needed — this is a pure widget construction check.
     const layer = TutorialPlacementOverlayLayer(

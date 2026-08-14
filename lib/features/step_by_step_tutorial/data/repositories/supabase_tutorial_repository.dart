@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../domain/entities/tutorial_generation_status.dart';
+import '../../domain/entities/personalized_tutorial.dart';
 import '../../domain/entities/tutorial_instruction.dart';
 import '../../domain/entities/tutorial_placement_metadata.dart';
 import '../../domain/entities/tutorial_session.dart';
@@ -135,6 +136,7 @@ class SupabaseTutorialRepository implements TutorialRepository {
     required String title,
     required TutorialInstruction instruction,
     TutorialPlacementMetadata? placementMetadata,
+    PersonalizedTutorialStepSpec? personalizedSpec,
   }) async {
     final userId = _ownerId();
     try {
@@ -146,6 +148,7 @@ class SupabaseTutorialRepository implements TutorialRepository {
           title: title,
           instruction: instruction,
           placementMetadata: placementMetadata,
+          personalizedSpec: personalizedSpec,
         ),
       );
       return _hydrateStep(TutorialStepDto.fromRow(row));

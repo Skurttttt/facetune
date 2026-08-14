@@ -1,8 +1,10 @@
 import '../../domain/entities/tutorial_generation_status.dart';
+import '../../domain/entities/personalized_tutorial.dart';
 import '../../domain/entities/tutorial_instruction.dart';
 import '../../domain/entities/tutorial_placement_metadata.dart';
 import '../../domain/entities/tutorial_step.dart';
 import '../../domain/entities/tutorial_step_category.dart';
+import 'personalized_tutorial_step_spec_codec.dart';
 
 /// Maps between raw `tutorial_steps` Supabase rows and the [TutorialStep]
 /// domain entity.
@@ -30,6 +32,7 @@ class TutorialStepDto {
     required this.createdAt,
     required this.updatedAt,
     this.placementMetadata,
+    this.personalizedSpec,
     this.placementImagePath,
     this.resultImagePath,
     this.modelId,
@@ -44,6 +47,7 @@ class TutorialStepDto {
   final String title;
   final TutorialInstruction instruction;
   final TutorialPlacementMetadata? placementMetadata;
+  final PersonalizedTutorialStepSpec? personalizedSpec;
   final String? placementImagePath;
   final String? resultImagePath;
   final String? modelId;
@@ -79,6 +83,11 @@ class TutorialStepDto {
       placementMetadata: _placementMetadataFromJson(
         row['placement_metadata_json'],
       ),
+      personalizedSpec: row['personalized_spec_json'] == null
+          ? null
+          : PersonalizedTutorialStepSpecCodec.fromJson(
+              row['personalized_spec_json'],
+            ),
       placementImagePath: _optionalString(row, 'placement_image_path'),
       resultImagePath: _optionalString(row, 'result_image_path'),
       modelId: _optionalString(row, 'model_name'),
@@ -103,6 +112,7 @@ class TutorialStepDto {
         title: title,
         instruction: instruction,
         placementMetadata: placementMetadata,
+        personalizedSpec: personalizedSpec,
         placementImagePath: placementImagePath,
         placementImageUrl: placementImageUrl,
         resultImagePath: resultImagePath,
@@ -123,6 +133,7 @@ class TutorialStepDto {
     required String title,
     required TutorialInstruction instruction,
     TutorialPlacementMetadata? placementMetadata,
+    PersonalizedTutorialStepSpec? personalizedSpec,
   }) => {
     'user_id': userId,
     'tutorial_session_id': tutorialSessionId,
@@ -131,6 +142,9 @@ class TutorialStepDto {
     'title': title,
     'instruction_json': _instructionToJson(instruction),
     'placement_metadata_json': _placementMetadataToJson(placementMetadata),
+    'personalized_spec_json': personalizedSpec == null
+        ? null
+        : PersonalizedTutorialStepSpecCodec.toJson(personalizedSpec),
   };
 
   /// Column values for a partial update of a step's image references. Only

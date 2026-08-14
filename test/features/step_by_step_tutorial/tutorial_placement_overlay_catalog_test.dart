@@ -6,7 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('every category except finalLook has at least one default overlay', () {
     for (final category in TutorialStepCategory.values) {
-      final metadata = TutorialPlacementOverlayCatalog.defaultFor(category);
+      final metadata = TutorialPlacementOverlayCatalog.legacyFallbackFor(
+        category,
+      );
       if (category == TutorialStepCategory.finalLook) {
         expect(metadata.overlays, isEmpty, reason: 'finalLook has no zone');
       } else {
@@ -21,7 +23,9 @@ void main() {
 
   test('every default overlay point is normalized between 0.0 and 1.0', () {
     for (final category in TutorialStepCategory.values) {
-      final metadata = TutorialPlacementOverlayCatalog.defaultFor(category);
+      final metadata = TutorialPlacementOverlayCatalog.legacyFallbackFor(
+        category,
+      );
       for (final overlay in metadata.overlays) {
         expect(overlay.points, isNotEmpty);
         for (final point in overlay.points) {
@@ -45,7 +49,9 @@ void main() {
       TutorialStepCategory.lipstick,
       TutorialStepCategory.lipGloss,
     ]) {
-      final metadata = TutorialPlacementOverlayCatalog.defaultFor(category);
+      final metadata = TutorialPlacementOverlayCatalog.legacyFallbackFor(
+        category,
+      );
       expect(
         metadata.overlays.every(
           (overlay) => overlay.type == TutorialPlacementOverlayType.boundary,
@@ -59,7 +65,9 @@ void main() {
     'a zone overlay is either one point, two points, or a closed polygon',
     () {
       for (final category in TutorialStepCategory.values) {
-        final metadata = TutorialPlacementOverlayCatalog.defaultFor(category);
+        final metadata = TutorialPlacementOverlayCatalog.legacyFallbackFor(
+          category,
+        );
         for (final overlay in metadata.overlays) {
           if (overlay.type != TutorialPlacementOverlayType.zone) continue;
           expect(overlay.points.length, greaterThanOrEqualTo(1));

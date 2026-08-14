@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/widgets/app_ui.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../../makeup_styles/domain/catalog/makeup_style_catalog.dart';
-import '../../domain/catalog/tutorial_placement_overlay_catalog.dart';
 import '../../domain/entities/tutorial_generation_status.dart';
 import '../../domain/entities/tutorial_session.dart';
 import '../../domain/entities/tutorial_step.dart';
@@ -68,7 +67,8 @@ class _TutorialStepViewerState extends ConsumerState<TutorialStepViewer> {
       );
     }
     final step = steps[_index];
-    final placementImageUrl = step.placementImageUrl ??
+    final placementImageUrl =
+        step.placementImageUrl ??
         (_index == 0
             ? widget.state.originalImageUrl
             : steps[_index - 1].resultImageUrl);
@@ -129,9 +129,7 @@ class _StepBody extends StatelessWidget {
       return PlacementResultComparison(
         placementImageUrl: placementImageUrl!,
         resultImageUrl: step.resultImageUrl!,
-        placementMetadata:
-            step.placementMetadata ??
-            TutorialPlacementOverlayCatalog.defaultFor(step.category),
+        placementMetadata: step.placementMetadata,
       );
     }
     if (state.generatingStepId == step.id) {

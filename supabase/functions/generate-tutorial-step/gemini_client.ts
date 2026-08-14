@@ -1,4 +1,7 @@
-import { tutorialStepPrompt } from "./prompt.ts";
+import {
+  type PersonalizedTutorialPromptInput,
+  tutorialStepPrompt,
+} from "./prompt.ts";
 import type { GeneratedImage } from "./types.ts";
 import { FunctionFailure } from "./types.ts";
 import { validateGeneratedImage } from "./image_validation.ts";
@@ -79,10 +82,8 @@ export async function requestGeminiTutorialStep(params: {
   /// drift across repeated generations").
   identityAnchorBytes?: Uint8Array;
   identityAnchorMimeType?: string;
-  stepNumber: number;
   totalSteps: number;
-  categoryLabel: string;
-  instruction: Record<string, unknown>;
+  promptInput: PersonalizedTutorialPromptInput;
 }): Promise<GeneratedImage> {
   const {
     apiKey,
@@ -91,10 +92,8 @@ export async function requestGeminiTutorialStep(params: {
     cumulativeMimeType,
     identityAnchorBytes,
     identityAnchorMimeType,
-    stepNumber,
     totalSteps,
-    categoryLabel,
-    instruction,
+    promptInput,
   } = params;
   const isFirstStep = identityAnchorBytes === undefined;
   const endpoint = `https://generativelanguage.googleapis.com/v1/models/${
@@ -128,10 +127,8 @@ export async function requestGeminiTutorialStep(params: {
         {
           text: tutorialStepPrompt({
             isFirstStep,
-            stepNumber,
             totalSteps,
-            categoryLabel,
-            instruction,
+            input: promptInput,
           }),
         },
         ...imageParts,
@@ -145,7 +142,7 @@ export async function requestGeminiTutorialStep(params: {
     const attemptTimeout = Math.min(attemptTimeoutMs, remainingBudgetMs);
     try {
       console.log(
-        `[TutorialStep] gemini_request_started model=${model} step=${stepNumber} attempt=${attempt} budget_ms=${attemptTimeout}`,
+        `[TutorialStep] gemini_request_started model=${model} step=${promptInput.stepSpec.stepNumber} attempt=${attempt} budget_ms=${attemptTimeout}`,
       );
       const response = await fetch(endpoint, {
         method: "POST",

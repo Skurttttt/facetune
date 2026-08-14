@@ -1,4 +1,5 @@
 import '../../domain/entities/tutorial_generation_status.dart';
+import '../../domain/entities/personalized_tutorial.dart';
 import '../../domain/entities/tutorial_instruction.dart';
 import '../../domain/entities/tutorial_placement_metadata.dart';
 import '../../domain/entities/tutorial_session.dart';
@@ -55,6 +56,7 @@ class UnavailableTutorialRepository implements TutorialRepository {
     required String title,
     required TutorialInstruction instruction,
     TutorialPlacementMetadata? placementMetadata,
+    PersonalizedTutorialStepSpec? personalizedSpec,
   }) => throw _failure;
 
   @override

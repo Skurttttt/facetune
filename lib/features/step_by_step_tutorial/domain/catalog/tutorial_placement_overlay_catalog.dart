@@ -26,14 +26,23 @@ import '../entities/tutorial_step_category.dart';
 /// guide §7's "avoid visual clutter" instruction — each category gets at
 /// most a handful of overlays, not an anatomically exhaustive diagram.
 abstract final class TutorialPlacementOverlayCatalog {
+  /// Legacy category-only compatibility path. New personalized tutorial work
+  /// must use `PersonalizedTutorialMetadataPipeline`, which projects overlay
+  /// metadata from one canonical step specification.
+  static TutorialPlacementMetadata legacyFallbackFor(
+    TutorialStepCategory category,
+  ) {
+    final overlays = _byCategory[category];
+    return TutorialPlacementMetadata(overlays: overlays ?? const []);
+  }
+
   /// Returns the default overlay set for [category], or an empty overlay
   /// list for categories with no placement guidance (currently only
   /// [TutorialStepCategory.finalLook], which has no single application
   /// zone of its own).
-  static TutorialPlacementMetadata defaultFor(TutorialStepCategory category) {
-    final overlays = _byCategory[category];
-    return TutorialPlacementMetadata(overlays: overlays ?? const []);
-  }
+  @Deprecated('Use the canonical personalized metadata pipeline.')
+  static TutorialPlacementMetadata defaultFor(TutorialStepCategory category) =>
+      legacyFallbackFor(category);
 
   static const _byCategory =
       <TutorialStepCategory, List<TutorialPlacementOverlay>>{

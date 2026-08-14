@@ -3,7 +3,6 @@ import '../../../makeup_kit/domain/entities/kit_makeup_recommendation.dart';
 import '../../../makeup_kit/domain/entities/makeup_kit_category.dart';
 import '../../../preview/domain/entities/generated_preview.dart';
 import '../../../recommendation/domain/entities/makeup_recommendation.dart';
-import '../catalog/tutorial_placement_overlay_catalog.dart';
 import '../entities/tutorial_instruction.dart';
 import '../entities/tutorial_plan.dart';
 import '../entities/tutorial_step_category.dart';
@@ -205,9 +204,7 @@ abstract final class TutorialPlanningEngine {
           category: category,
           title: _title(category),
           instruction: byCategory[category]!,
-          placementMetadata: TutorialPlacementOverlayCatalog.defaultFor(
-            category,
-          ),
+          placementMetadata: null,
         ),
       PlannedTutorialStep(
         stepNumber: orderedCategories.length + 1,
@@ -219,9 +216,7 @@ abstract final class TutorialPlanningEngine {
           intensity: 'as applied',
           technique: 'Review the finished, fully blended result.',
         ),
-        placementMetadata: TutorialPlacementOverlayCatalog.defaultFor(
-          TutorialStepCategory.finalLook,
-        ),
+        placementMetadata: null,
         reusableResultImagePath: reusableResultImagePath,
         reusableResultImageUrl: reusableResultImageUrl,
         reusableModelId: reusableModelId,

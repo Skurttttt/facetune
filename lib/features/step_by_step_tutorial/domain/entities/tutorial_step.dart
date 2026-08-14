@@ -1,4 +1,5 @@
 import 'tutorial_generation_status.dart';
+import 'personalized_tutorial.dart';
 import 'tutorial_instruction.dart';
 import 'tutorial_placement_metadata.dart';
 import 'tutorial_step_category.dart';
@@ -25,6 +26,7 @@ class TutorialStep {
     required this.createdAt,
     required this.updatedAt,
     this.placementMetadata,
+    this.personalizedSpec,
     this.placementImagePath,
     this.placementImageUrl,
     this.resultImagePath,
@@ -41,6 +43,10 @@ class TutorialStep {
   final String title;
   final TutorialInstruction instruction;
   final TutorialPlacementMetadata? placementMetadata;
+
+  /// Immutable placement/product decision loaded from persistence. Reopening
+  /// renders this snapshot and must not run personalization rules again.
+  final PersonalizedTutorialStepSpec? personalizedSpec;
 
   final String? placementImagePath;
   final String? placementImageUrl;

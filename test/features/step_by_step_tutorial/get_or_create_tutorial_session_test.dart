@@ -4,6 +4,7 @@ import 'package:facetune/features/preview/domain/entities/generated_preview.dart
 import 'package:facetune/features/recommendation/domain/entities/makeup_recommendation.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_generation_status.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_instruction.dart';
+import 'package:facetune/features/step_by_step_tutorial/domain/entities/personalized_tutorial.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_placement_metadata.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_session.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_source_mode.dart';
@@ -546,6 +547,7 @@ class _RecordingRepository implements TutorialRepository {
     required String title,
     required TutorialInstruction instruction,
     TutorialPlacementMetadata? placementMetadata,
+    PersonalizedTutorialStepSpec? personalizedSpec,
   }) async {
     createStepTitles.add(title);
     final now = DateTime.utc(2026, 8, 14);

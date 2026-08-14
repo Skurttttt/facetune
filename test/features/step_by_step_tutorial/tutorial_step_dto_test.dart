@@ -1,4 +1,7 @@
 import 'package:facetune/features/step_by_step_tutorial/data/models/tutorial_step_dto.dart';
+import 'package:facetune/features/step_by_step_tutorial/data/models/personalized_tutorial_step_spec_codec.dart';
+import 'package:facetune/features/step_by_step_tutorial/domain/entities/personalized_tutorial.dart';
+import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_face_geometry.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_generation_status.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_instruction.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_placement_metadata.dart';
@@ -38,6 +41,7 @@ Map<String, Object?> _validRow({
   Object? imageSize = 512,
   Object? promptVersion = 'tutorial_step_v1',
   String generationStatus = 'completed',
+  Object? personalizedSpecJson,
 }) => {
   'id': 'step-1',
   'tutorial_session_id': 'session-1',
@@ -46,6 +50,7 @@ Map<String, Object?> _validRow({
   'title': 'Blush',
   'instruction_json': instructionJson ?? _instructionJson(),
   'placement_metadata_json': placementMetadataJson ?? const [],
+  'personalized_spec_json': personalizedSpecJson,
   'placement_image_path': placementImagePath,
   'result_image_path': resultImagePath,
   'model_name': modelName,
@@ -55,6 +60,57 @@ Map<String, Object?> _validRow({
   'created_at': '2026-08-14T00:00:00Z',
   'updated_at': '2026-08-14T00:00:00Z',
 };
+
+PersonalizedTutorialStepSpec _personalizedSpec() {
+  final snapshot = TutorialKitProductSnapshot(
+    productId: 'owned-7',
+    category: TutorialStepCategory.blush,
+    productName: 'Owned Peach Blush',
+    colorName: 'Peach Rose',
+    colorHex: '#E58C87',
+    finish: 'satin',
+  );
+  return PersonalizedTutorialStepSpec(
+    stepNumber: 4,
+    what: PersonalizedTutorialWhat(
+      category: TutorialStepCategory.blush,
+      productName: snapshot.productName,
+      colorName: snapshot.colorName,
+      colorHex: snapshot.colorHex,
+      finish: snapshot.finish,
+      kitSnapshot: snapshot,
+    ),
+    where: PersonalizedTutorialWhere(
+      description: 'Upper outer cheeks',
+      regions: const {TutorialPlacementRegion.cheek},
+      side: TutorialPlacementSide.bilateral,
+      geometryConfidence: TutorialPlacementConfidence.high,
+      placementConfidence: TutorialPlacementConfidence.high,
+      overlays: [
+        PersonalizedTutorialOverlay(
+          type: TutorialPlacementOverlayType.zone,
+          region: TutorialPlacementRegion.cheek,
+          colorHex: '#E58C87',
+        ),
+      ],
+      geometryAnchors: [
+        PersonalizedTutorialGeometryAnchor(
+          region: TutorialPlacementRegion.cheek,
+          side: TutorialGeometrySide.left,
+          points: [TutorialNormalizedPoint(x: 0.30, y: 0.52)],
+        ),
+      ],
+    ),
+    how: PersonalizedTutorialHow(
+      direction: TutorialDirection.upwardOutward,
+      intensity: TutorialIntensity.light,
+      technique: TutorialTechnique('Diffuse with a soft brush'),
+      tip: 'Build gradually.',
+    ),
+    faceAdjustment: 'Lift placement for a round face.',
+    styleAdjustment: 'Keep the Korean finish softly diffused.',
+  );
+}
 
 void main() {
   group('fromRow', () {
@@ -103,6 +159,27 @@ void main() {
       expect(overlays.single.points, hasLength(2));
       expect(overlays.single.points.first.x, 0.3);
       expect(overlays.single.label, 'Blush zone');
+    });
+
+    test('reopening restores the exact personalized plan snapshot', () {
+      final original = _personalizedSpec();
+      final saved = PersonalizedTutorialStepSpecCodec.toJson(original);
+
+      final reopened = TutorialStepDto.fromRow(
+        _validRow(personalizedSpecJson: saved),
+      ).toDomain();
+
+      final restored = reopened.personalizedSpec!;
+      expect(PersonalizedTutorialStepSpecCodec.toJson(restored), saved);
+      expect(restored.where.description, 'Upper outer cheeks');
+      expect(restored.how.direction, TutorialDirection.upwardOutward);
+      expect(restored.faceAdjustment, 'Lift placement for a round face.');
+      expect(
+        restored.where.geometryConfidence,
+        TutorialPlacementConfidence.high,
+      );
+      expect(restored.what.kitSnapshot!.productId, 'owned-7');
+      expect(restored.what.kitSnapshot!.productName, 'Owned Peach Blush');
     });
 
     test('treats an empty overlay array as no placement metadata', () {
@@ -211,6 +288,7 @@ void main() {
 
   group('toInsertRow', () {
     test('includes the owner, category code, and json snapshots', () {
+      final personalizedSpec = _personalizedSpec();
       final row = TutorialStepDto.toInsertRow(
         userId: 'user-1',
         tutorialSessionId: 'session-1',
@@ -223,6 +301,7 @@ void main() {
           technique: 'Blend upward.',
           hex: '#E58C87',
         ),
+        personalizedSpec: personalizedSpec,
       );
 
       expect(row['user_id'], 'user-1');
@@ -235,6 +314,10 @@ void main() {
         containsPair('placement', 'Upper cheekbones'),
       );
       expect(row['placement_metadata_json'], isEmpty);
+      expect(
+        row['personalized_spec_json'],
+        PersonalizedTutorialStepSpecCodec.toJson(personalizedSpec),
+      );
     });
   });
 

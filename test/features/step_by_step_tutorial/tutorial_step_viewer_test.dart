@@ -1,5 +1,6 @@
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_generation_status.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_instruction.dart';
+import 'package:facetune/features/step_by_step_tutorial/domain/entities/personalized_tutorial.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_placement_metadata.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_session.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_source_mode.dart';
@@ -499,6 +500,7 @@ class _NoopRepository implements TutorialRepository {
     required String title,
     required TutorialInstruction instruction,
     TutorialPlacementMetadata? placementMetadata,
+    PersonalizedTutorialStepSpec? personalizedSpec,
   }) => throw UnimplementedError();
 
   @override

@@ -8,7 +8,10 @@ import {
 } from "../_shared/storage_ownership.ts";
 import { extensionFor } from "./image_validation.ts";
 import { requestGeminiTutorialStep } from "./gemini_client.ts";
-import { TUTORIAL_STEP_PROMPT_VERSION } from "./prompt.ts";
+import {
+  personalizedPromptInput,
+  TUTORIAL_STEP_PROMPT_VERSION,
+} from "./prompt.ts";
 import { FunctionFailure } from "./types.ts";
 
 const corsHeaders = {
@@ -269,7 +272,9 @@ Deno.serve(async (request) => {
     const { data: analysis, error: analysisError } = await timed(
       "analysis_fetch",
       () =>
-        client.from("analyses").select("id, original_image_path").eq(
+        client.from("analyses").select(
+          "id, original_image_path, face_shape, skin_tone, undertone, eye_shape, lip_shape, hair_color, eye_color",
+        ).eq(
           "id",
           analysisId,
         ).maybeSingle(),
@@ -281,9 +286,8 @@ Deno.serve(async (request) => {
         "The original analysis could not be found.",
       );
     }
-    const originalImagePath =
-      (analysis as unknown as Record<string, unknown>)
-        .original_image_path as string;
+    const analysisRow = analysis as unknown as Record<string, unknown>;
+    const originalImagePath = analysisRow.original_image_path as string;
     if (
       !isOwnedOriginalPath(
         originalImagePath,
@@ -480,6 +484,17 @@ Deno.serve(async (request) => {
 
     const model = configuredModel();
     const imageSize = configuredImageSize();
+    const promptInput = personalizedPromptInput({
+      selectedStyle: sessionRow.style_code,
+      sourceMode: sessionRow.source_mode,
+      faceAttributes: analysisRow,
+      stepNumber,
+      category: categoryLabel(stepRow.category as string),
+      instruction: stepRow.instruction_json as Record<string, unknown>,
+      personalizedSpec: stepRow.personalized_spec_json as
+        | Record<string, unknown>
+        | undefined,
+    });
     const generated = await timed(
       "gemini",
       () =>
@@ -490,10 +505,8 @@ Deno.serve(async (request) => {
           cumulativeMimeType,
           identityAnchorBytes,
           identityAnchorMimeType,
-          stepNumber,
           totalSteps,
-          categoryLabel: categoryLabel(stepRow.category as string),
-          instruction: stepRow.instruction_json as Record<string, unknown>,
+          promptInput,
         }),
     );
     const identityCheckStartedAt = Date.now();

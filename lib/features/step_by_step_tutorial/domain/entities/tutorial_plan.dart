@@ -1,4 +1,5 @@
 import 'tutorial_instruction.dart';
+import 'personalized_tutorial.dart';
 import 'tutorial_placement_metadata.dart';
 import 'tutorial_step_category.dart';
 
@@ -16,7 +17,8 @@ class PlannedTutorialStep {
     required this.category,
     required this.title,
     required this.instruction,
-    required this.placementMetadata,
+    this.placementMetadata,
+    this.personalizedSpec,
     this.reusableResultImagePath,
     this.reusableResultImageUrl,
     this.reusableModelId,
@@ -27,7 +29,8 @@ class PlannedTutorialStep {
   final TutorialStepCategory category;
   final String title;
   final TutorialInstruction instruction;
-  final TutorialPlacementMetadata placementMetadata;
+  final TutorialPlacementMetadata? placementMetadata;
+  final PersonalizedTutorialStepSpec? personalizedSpec;
 
   /// Set only when this step's result can reuse an already-generated image
   /// instead of a new Gemini call — currently only the final cumulative
