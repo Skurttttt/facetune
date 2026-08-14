@@ -95,6 +95,8 @@ KitProductSnapshot _snapshot({
   String colorHex = '#A45B67',
   String? colorLabel,
   String finish = 'matte',
+  String? foundationDepth,
+  String? foundationUndertone,
 }) => KitProductSnapshot(
   productId: productId,
   category: category,
@@ -102,6 +104,8 @@ KitProductSnapshot _snapshot({
   colorHex: colorHex,
   colorLabel: colorLabel,
   finish: finish,
+  foundationDepth: foundationDepth,
+  foundationUndertone: foundationUndertone,
 );
 
 KitMakeupRecommendation _kitRecommendation({
@@ -353,10 +357,12 @@ void main() {
       expect(step.instruction.productName, 'My Everyday Lipstick');
       expect(step.instruction.colorName, 'Rosewood');
       expect(step.instruction.hex, '#A45B67');
-      expect(step.instruction.finish, 'matte');
+      // Humanized for display — see the "written instruction" group below
+      // for why kit-sourced finish/intensity are title-cased.
+      expect(step.instruction.finish, 'Matte');
       expect(step.instruction.placement, 'Across the lips');
       expect(step.instruction.technique, 'Apply a thin, even layer.');
-      expect(step.instruction.intensity, 'soft');
+      expect(step.instruction.intensity, 'Soft');
     });
 
     test('never produces a step for a category with no owned selection', () {
@@ -389,9 +395,15 @@ void main() {
         preview.generatedImagePath,
       );
       expect(plan.steps.last.reusableResultImageUrl, preview.generatedImageUrl);
+      // The final step's model/prompt version are echoed from the actual
+      // preview that generated it, not invented — see ST-8's
+      // ARCHITECTURE_NOTES.md section on snapshot honesty.
+      expect(plan.steps.last.reusableModelId, preview.modelId);
+      expect(plan.steps.last.reusablePromptVersion, preview.promptVersion);
       // Non-final steps never get a reusable result — they still need
       // their own generation.
       expect(plan.steps.first.reusableResultImagePath, isNull);
+      expect(plan.steps.first.reusableModelId, isNull);
     });
 
     test(
@@ -426,6 +438,125 @@ void main() {
         plan.steps.last.reusableResultImagePath,
         kitPreview.generatedImagePath,
       );
+    });
+  });
+
+  group('written instruction — terminology and structured facts (ST-11)', () {
+    test('kit-sourced finish/intensity are humanized, matching the kit '
+        'result card\'s own display convention', () {
+      final plan = TutorialPlanningEngine.planFromKitRecommendation(
+        recommendation: _kitRecommendation(
+          selections: [
+            _selection(
+              productId: 'p1',
+              category: 'blush',
+              finish: 'long_wear',
+              intensity: 'medium',
+            ),
+          ],
+          snapshots: [_snapshot(productId: 'p1', category: 'blush')],
+        ),
+        preview: _kitPreview(),
+      );
+
+      final step = plan.steps.first;
+      expect(step.instruction.finish, 'Long Wear');
+      expect(step.instruction.intensity, 'Medium');
+    });
+
+    test(
+      'standard-recommendation finish/intensity are left as the AI wrote '
+      'them, matching recommendation_item_card\'s own display convention',
+      () {
+        final plan = TutorialPlanningEngine.planFromRecommendation(
+          recommendation: _recommendation({
+            'blush': _item(finish: 'satin', intensity: 'light'),
+          }),
+          preview: _preview(),
+        );
+
+        final step = plan.steps.first;
+        expect(step.instruction.finish, 'satin');
+        expect(step.instruction.intensity, 'light');
+      },
+    );
+
+    test('a foundation step folds real registered depth/undertone facts into '
+        'the tip, never fabricating a placeholder', () {
+      final plan = TutorialPlanningEngine.planFromKitRecommendation(
+        recommendation: _kitRecommendation(
+          selections: [_selection(productId: 'p1', category: 'foundation')],
+          snapshots: [
+            _snapshot(
+              productId: 'p1',
+              category: 'foundation',
+              foundationDepth: 'medium',
+              foundationUndertone: 'warm',
+            ),
+          ],
+        ),
+        preview: _kitPreview(),
+      );
+
+      expect(
+        plan.steps.first.instruction.tip,
+        'Registered in your kit as Medium depth, Warm undertone.',
+      );
+    });
+
+    test('folds a single available depth/undertone fact, not both', () {
+      final plan = TutorialPlanningEngine.planFromKitRecommendation(
+        recommendation: _kitRecommendation(
+          selections: [_selection(productId: 'p1', category: 'foundation')],
+          snapshots: [
+            _snapshot(
+              productId: 'p1',
+              category: 'foundation',
+              foundationUndertone: 'cool',
+            ),
+          ],
+        ),
+        preview: _kitPreview(),
+      );
+
+      expect(
+        plan.steps.first.instruction.tip,
+        'Registered in your kit as Cool undertone.',
+      );
+    });
+
+    test('no tip is fabricated for a foundation product with no registered '
+        'depth/undertone, or for any non-foundation category', () {
+      final plan = TutorialPlanningEngine.planFromKitRecommendation(
+        recommendation: _kitRecommendation(
+          selections: [
+            _selection(productId: 'p1', category: 'foundation'),
+            _selection(productId: 'p2', category: 'blush'),
+          ],
+          snapshots: [
+            _snapshot(productId: 'p1', category: 'foundation'),
+            _snapshot(productId: 'p2', category: 'blush'),
+          ],
+        ),
+        preview: _kitPreview(),
+      );
+
+      for (final step in plan.steps) {
+        if (step.category == TutorialStepCategory.finalLook) continue;
+        expect(step.instruction.tip, isNull, reason: step.category.code);
+      }
+    });
+
+    test('every planned step\'s instruction category matches the step\'s own '
+        'category, so overlay/instruction/generation intent never diverge', () {
+      final plan = TutorialPlanningEngine.planFromRecommendation(
+        recommendation: _recommendation(_fullGlamItems()),
+        preview: _preview(),
+      );
+
+      for (final step in plan.steps) {
+        expect(step.instruction.category, step.category, reason: step.title);
+      }
     });
   });
 }

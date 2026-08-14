@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/widgets/app_ui.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../../makeup_styles/domain/catalog/makeup_style_catalog.dart';
 import '../../domain/catalog/tutorial_placement_overlay_catalog.dart';
+import '../../domain/entities/tutorial_generation_status.dart';
 import '../../domain/entities/tutorial_session.dart';
 import '../../domain/entities/tutorial_step.dart';
+import '../controllers/tutorial_session_controller.dart';
+import '../controllers/tutorial_session_state.dart';
 import 'placement_result_comparison.dart';
 import 'tutorial_instruction_card.dart';
 
@@ -13,38 +17,49 @@ import 'tutorial_instruction_card.dart';
 /// Placement/Result slider, the written instruction card, and Previous/Next
 /// controls (FACETUNE_STEP_BY_STEP_TUTORIAL_GUIDE.md §18).
 ///
-/// Renders only from already-loaded [TutorialSession]/[TutorialStep] domain
-/// data — it never triggers generation. [session.steps] may be a strict
-/// prefix of [session.totalSteps] planned steps (a session still generating
-/// or partially complete), so navigation is bounded by the steps actually
-/// available rather than the planned total.
-class TutorialStepViewer extends StatefulWidget {
-  const TutorialStepViewer({required this.session, super.key});
+/// [state.session.steps] may be a strict prefix of [state.session.totalSteps]
+/// planned steps (a session still generating or partially complete), so
+/// navigation is bounded by the steps actually available rather than the
+/// planned total.
+///
+/// Generation itself (ST-10) is driven from here: a step the user navigates
+/// to that has no Result yet shows an explicit "Generate this step" action
+/// rather than generating automatically on navigation — the same
+/// explicit-user-action principle `TutorialSessionController.generate`
+/// already applies to creating a session (see ARCHITECTURE_NOTES.md ST-8).
+/// Only the step immediately after the last completed one may be generated,
+/// matching the backend's cumulative ordering requirement
+/// (`generate-tutorial-step` rejects out-of-order generation with
+/// `PREVIOUS_STEP_NOT_READY`) — this widget mirrors that rule client-side
+/// so the user sees "generate previous steps first" instead of a
+/// server-rejected request.
+class TutorialStepViewer extends ConsumerStatefulWidget {
+  const TutorialStepViewer({required this.state, super.key});
 
-  final TutorialSession session;
+  final TutorialSessionState state;
 
   @override
-  State<TutorialStepViewer> createState() => _TutorialStepViewerState();
+  ConsumerState<TutorialStepViewer> createState() => _TutorialStepViewerState();
 }
 
-class _TutorialStepViewerState extends State<TutorialStepViewer> {
+class _TutorialStepViewerState extends ConsumerState<TutorialStepViewer> {
   int _index = 0;
+
+  TutorialSession get _session => widget.state.session!;
 
   @override
   void didUpdateWidget(TutorialStepViewer oldWidget) {
     super.didUpdateWidget(oldWidget);
     // A refreshed session (e.g. more steps finished generating) must not
     // leave the viewer pointing past the end of the new step list.
-    if (_index >= widget.session.steps.length) {
-      _index = widget.session.steps.isEmpty
-          ? 0
-          : widget.session.steps.length - 1;
+    if (_index >= _session.steps.length) {
+      _index = _session.steps.isEmpty ? 0 : _session.steps.length - 1;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final steps = widget.session.steps;
+    final steps = _session.steps;
     if (steps.isEmpty) {
       return const StatusState(
         title: 'No steps yet',
@@ -53,24 +68,27 @@ class _TutorialStepViewerState extends State<TutorialStepViewer> {
       );
     }
     final step = steps[_index];
+    final placementImageUrl = step.placementImageUrl ??
+        (_index == 0
+            ? widget.state.originalImageUrl
+            : steps[_index - 1].resultImageUrl);
+    final firstMissingIndex = steps.indexWhere(
+      (candidate) => candidate.resultImageUrl == null,
+    );
+    final isNextToGenerate = firstMissingIndex == _index;
     return ListView(
       children: [
-        _Header(session: widget.session, step: step, index: _index),
+        _Header(session: _session, step: step, index: _index),
         const SizedBox(height: AppSpacing.md),
-        if (step.placementImageUrl != null && step.resultImageUrl != null)
-          PlacementResultComparison(
-            placementImageUrl: step.placementImageUrl!,
-            resultImageUrl: step.resultImageUrl!,
-            placementMetadata:
-                step.placementMetadata ??
-                TutorialPlacementOverlayCatalog.defaultFor(step.category),
-          )
-        else
-          const StatusState(
-            title: 'Step still generating',
-            message: 'This step\'s images are not ready yet.',
-            icon: Icons.hourglass_top_rounded,
-          ),
+        _StepBody(
+          step: step,
+          placementImageUrl: placementImageUrl,
+          state: widget.state,
+          isNextToGenerate: isNextToGenerate,
+          onGenerate: () => ref
+              .read(tutorialSessionControllerProvider.notifier)
+              .generateStep(step.id),
+        ),
         const SizedBox(height: AppSpacing.lg),
         TutorialInstructionCard(instruction: step.instruction),
         const SizedBox(height: AppSpacing.lg),
@@ -82,6 +100,78 @@ class _TutorialStepViewerState extends State<TutorialStepViewer> {
         ),
         const SizedBox(height: AppSpacing.xl),
       ],
+    );
+  }
+}
+
+/// Renders whichever of the six progressive states (roadmap ST-10 task 4)
+/// applies to [step]: a completed step shows the Placement/Result slider;
+/// otherwise one of generating / failed / ready-to-generate / not-yet-
+/// eligible.
+class _StepBody extends StatelessWidget {
+  const _StepBody({
+    required this.step,
+    required this.placementImageUrl,
+    required this.state,
+    required this.isNextToGenerate,
+    required this.onGenerate,
+  });
+
+  final TutorialStep step;
+  final String? placementImageUrl;
+  final TutorialSessionState state;
+  final bool isNextToGenerate;
+  final VoidCallback onGenerate;
+
+  @override
+  Widget build(BuildContext context) {
+    if (placementImageUrl != null && step.resultImageUrl != null) {
+      return PlacementResultComparison(
+        placementImageUrl: placementImageUrl!,
+        resultImageUrl: step.resultImageUrl!,
+        placementMetadata:
+            step.placementMetadata ??
+            TutorialPlacementOverlayCatalog.defaultFor(step.category),
+      );
+    }
+    if (state.generatingStepId == step.id) {
+      return const LoadingState(label: 'Generating this step…');
+    }
+    final hasFreshFailure = state.stepFailureStepId == step.id;
+    final hasPersistedFailure =
+        step.generationStatus == TutorialStepGenerationStatus.failed;
+    if (hasFreshFailure || hasPersistedFailure) {
+      // A fresh failure carries its own retryability (e.g. a deleted
+      // source reports `retryable: false` — tapping "Try again" would
+      // just fail identically every time). A persisted failure from an
+      // earlier app session carries no such flag, so it defaults to
+      // offering retry rather than silently trapping the user with no
+      // action at all (roadmap ST-13 hardening).
+      final canRetry = hasFreshFailure ? state.stepFailureRetryable : true;
+      return StatusState(
+        title: 'This step could not be generated',
+        message: hasFreshFailure
+            ? (state.stepFailureMessage ?? 'Please try again.')
+            : 'Please try again.',
+        icon: Icons.error_outline_rounded,
+        actionLabel: canRetry ? 'Try again' : null,
+        onAction: canRetry ? onGenerate : null,
+        liveRegion: true,
+      );
+    }
+    if (isNextToGenerate) {
+      return StatusState(
+        title: 'Ready to generate',
+        message: 'Generate the "${step.title}" step to see it applied.',
+        icon: Icons.auto_awesome_rounded,
+        actionLabel: 'Generate this step',
+        onAction: onGenerate,
+      );
+    }
+    return const StatusState(
+      title: 'Not yet available',
+      message: 'Generate the previous steps first.',
+      icon: Icons.hourglass_top_rounded,
     );
   }
 }

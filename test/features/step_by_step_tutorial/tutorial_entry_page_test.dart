@@ -7,6 +7,7 @@ import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_step_category.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/errors/tutorial_failure.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/repositories/tutorial_repository.dart';
+import 'package:facetune/features/step_by_step_tutorial/domain/usecases/get_or_create_tutorial_session.dart';
 import 'package:facetune/features/step_by_step_tutorial/presentation/controllers/tutorial_session_controller.dart';
 import 'package:facetune/features/step_by_step_tutorial/presentation/controllers/tutorial_session_state.dart';
 import 'package:facetune/features/step_by_step_tutorial/presentation/pages/tutorial_entry_page.dart';
@@ -16,14 +17,17 @@ import 'package:flutter_test/flutter_test.dart';
 
 Future<void> _pumpWithState(
   WidgetTester tester,
-  TutorialSessionState fixedState,
-) async {
+  TutorialSessionState fixedState, {
+  TutorialRepository? repository,
+}) async {
+  final repo = repository ?? _NoopRepository();
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         tutorialSessionControllerProvider.overrideWith(
           (ref) =>
-              TutorialSessionController(_NoopRepository())..state = fixedState,
+              TutorialSessionController(repo, GetOrCreateTutorialSession(repo))
+                ..state = fixedState,
         ),
       ],
       child: const MaterialApp(home: TutorialEntryPage()),
@@ -84,20 +88,21 @@ void main() {
       const TutorialSessionState(status: TutorialSessionStatus.loading),
     );
 
-    expect(find.text('Checking for your tutorial…'), findsOneWidget);
+    expect(find.text('Preparing your tutorial…'), findsOneWidget);
   });
 
-  testWidgets('loaded with no session shows an honest coming-soon message', (
-    tester,
-  ) async {
-    await _pumpWithState(
-      tester,
-      const TutorialSessionState(status: TutorialSessionStatus.loaded),
-    );
+  testWidgets(
+    'loaded with no session offers an explicit generate action, not a claim it already works',
+    (tester) async {
+      await _pumpWithState(
+        tester,
+        const TutorialSessionState(status: TutorialSessionStatus.loaded),
+      );
 
-    expect(find.text('Coming soon'), findsOneWidget);
-    expect(find.textContaining('not available'), findsOneWidget);
-  });
+      expect(find.text('Ready to build your tutorial'), findsOneWidget);
+      expect(find.text('Generate my tutorial'), findsOneWidget);
+    },
+  );
 
   testWidgets(
     'loaded with a session but no steps shows an honest empty state',
@@ -184,6 +189,89 @@ void main() {
 
     expect(find.text('Sign in again'), findsOneWidget);
   });
+
+  group('regenerate (ST-12)', () {
+    testWidgets('a session with steps shows a regenerate action', (
+      tester,
+    ) async {
+      await _pumpWithState(
+        tester,
+        TutorialSessionState(
+          status: TutorialSessionStatus.loaded,
+          session: _session(
+            TutorialGenerationStatus.completed,
+            steps: [_step(1)],
+          ),
+        ),
+      );
+
+      expect(find.byTooltip('Regenerate tutorial'), findsOneWidget);
+    });
+
+    testWidgets('loaded with no session shows no regenerate action', (
+      tester,
+    ) async {
+      await _pumpWithState(
+        tester,
+        const TutorialSessionState(status: TutorialSessionStatus.loaded),
+      );
+
+      expect(find.byTooltip('Regenerate tutorial'), findsNothing);
+    });
+
+    testWidgets('cancelling the confirmation leaves the tutorial untouched', (
+      tester,
+    ) async {
+      final repository = _RegeneratingRepository();
+      await _pumpWithState(
+        tester,
+        TutorialSessionState(
+          status: TutorialSessionStatus.loaded,
+          session: _session(
+            TutorialGenerationStatus.completed,
+            steps: [_step(1)],
+          ),
+        ),
+        repository: repository,
+      );
+
+      await tester.tap(find.byTooltip('Regenerate tutorial'));
+      await tester.pumpAndSettle();
+      expect(find.text('Regenerate this tutorial?'), findsOneWidget);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(repository.resetCalls, 0);
+      expect(find.textContaining('STEP 1 OF'), findsOneWidget);
+    });
+
+    testWidgets(
+      'confirming the dialog calls through and the viewer reflects the reset',
+      (tester) async {
+        final repository = _RegeneratingRepository();
+        await _pumpWithState(
+          tester,
+          TutorialSessionState(
+            status: TutorialSessionStatus.loaded,
+            session: _session(
+              TutorialGenerationStatus.completed,
+              steps: [_step(1)],
+            ),
+          ),
+          repository: repository,
+        );
+
+        await tester.tap(find.byTooltip('Regenerate tutorial'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Regenerate'));
+        await tester.pumpAndSettle();
+
+        expect(repository.resetCalls, 1);
+        expect(find.text('Ready to generate'), findsOneWidget);
+      },
+    );
+  });
 }
 
 class _NoopRepository implements TutorialRepository {
@@ -244,4 +332,49 @@ class _NoopRepository implements TutorialRepository {
     required String tutorialStepId,
     required TutorialStepGenerationStatus status,
   }) => throw UnimplementedError();
+
+  @override
+  Future<TutorialStep> generateStepResult({required String tutorialStepId}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<TutorialSession> resetForRegeneration({
+    required String tutorialSessionId,
+  }) => throw UnimplementedError();
+}
+
+/// Backs the "regenerate" widget tests: [resetForRegeneration] resolves
+/// with a session whose one step has been cleared back to `notStarted`,
+/// mirroring what `SupabaseTutorialRepository.resetForRegeneration`
+/// actually returns.
+class _RegeneratingRepository extends _NoopRepository {
+  int resetCalls = 0;
+
+  @override
+  Future<TutorialSession> resetForRegeneration({
+    required String tutorialSessionId,
+  }) async {
+    resetCalls++;
+    return _session(
+      TutorialGenerationStatus.notStarted,
+      steps: [
+        TutorialStep(
+          id: 'step-1',
+          tutorialSessionId: 'session-1',
+          stepNumber: 1,
+          category: TutorialStepCategory.blush,
+          title: 'Blush',
+          instruction: const TutorialInstruction(
+            category: TutorialStepCategory.blush,
+            placement: 'Upper cheekbones',
+            intensity: 'light',
+            technique: 'Blend upward toward temples.',
+          ),
+          generationStatus: TutorialStepGenerationStatus.notStarted,
+          createdAt: DateTime.utc(2026, 8, 14),
+          updatedAt: DateTime.utc(2026, 8, 14),
+        ),
+      ],
+    );
+  }
 }

@@ -4,7 +4,8 @@ export type AiOperation =
   | "makeup_recommendation"
   | "kit_makeup_recommendation"
   | "makeup_preview"
-  | "kit_makeup_preview";
+  | "kit_makeup_preview"
+  | "tutorial_step";
 
 export interface QuotaDecision {
   allowed: boolean;

@@ -17,3 +17,6 @@ verify_jwt = true
 
 [functions.delete-history-item]
 verify_jwt = true
+
+[functions.generate-tutorial-step]
+verify_jwt = true

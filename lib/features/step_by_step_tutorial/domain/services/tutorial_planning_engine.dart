@@ -34,6 +34,14 @@ import '../entities/tutorial_step_category.dart';
 /// one `TutorialRepository.createSession` call; this class does not persist
 /// anything itself.
 abstract final class TutorialPlanningEngine {
+  /// Version stamp for the planning algorithm itself (category set,
+  /// ordering policy, exclusion rule, final-step logic) — stored as
+  /// `tutorial_sessions.prompt_version` (ST-8) so a future change to this
+  /// algorithm doesn't make an already-planned session's step set
+  /// ambiguous about which rules produced it. Distinct from any Gemini
+  /// prompt version: no AI call happens in this class.
+  static const planVersion = 'tutorial_plan_v1';
+
   /// Canonical application order (guide §9's Full Glam example): base,
   /// then color, then eyes, then lips. Categories with no applicable step
   /// are simply omitted from the result — this list is a priority order,
@@ -122,6 +130,8 @@ abstract final class TutorialPlanningEngine {
       byCategory,
       reusableResultImagePath: preview.generatedImagePath,
       reusableResultImageUrl: preview.generatedImageUrl,
+      reusableModelId: preview.modelId,
+      reusablePromptVersion: preview.promptVersion,
     );
   }
 
@@ -139,18 +149,37 @@ abstract final class TutorialPlanningEngine {
       byCategory[category] = TutorialInstruction(
         category: category,
         placement: selection.placement,
-        intensity: selection.intensity,
+        // Kit mode's finish/intensity are copied verbatim from a real
+        // product's inventory fields (validated server-side to match —
+        // see generate-kit-makeup-recommendation/validation.ts), i.e. a
+        // small, controlled lowercase vocabulary ("satin", "soft"), not
+        // free AI prose. Humanized here to match the display convention
+        // this same data already has in `kit_result_product_card.dart`
+        // (task 7). Standard mode's finish/intensity are left as-is below
+        // — they're free-text AI output, and `recommendation_item_card.dart`
+        // never humanizes them either, so matching that source's own
+        // existing convention means *not* transforming them.
+        intensity: _humanize(selection.intensity),
         technique: selection.technique,
         productName: snapshot.productName,
         colorName: snapshot.colorLabel,
         hex: selection.colorHex,
-        finish: selection.finish,
+        finish: _humanize(selection.finish),
+        // Foundation depth/undertone are real snapshot facts already
+        // surfaced in the kit's own result UI (`kit_result_product_card.dart`)
+        // but had no home in `TutorialInstruction`'s structured fields —
+        // folded into `tip` rather than fabricating a new field, and only
+        // when the snapshot actually carries them (task 5/8: real
+        // structured data, never invented for categories that don't have it).
+        tip: _foundationTip(snapshot),
       );
     }
     return _buildPlan(
       byCategory,
       reusableResultImagePath: preview.generatedImagePath,
       reusableResultImageUrl: preview.generatedImageUrl,
+      reusableModelId: preview.modelId,
+      reusablePromptVersion: preview.promptVersion,
     );
   }
 
@@ -158,6 +187,8 @@ abstract final class TutorialPlanningEngine {
     Map<TutorialStepCategory, TutorialInstruction> byCategory, {
     required String reusableResultImagePath,
     required String reusableResultImageUrl,
+    required String reusableModelId,
+    required String reusablePromptVersion,
   }) {
     final orderedCategories = _canonicalOrder
         .where(byCategory.containsKey)
@@ -193,13 +224,23 @@ abstract final class TutorialPlanningEngine {
         ),
         reusableResultImagePath: reusableResultImagePath,
         reusableResultImageUrl: reusableResultImageUrl,
+        reusableModelId: reusableModelId,
+        reusablePromptVersion: reusablePromptVersion,
       ),
     ];
 
     return TutorialPlan(steps: steps, reusesFinalPreview: true);
   }
 
-  static String _title(TutorialStepCategory category) => category.code
+  static String _title(TutorialStepCategory category) =>
+      _humanize(category.code);
+
+  /// Title-cases an underscore/lowercase code (`'contour_bronzer'` →
+  /// `'Contour Bronzer'`). Only ever applied to *codes* — small, controlled
+  /// vocabularies (category codes, kit finish/intensity, foundation
+  /// depth/undertone) — never to free AI-generated prose, which is passed
+  /// through unchanged so nothing here rewrites the model's own wording.
+  static String _humanize(String code) => code
       .split('_')
       .map(
         (word) => word.isEmpty
@@ -207,4 +248,20 @@ abstract final class TutorialPlanningEngine {
             : '${word[0].toUpperCase()}${word.substring(1)}',
       )
       .join(' ');
+
+  /// Surfaces [KitProductSnapshot.foundationDepth]/[foundationUndertone] —
+  /// real owned-product facts with no dedicated [TutorialInstruction]
+  /// field — as a short, honest tip. Returns null (never a placeholder
+  /// string) when the snapshot carries neither, which is the normal case
+  /// for every category except foundation.
+  static String? _foundationTip(KitProductSnapshot snapshot) {
+    final parts = [
+      if (snapshot.foundationDepth != null)
+        '${_humanize(snapshot.foundationDepth!)} depth',
+      if (snapshot.foundationUndertone != null)
+        '${_humanize(snapshot.foundationUndertone!)} undertone',
+    ];
+    if (parts.isEmpty) return null;
+    return 'Registered in your kit as ${parts.join(', ')}.';
+  }
 }

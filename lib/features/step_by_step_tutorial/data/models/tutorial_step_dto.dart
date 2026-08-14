@@ -53,6 +53,16 @@ class TutorialStepDto {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  /// Parses the `{step: <tutorial_steps row>}` envelope returned by the
+  /// `generate-tutorial-step` Edge Function (ST-9). Deliberately a raw
+  /// Postgrest row rather than a camelCase envelope like the preview
+  /// functions use, specifically so this can delegate straight to
+  /// [fromRow] instead of duplicating its parsing.
+  factory TutorialStepDto.fromResponse(Object? payload) {
+    final root = _object(payload, 'response');
+    return TutorialStepDto.fromRow(_object(root['step'], 'step'));
+  }
+
   factory TutorialStepDto.fromRow(Map<String, Object?> row) {
     final category = _requiredEnum(
       row,
@@ -142,6 +152,21 @@ class TutorialStepDto {
   static Map<String, Object?> statusUpdateRow(
     TutorialStepGenerationStatus status,
   ) => {'generation_status': status.code};
+
+  /// Column values that clear a step's generated images/AI metadata and
+  /// return it to `not_started`, for `TutorialRepository.resetForRegeneration`
+  /// (ST-12). Unlike [imagesUpdateRow] — which *omits* null arguments so a
+  /// caller can update one field without touching the others — every
+  /// value here is an explicit `null`, because the whole point is to
+  /// clear columns that already hold a value, not leave them alone.
+  static Map<String, Object?> resetRow() => {
+    'placement_image_path': null,
+    'result_image_path': null,
+    'model_name': null,
+    'image_size': null,
+    'prompt_version': null,
+    'generation_status': TutorialStepGenerationStatus.notStarted.code,
+  };
 
   static TutorialInstruction _instructionFromJson(
     Object? value,

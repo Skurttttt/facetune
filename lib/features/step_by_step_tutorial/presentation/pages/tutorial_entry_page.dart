@@ -10,32 +10,88 @@ import '../widgets/tutorial_step_viewer.dart';
 
 /// Landing page for "How to Apply This Look".
 ///
-/// This page never triggers tutorial generation or planning itself — the
+/// This page never *decides* to create or generate anything itself — the
 /// calling page (`PreviewResultPage` / `MakeupKitRecommendationEntryPage`)
-/// resolves the stable source IDs for the look already in view and calls
-/// `tutorialSessionControllerProvider.notifier.load(...)` before pushing
-/// this route, the same "restore ambient state, then navigate" pattern
-/// already used for Saved Looks/History (see `history_page.dart`'s
-/// `_open`/`_openKit`). This page only renders whatever that controller
-/// reports.
+/// calls `tutorialSessionControllerProvider.notifier.prepareForRecommendation`/
+/// `prepareForKitRecommendation` (which only checks for an existing
+/// session) before pushing this route, the same "restore ambient state,
+/// then navigate" pattern already used for Saved Looks/History (see
+/// `history_page.dart`'s `_open`/`_openKit`). Creating a new session (ST-8)
+/// only ever happens from the explicit "Generate my tutorial" tap below —
+/// never automatically on navigation or on a background refresh.
 ///
 /// A session with at least one generated step opens [TutorialStepViewer]
-/// (ST-5) regardless of whether the whole session has finished — that
-/// covers `loaded` (completed), `partiallyComplete`, and a `generating`
-/// session that already has some steps ready, per the guide's progressive-
-/// loading intent (§14). Nothing here ever fabricates step data: as of
-/// ST-5 nothing in the app calls `TutorialRepository.createSession`, so in
-/// practice every real visit today still lands on "Coming soon."
+/// regardless of whether the whole session has finished — that covers
+/// `loaded` (completed), `partiallyComplete`, and a `generating` session
+/// that already has some steps ready, per the guide's progressive-loading
+/// intent (§14).
 class TutorialEntryPage extends ConsumerWidget {
   const TutorialEntryPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(tutorialSessionControllerProvider);
+    final session = state.session;
+    final canRegenerate =
+        session != null &&
+        session.steps.isNotEmpty &&
+        state.status != TutorialSessionStatus.loading &&
+        state.generatingStepId == null;
     return Scaffold(
-      appBar: AppBar(title: const Text('How to Apply This Look')),
+      appBar: AppBar(
+        title: const Text('How to Apply This Look'),
+        actions: [
+          if (session != null && session.steps.isNotEmpty)
+            IconButton(
+              tooltip: 'Regenerate tutorial',
+              icon: const Icon(Icons.refresh_rounded),
+              onPressed: canRegenerate
+                  ? () => _confirmRegenerate(context, ref)
+                  : null,
+            ),
+        ],
+      ),
       body: SafeArea(child: PageFrame(child: _content(context, ref, state))),
     );
+  }
+
+  /// Regeneration clears every non-final step's generated image and
+  /// returns it to `not_started` (`TutorialRepository.resetForRegeneration`)
+  /// rather than creating a second session — see ARCHITECTURE_NOTES.md's
+  /// ST-12 section for why a genuinely separate "new version" isn't
+  /// possible without first generating a new source-look variation.
+  /// Communicates both required facts (roadmap ST-12 task 4) before
+  /// anything happens: regenerating needs fresh AI generation, and
+  /// cancelling leaves the existing tutorial exactly as it is — matching
+  /// the `AlertDialog`/Cancel-then-primary-action convention already used
+  /// by `saved_looks_page.dart`/`history_page.dart`'s confirmations.
+  Future<void> _confirmRegenerate(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Regenerate this tutorial?'),
+        content: const Text(
+          "Every step's generated image will be cleared so you can create "
+          'new ones — each will need a fresh AI generation the next time '
+          'you view it. Your written instructions stay the same. If you '
+          'cancel, your current tutorial keeps working exactly as it is '
+          'now.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Regenerate'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await ref.read(tutorialSessionControllerProvider.notifier).regenerate();
+    }
   }
 
   Widget _content(
@@ -59,20 +115,24 @@ class TutorialEntryPage extends ConsumerWidget {
         );
       case TutorialSessionStatus.loading:
         return const Center(
-          child: LoadingState(label: 'Checking for your tutorial…'),
+          child: LoadingState(label: 'Preparing your tutorial…'),
         );
       case TutorialSessionStatus.loaded:
-        if (hasViewableSteps) return TutorialStepViewer(session: session);
+        if (hasViewableSteps) return TutorialStepViewer(state: state);
         return Center(
           child: session == null
               ? StatusState(
-                  title: 'Coming soon',
+                  title: 'Ready to build your tutorial',
                   message:
-                      'Step-by-step tutorials for this look are not '
-                      'available yet. We are working on it.',
+                      'Create a step-by-step guide to recreate this look '
+                      'on your own face.',
                   icon: Icons.auto_stories_outlined,
-                  actionLabel: 'Return',
-                  onAction: () => context.pop(),
+                  actionLabel: 'Generate my tutorial',
+                  onAction: () => ref
+                      .read(tutorialSessionControllerProvider.notifier)
+                      .generate(),
+                  secondaryActionLabel: 'Return',
+                  onSecondaryAction: () => context.pop(),
                 )
               : StatusState(
                   title: 'No steps yet',
@@ -85,10 +145,10 @@ class TutorialEntryPage extends ConsumerWidget {
                 ),
         );
       case TutorialSessionStatus.partiallyComplete:
-        if (hasViewableSteps) return TutorialStepViewer(session: session);
+        if (hasViewableSteps) return TutorialStepViewer(state: state);
         return _inProgress(context, ref);
       case TutorialSessionStatus.generating:
-        if (hasViewableSteps) return TutorialStepViewer(session: session);
+        if (hasViewableSteps) return TutorialStepViewer(state: state);
         return _inProgress(context, ref);
       case TutorialSessionStatus.failed:
         return Center(

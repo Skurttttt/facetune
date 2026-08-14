@@ -9,6 +9,7 @@ import '../../domain/entities/tutorial_placement_metadata.dart';
 import '../../domain/entities/tutorial_session.dart';
 import '../../domain/entities/tutorial_source_mode.dart';
 import '../../domain/entities/tutorial_step.dart';
+import '../../domain/entities/tutorial_step_category.dart';
 import '../../domain/errors/tutorial_failure.dart';
 import '../../domain/repositories/tutorial_repository.dart';
 import '../data_sources/tutorial_remote_data_source.dart';
@@ -79,6 +80,35 @@ class SupabaseTutorialRepository implements TutorialRepository {
       );
       return TutorialSessionDto.fromRow(row, steps: const []);
     } catch (error) {
+      // A concurrent request already created a session for this exact
+      // (source, generation number) pair — the partial unique indexes in
+      // 20260814000300_tutorial_sessions_steps.sql reject the insert with
+      // Postgres error 23505. This is not a failure to surface to the
+      // user: it means the tutorial they wanted already exists, just
+      // created by the other request. `technicalCode` lets
+      // `GetOrCreateTutorialSession` (ST-8) recognize this specific case
+      // and re-fetch via `loadExisting` instead of retrying the insert.
+      if (error is PostgrestException && error.code == '23505') {
+        throw const TutorialFailure(
+          TutorialFailureType.validation,
+          'A tutorial for this look already exists.',
+          technicalCode: 'duplicate_session',
+        );
+      }
+      // The source analysis/recommendation was deleted (e.g. via History)
+      // between the caller loading it and this insert running — the
+      // owner-scoped foreign keys reject it with Postgres 23503. This is
+      // a permanent failure, not a transient server error: retrying the
+      // exact same insert will fail identically every time, so it must
+      // not be reported as `retryable` (roadmap ST-13 hardening).
+      if (error is PostgrestException && error.code == '23503') {
+        throw const TutorialFailure(
+          TutorialFailureType.notFound,
+          'This look no longer exists, so a tutorial cannot be created '
+          'for it.',
+          technicalCode: 'source_deleted',
+        );
+      }
       throw _failure(error);
     }
   }
@@ -91,6 +121,7 @@ class SupabaseTutorialRepository implements TutorialRepository {
       for (final row in rows) {
         steps.add(await _hydrateStep(TutorialStepDto.fromRow(row)));
       }
+      _validateCanonicalOrder(steps);
       return List.unmodifiable(steps);
     } catch (error) {
       throw _failure(error);
@@ -184,6 +215,41 @@ class SupabaseTutorialRepository implements TutorialRepository {
     }
   }
 
+  @override
+  Future<TutorialStep> generateStepResult({
+    required String tutorialStepId,
+  }) async {
+    try {
+      final payload = await _remote.invoke(tutorialStepId: tutorialStepId);
+      return _hydrateStep(TutorialStepDto.fromResponse(payload));
+    } catch (error) {
+      throw _failure(error);
+    }
+  }
+
+  @override
+  Future<TutorialSession> resetForRegeneration({
+    required String tutorialSessionId,
+  }) async {
+    try {
+      await _remote.resetSteps(
+        tutorialSessionId: tutorialSessionId,
+        values: TutorialStepDto.resetRow(),
+        excludedCategoryCode: TutorialStepCategory.finalLook.code,
+      );
+      final row = await _remote.updateSession(
+        tutorialSessionId,
+        TutorialSessionDto.statusUpdateRow(TutorialGenerationStatus.notStarted),
+      );
+      return TutorialSessionDto.fromRow(
+        row,
+        steps: await loadSteps(tutorialSessionId),
+      );
+    } catch (error) {
+      throw _failure(error);
+    }
+  }
+
   /// Never accept a caller-supplied user id — the owner of every write is
   /// always the authenticated session, matching every other repository in
   /// this codebase (e.g. `SupabaseSavedLooksRepository.save`). Row Level
@@ -213,8 +279,55 @@ class SupabaseTutorialRepository implements TutorialRepository {
     return dto.toDomain(placementImageUrl: urls[0], resultImageUrl: urls[1]);
   }
 
+  static void _validateCanonicalOrder(List<TutorialStep> steps) {
+    var previousRank = -1;
+    for (var index = 0; index < steps.length; index++) {
+      final step = steps[index];
+      if (step.stepNumber != index + 1) {
+        throw const TutorialFailure(
+          TutorialFailureType.validation,
+          'This saved tutorial has an invalid step order. Recreate it from the source look.',
+          technicalCode: 'invalid_tutorial_order',
+        );
+      }
+      final rank = _categoryOrder.indexOf(step.category);
+      if (rank <= previousRank ||
+          (step.category == TutorialStepCategory.finalLook &&
+              index != steps.length - 1)) {
+        throw const TutorialFailure(
+          TutorialFailureType.validation,
+          'This saved tutorial has an invalid step order. Recreate it from the source look.',
+          technicalCode: 'invalid_tutorial_order',
+        );
+      }
+      previousRank = rank;
+    }
+  }
+
+  static const _categoryOrder = [
+    TutorialStepCategory.foundation,
+    TutorialStepCategory.concealer,
+    TutorialStepCategory.contour,
+    TutorialStepCategory.blush,
+    TutorialStepCategory.highlighter,
+    TutorialStepCategory.eyebrow,
+    TutorialStepCategory.eyeshadow,
+    TutorialStepCategory.eyeliner,
+    TutorialStepCategory.lipstick,
+    TutorialStepCategory.lipGloss,
+    TutorialStepCategory.finalLook,
+  ];
+
   static TutorialFailure _failure(Object error) {
     if (error is TutorialFailure) return error;
+    if (error is TutorialRemoteFailure) {
+      return TutorialFailure(
+        _remoteFailureType(error.code, error.status),
+        error.message,
+        retryable: error.retryable,
+        technicalCode: error.code,
+      );
+    }
     if (error is SocketException || error is TimeoutException) {
       return const TutorialFailure(
         TutorialFailureType.network,
@@ -259,6 +372,29 @@ class SupabaseTutorialRepository implements TutorialRepository {
       'Your tutorial could not be loaded.',
       retryable: true,
     );
+  }
+
+  /// Maps `generate-tutorial-step`'s (ST-9) error codes onto
+  /// [TutorialFailureType]. The Edge Function's codes are not shared code
+  /// with this client (see ARCHITECTURE_NOTES.md on why `types.ts` is
+  /// duplicated, not cross-imported), so this mapping is maintained by
+  /// convention against that file rather than a shared enum.
+  static TutorialFailureType _remoteFailureType(String code, int status) {
+    if (status == 401 || code == 'AUTH_FAILED') {
+      return TutorialFailureType.authentication;
+    }
+    if (code.toUpperCase().endsWith('_NOT_FOUND')) {
+      return TutorialFailureType.notFound;
+    }
+    if (code == 'PREVIOUS_STEP_NOT_READY' ||
+        code == 'GENERATION_IN_PROGRESS' ||
+        code.toLowerCase().startsWith('invalid_')) {
+      return TutorialFailureType.validation;
+    }
+    if (code.startsWith('GEMINI_') || code == 'unchanged_generated_image') {
+      return TutorialFailureType.gemini;
+    }
+    return TutorialFailureType.server;
   }
 
   static bool _isExpiredSession(PostgrestException error) {

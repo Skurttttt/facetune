@@ -17,5 +17,6 @@ gemini-3.1-flash-image
 
 erun the important parts of 18, 20, 21, and 22 against the expanded app before you proceed to 23–26.
 
-
+git add .
+git commit -m "ST7"
 

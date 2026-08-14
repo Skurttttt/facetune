@@ -517,7 +517,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       builder: (context) => AlertDialog(
         title: const Text('Delete this history session?'),
         content: const Text(
-          'This permanently removes the original selfie, every generated preview, recommendations, and any saved or favorited looks in this session.',
+          'This permanently removes the original selfie, every generated preview, recommendations, any saved or favorited looks, and any generated tutorials in this session.',
         ),
         actions: [
           TextButton(
@@ -551,7 +551,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       builder: (context) => AlertDialog(
         title: const Text('Delete this history session?'),
         content: const Text(
-          'This permanently removes the original selfie, standard and My Makeup Kit previews, recommendations, and saved looks in this session.',
+          'This permanently removes the original selfie, standard and My Makeup Kit previews, recommendations, saved looks, and any generated tutorials in this session.',
         ),
         actions: [
           TextButton(

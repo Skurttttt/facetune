@@ -20,7 +20,6 @@ import '../../../results/presentation/widgets/before_after_comparison.dart';
 import '../../../results/presentation/widgets/makeup_breakdown.dart';
 import '../../../results/presentation/widgets/recommended_palette.dart';
 import '../../../results/presentation/widgets/result_actions.dart';
-import '../../../step_by_step_tutorial/domain/entities/tutorial_source_mode.dart';
 import '../../../step_by_step_tutorial/presentation/controllers/tutorial_session_controller.dart';
 import '../../../step_by_step_tutorial/presentation/widgets/how_to_apply_look_button.dart';
 import '../../domain/errors/preview_failure.dart';
@@ -180,11 +179,9 @@ class PreviewResultPage extends ConsumerWidget {
                 onOpenTutorial: () {
                   ref
                       .read(tutorialSessionControllerProvider.notifier)
-                      .load(
-                        sourceMode: TutorialSourceMode.standardRecommendation,
-                        analysisId: analysis.id,
-                        recommendationId: recommendation.id,
-                        generationNumber: preview.generationNumber,
+                      .prepareForRecommendation(
+                        recommendation: recommendation,
+                        preview: preview,
                       );
                   context.push(AppConstants.tutorialRoute);
                 },

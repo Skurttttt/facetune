@@ -19,6 +19,8 @@ class PlannedTutorialStep {
     required this.placementMetadata,
     this.reusableResultImagePath,
     this.reusableResultImageUrl,
+    this.reusableModelId,
+    this.reusablePromptVersion,
   });
 
   final int stepNumber;
@@ -33,6 +35,12 @@ class PlannedTutorialStep {
   /// later phase must generate this step's result image.
   final String? reusableResultImagePath;
   final String? reusableResultImageUrl;
+
+  /// The model/prompt version that actually produced [reusableResultImagePath]
+  /// — echoed from the source preview itself, not invented. `null` whenever
+  /// [reusableResultImagePath] is `null`.
+  final String? reusableModelId;
+  final String? reusablePromptVersion;
 }
 
 /// The output of `TutorialPlanningEngine`: an ordered, dynamically-sized

@@ -10,7 +10,6 @@ import '../../../authentication/presentation/controllers/auth_controller.dart';
 import '../../../makeup_styles/presentation/controllers/makeup_style_selection_controller.dart';
 import '../../../preview/domain/errors/preview_failure.dart';
 import '../../../results/presentation/widgets/before_after_comparison.dart';
-import '../../../step_by_step_tutorial/domain/entities/tutorial_source_mode.dart';
 import '../../../step_by_step_tutorial/presentation/controllers/tutorial_session_controller.dart';
 import '../../../step_by_step_tutorial/presentation/widgets/how_to_apply_look_button.dart';
 import '../controllers/makeup_kit_look_controller.dart';
@@ -100,15 +99,11 @@ class MakeupKitRecommendationEntryPage extends ConsumerWidget {
                   },
                   onReturnHome: () => context.go(AppConstants.homeRoute),
                   onOpenTutorial: () {
-                    final recommendation = look.recommendation!;
-                    final kitPreview = look.preview!;
                     ref
                         .read(tutorialSessionControllerProvider.notifier)
-                        .load(
-                          sourceMode: TutorialSourceMode.makeupKit,
-                          analysisId: recommendation.analysisId,
-                          kitRecommendationId: recommendation.id,
-                          generationNumber: kitPreview.generationNumber,
+                        .prepareForKitRecommendation(
+                          recommendation: look.recommendation!,
+                          preview: look.preview!,
                         );
                     context.push(AppConstants.tutorialRoute);
                   },

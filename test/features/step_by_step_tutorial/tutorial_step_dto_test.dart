@@ -171,6 +171,30 @@ void main() {
     });
   });
 
+  group('fromResponse', () {
+    test('unwraps the {step: ...} envelope and delegates to fromRow', () {
+      final dto = TutorialStepDto.fromResponse({'step': _validRow()});
+
+      expect(dto.id, 'step-1');
+      expect(dto.category, TutorialStepCategory.blush);
+      expect(dto.generationStatus, TutorialStepGenerationStatus.completed);
+    });
+
+    test('rejects a payload missing the step key', () {
+      expect(
+        () => TutorialStepDto.fromResponse({'notStep': _validRow()}),
+        throwsFormatException,
+      );
+    });
+
+    test('rejects a non-object payload', () {
+      expect(
+        () => TutorialStepDto.fromResponse('not an object'),
+        throwsFormatException,
+      );
+    });
+  });
+
   group('toDomain', () {
     test('carries through signed URLs supplied by the repository', () {
       final dto = TutorialStepDto.fromRow(_validRow());
@@ -229,5 +253,21 @@ void main() {
         {'generation_status': 'failed'},
       );
     });
+  });
+
+  group('resetRow', () {
+    test(
+      'explicitly nulls every image/metadata column, unlike imagesUpdateRow',
+      () {
+        expect(TutorialStepDto.resetRow(), {
+          'placement_image_path': null,
+          'result_image_path': null,
+          'model_name': null,
+          'image_size': null,
+          'prompt_version': null,
+          'generation_status': 'not_started',
+        });
+      },
+    );
   });
 }

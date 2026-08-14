@@ -78,4 +78,13 @@ class UnavailableTutorialRepository implements TutorialRepository {
     required String tutorialStepId,
     required TutorialStepGenerationStatus status,
   }) => throw _failure;
+
+  @override
+  Future<TutorialStep> generateStepResult({required String tutorialStepId}) =>
+      throw _failure;
+
+  @override
+  Future<TutorialSession> resetForRegeneration({
+    required String tutorialSessionId,
+  }) => throw _failure;
 }
