@@ -10,6 +10,9 @@ import '../../../authentication/presentation/controllers/auth_controller.dart';
 import '../../../makeup_styles/presentation/controllers/makeup_style_selection_controller.dart';
 import '../../../preview/domain/errors/preview_failure.dart';
 import '../../../results/presentation/widgets/before_after_comparison.dart';
+import '../../../step_by_step_tutorial/domain/entities/tutorial_source_mode.dart';
+import '../../../step_by_step_tutorial/presentation/controllers/tutorial_session_controller.dart';
+import '../../../step_by_step_tutorial/presentation/widgets/how_to_apply_look_button.dart';
 import '../controllers/makeup_kit_look_controller.dart';
 import '../controllers/makeup_kit_look_state.dart';
 import '../controllers/makeup_kit_products_controller.dart';
@@ -96,6 +99,19 @@ class MakeupKitRecommendationEntryPage extends ConsumerWidget {
                     context.pop();
                   },
                   onReturnHome: () => context.go(AppConstants.homeRoute),
+                  onOpenTutorial: () {
+                    final recommendation = look.recommendation!;
+                    final kitPreview = look.preview!;
+                    ref
+                        .read(tutorialSessionControllerProvider.notifier)
+                        .load(
+                          sourceMode: TutorialSourceMode.makeupKit,
+                          analysisId: recommendation.analysisId,
+                          kitRecommendationId: recommendation.id,
+                          generationNumber: kitPreview.generationNumber,
+                        );
+                    context.push(AppConstants.tutorialRoute);
+                  },
                 )
               : !kitReady
               ? _NotReadyState(
@@ -382,6 +398,7 @@ class _KitPreviewContent extends StatelessWidget {
     required this.onGenerateAnother,
     required this.onChangeMode,
     required this.onReturnHome,
+    required this.onOpenTutorial,
   });
 
   final MakeupKitLookState state;
@@ -392,6 +409,7 @@ class _KitPreviewContent extends StatelessWidget {
   final VoidCallback onGenerateAnother;
   final VoidCallback onChangeMode;
   final VoidCallback onReturnHome;
+  final VoidCallback onOpenTutorial;
 
   @override
   Widget build(BuildContext context) {
@@ -472,6 +490,8 @@ class _KitPreviewContent extends StatelessWidget {
           icon: Icons.refresh_rounded,
           onPressed: onGenerateAnother,
         ),
+        const SizedBox(height: AppSpacing.sm),
+        HowToApplyLookButton(onPressed: onOpenTutorial),
         const SizedBox(height: AppSpacing.sm),
         SecondaryButton(label: 'Change mode', onPressed: onChangeMode),
         const SizedBox(height: AppSpacing.sm),

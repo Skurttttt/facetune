@@ -20,6 +20,9 @@ import '../../../results/presentation/widgets/before_after_comparison.dart';
 import '../../../results/presentation/widgets/makeup_breakdown.dart';
 import '../../../results/presentation/widgets/recommended_palette.dart';
 import '../../../results/presentation/widgets/result_actions.dart';
+import '../../../step_by_step_tutorial/domain/entities/tutorial_source_mode.dart';
+import '../../../step_by_step_tutorial/presentation/controllers/tutorial_session_controller.dart';
+import '../../../step_by_step_tutorial/presentation/widgets/how_to_apply_look_button.dart';
 import '../../domain/errors/preview_failure.dart';
 import '../controllers/makeup_preview_controller.dart';
 import '../controllers/makeup_preview_state.dart';
@@ -174,6 +177,17 @@ class PreviewResultPage extends ConsumerWidget {
                   ref.invalidate(historyControllerProvider);
                   context.go(AppConstants.homeRoute);
                 },
+                onOpenTutorial: () {
+                  ref
+                      .read(tutorialSessionControllerProvider.notifier)
+                      .load(
+                        sourceMode: TutorialSourceMode.standardRecommendation,
+                        analysisId: analysis.id,
+                        recommendationId: recommendation.id,
+                        generationNumber: preview.generationNumber,
+                      );
+                  context.push(AppConstants.tutorialRoute);
+                },
               ),
             MakeupPreviewStatus.success => Center(
               child: StatusState(
@@ -214,6 +228,7 @@ class _ResultContent extends StatelessWidget {
     required this.onShare,
     required this.onGenerateAnother,
     required this.onReturnHome,
+    required this.onOpenTutorial,
   });
 
   final MakeupPreviewState previewState;
@@ -226,6 +241,7 @@ class _ResultContent extends StatelessWidget {
   final VoidCallback onShare;
   final VoidCallback onGenerateAnother;
   final VoidCallback onReturnHome;
+  final VoidCallback onOpenTutorial;
 
   @override
   Widget build(BuildContext context) {
@@ -245,6 +261,7 @@ class _ResultContent extends StatelessWidget {
       onShare: onShare,
       onGenerateAnother: onGenerateAnother,
       onReturnHome: onReturnHome,
+      onOpenTutorial: onOpenTutorial,
     );
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -334,6 +351,7 @@ class _ResultDetails extends StatelessWidget {
     required this.onShare,
     required this.onGenerateAnother,
     required this.onReturnHome,
+    required this.onOpenTutorial,
   });
 
   final FaceAnalysis analysis;
@@ -346,6 +364,7 @@ class _ResultDetails extends StatelessWidget {
   final VoidCallback onShare;
   final VoidCallback onGenerateAnother;
   final VoidCallback onReturnHome;
+  final VoidCallback onOpenTutorial;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -378,6 +397,8 @@ class _ResultDetails extends StatelessWidget {
         onGenerateAnother: onGenerateAnother,
         onReturnHome: onReturnHome,
       ),
+      const SizedBox(height: AppSpacing.sm),
+      HowToApplyLookButton(onPressed: onOpenTutorial),
     ],
   );
 }

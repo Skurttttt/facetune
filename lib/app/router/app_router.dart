@@ -26,6 +26,7 @@ import '../../features/profile/presentation/pages/profile_page.dart';
 import '../../features/saved_looks/presentation/pages/saved_looks_page.dart';
 import '../../features/scan/presentation/pages/scan_page.dart';
 import '../../features/settings/presentation/pages/settings_page.dart';
+import '../../features/step_by_step_tutorial/presentation/pages/tutorial_entry_page.dart';
 import '../../shared/widgets/app_ui.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -130,6 +131,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: AppConstants.previewRoute,
         name: 'preview',
         builder: (context, state) => const PreviewResultPage(),
+      ),
+      GoRoute(
+        path: AppConstants.tutorialRoute,
+        name: 'tutorial',
+        builder: (context, state) => const TutorialEntryPage(),
       ),
       GoRoute(
         path: AppConstants.savedRoute,
