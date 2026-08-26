@@ -1,10 +1,25 @@
-/** AI operations that consume a server-enforced quota. */
+/**
+ * AI operations that consume a server-enforced quota.
+ *
+ * This union mirrors the live `ai_usage_events_operation_valid` constraint and
+ * the `consume_ai_quota` allow-list, whose current definition comes from the
+ * last applied migration that touched them, `20260826000200_tutorial_v2_planner`.
+ * The last three entries belong to V1/V2 tutorial functions that are still
+ * deployed and ACTIVE.
+ *
+ * Any future migration that redefines either object must be a strict SUPERSET
+ * of this list. Dropping an operation here would make a deployed Edge Function
+ * fail with `unsupported_operation`.
+ */
 export type AiOperation =
   | "face_analysis"
   | "makeup_recommendation"
   | "kit_makeup_recommendation"
   | "makeup_preview"
-  | "kit_makeup_preview";
+  | "kit_makeup_preview"
+  | "tutorial_step"
+  | "tutorial_geometry_plan"
+  | "tutorial_v2_plan";
 
 export interface QuotaDecision {
   allowed: boolean;
