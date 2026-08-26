@@ -32,6 +32,19 @@ class TutorialEntryPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(tutorialSessionControllerProvider);
     final session = state.session;
+    // Opportunistic, self-guarding trigger for TF-3's guideline activation
+    // (`TutorialSessionController.activateGuidelines`) — safe to call on
+    // every build of a session that has steps, since the controller itself
+    // no-ops once a geometry plan already exists or another operation is in
+    // flight. Matches `PreviewResultPage`'s identical post-frame-callback
+    // pattern for `loadSavedStatus`.
+    if (session != null && session.steps.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref
+            .read(tutorialSessionControllerProvider.notifier)
+            .activateGuidelines();
+      });
+    }
     final canRegenerate =
         session != null &&
         session.steps.isNotEmpty &&

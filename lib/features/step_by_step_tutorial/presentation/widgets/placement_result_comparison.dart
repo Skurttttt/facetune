@@ -35,6 +35,9 @@ class PlacementResultComparison extends StatelessWidget {
     semanticsLabel: 'Placement and result comparison for this tutorial step',
     leftOverlay: placementMetadata == null
         ? null
-        : TutorialPlacementOverlayLayer(metadata: placementMetadata!),
+        : TutorialPlacementOverlayLayer(
+            metadata: placementMetadata!,
+            imageUrl: placementImageUrl,
+          ),
   );
 }

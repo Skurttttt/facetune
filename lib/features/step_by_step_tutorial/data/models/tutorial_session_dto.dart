@@ -1,7 +1,10 @@
 import '../../domain/entities/tutorial_generation_status.dart';
+import '../../domain/entities/tutorial_geometry_plan.dart';
 import '../../domain/entities/tutorial_session.dart';
 import '../../domain/entities/tutorial_source_mode.dart';
 import '../../domain/entities/tutorial_step.dart';
+import '../../domain/services/tutorial_geometry_activation.dart';
+import 'tutorial_geometry_plan_codec.dart';
 
 /// Maps between raw `tutorial_sessions` Supabase rows and the
 /// [TutorialSession] domain entity.
@@ -17,10 +20,17 @@ import '../../domain/entities/tutorial_step.dart';
 abstract final class TutorialSessionDto {
   /// Parses a raw row into a domain entity. [steps] must already be loaded
   /// and ordered by step number — this method does not fetch them.
+  ///
+  /// Also parses `geometry_plan_json` (TF-2) when present and applies
+  /// [TutorialGeometryActivation] (TF-3) to [steps] before returning — the
+  /// single choke point every repository method already funnels through, so
+  /// activation happens automatically the instant a geometry plan exists,
+  /// with no separate call site to remember.
   static TutorialSession fromRow(
     Map<String, Object?> row, {
     required List<TutorialStep> steps,
   }) {
+    final geometryPlan = _geometryPlanFromRow(row);
     return TutorialSession(
       id: _requiredString(row, 'id'),
       userId: _requiredString(row, 'user_id'),
@@ -38,15 +48,47 @@ abstract final class TutorialSessionDto {
       promptVersion: _optionalString(row, 'prompt_version'),
       tutorialModel: _optionalString(row, 'tutorial_model'),
       tutorialImageSize: _optionalInt(row, 'tutorial_image_size'),
+      geometryPlan: geometryPlan,
+      geometryPlanVersion: _optionalString(row, 'geometry_plan_version'),
+      geometryModel: _optionalString(row, 'geometry_model'),
       generationStatus: _requiredEnum(
         row,
         'generation_status',
         TutorialGenerationStatus.fromCode,
       ),
-      steps: steps,
+      steps: TutorialGeometryActivation.applyToSteps(steps, geometryPlan),
       createdAt: DateTime.parse(_requiredString(row, 'created_at')).toUtc(),
       updatedAt: DateTime.parse(_requiredString(row, 'updated_at')).toUtc(),
     );
+  }
+
+  /// Unwraps the `{session: <tutorial_sessions row>}` envelope returned by
+  /// the `plan-tutorial-geometry` Edge Function (TF-2), matching how
+  /// `TutorialStepDto.fromResponse` unwraps `generate-tutorial-step`'s
+  /// `{step: ...}` envelope — same reasoning: zero new parsing path for a
+  /// shape [fromRow] already handles.
+  static TutorialSession fromResponse(
+    Object? payload, {
+    required List<TutorialStep> steps,
+  }) {
+    final root = _object(payload, 'response');
+    return fromRow(_object(root['session'], 'session'), steps: steps);
+  }
+
+  /// `geometry_plan_json` is `null` before planning, a transient
+  /// `{"planning": true}` claim marker while `plan-tutorial-geometry` is
+  /// mid-flight, or a real `{"steps": [...]}` plan once persisted. Only the
+  /// last of these is a real plan; the other two both mean "not planned
+  /// yet" and must not be treated as malformed data.
+  static TutorialGeometryPlan? _geometryPlanFromRow(Map<String, Object?> row) {
+    final raw = row['geometry_plan_json'];
+    if (raw is! Map || raw['steps'] is! List) return null;
+    return TutorialGeometryPlanCodec.fromJson(raw);
+  }
+
+  static Map<String, Object?> _object(Object? value, String name) {
+    if (value is! Map) throw FormatException('$name must be an object.');
+    return value.map((key, value) => MapEntry(key.toString(), value));
   }
 
   /// Column values for inserting a new session owned by [userId]. Exactly

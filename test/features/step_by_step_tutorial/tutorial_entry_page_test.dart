@@ -343,6 +343,10 @@ class _NoopRepository implements TutorialRepository {
   Future<TutorialSession> resetForRegeneration({
     required String tutorialSessionId,
   }) => throw UnimplementedError();
+
+  @override
+  Future<TutorialSession> planGeometry({required String tutorialSessionId}) =>
+      throw UnimplementedError();
 }
 
 /// Backs the "regenerate" widget tests: [resetForRegeneration] resolves

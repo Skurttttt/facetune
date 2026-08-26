@@ -1,3 +1,5 @@
+import '../../../analysis/domain/entities/analysis_confidence.dart';
+import '../../../analysis/domain/entities/facial_attributes.dart';
 import '../../../makeup_kit/domain/entities/kit_generated_preview.dart';
 import '../../../makeup_kit/domain/entities/kit_makeup_recommendation.dart';
 import '../../../preview/domain/entities/generated_preview.dart';
@@ -27,6 +29,8 @@ class GetOrCreateTutorialSession {
   Future<TutorialSession> forRecommendation({
     required MakeupRecommendation recommendation,
     required GeneratedPreview preview,
+    required FacialAttributes faceAttributes,
+    required AnalysisConfidence attributeConfidence,
   }) => _getOrCreate(
     sourceMode: TutorialSourceMode.standardRecommendation,
     analysisId: recommendation.analysisId,
@@ -36,12 +40,16 @@ class GetOrCreateTutorialSession {
     plan: () => TutorialPlanningEngine.planFromRecommendation(
       recommendation: recommendation,
       preview: preview,
+      faceAttributes: faceAttributes,
+      attributeConfidence: attributeConfidence,
     ),
   );
 
   Future<TutorialSession> forKitRecommendation({
     required KitMakeupRecommendation recommendation,
     required KitGeneratedPreview preview,
+    required FacialAttributes faceAttributes,
+    required AnalysisConfidence attributeConfidence,
   }) => _getOrCreate(
     sourceMode: TutorialSourceMode.makeupKit,
     analysisId: recommendation.analysisId,
@@ -51,6 +59,8 @@ class GetOrCreateTutorialSession {
     plan: () => TutorialPlanningEngine.planFromKitRecommendation(
       recommendation: recommendation,
       preview: preview,
+      faceAttributes: faceAttributes,
+      attributeConfidence: attributeConfidence,
     ),
   );
 

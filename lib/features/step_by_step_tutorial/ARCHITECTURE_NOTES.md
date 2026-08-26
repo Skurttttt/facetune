@@ -1157,3 +1157,498 @@ presentation files were touched only additively:
 All other new files are additive under `lib/features/step_by_step_tutorial/`,
 `shared/widgets/media/`, `supabase/migrations/`, and
 `supabase/functions/generate-tutorial-step/`.
+
+## TF-1: production planning finally invokes the personalized pipeline
+
+Confirmed defect: `TutorialPlanningEngine.planFromRecommendation`/
+`planFromKitRecommendation` built each step's `TutorialInstruction` (the
+written-guidance path) directly from the recommendation/kit selection, but
+always passed `placementMetadata: null` and never touched
+`PersonalizedTutorialInput`/`PersonalizedTutorialMetadataPipeline`/
+`PersonalizedTutorialStepSpec` at all — those types (and
+`PersonalizedTutorialPlacementRules`, the MO-era placement-rule engine) were
+fully built and tested in isolation but never wired to production tutorial
+creation. `GetOrCreateTutorialSession` already forwarded a step's
+`personalizedSpec` to `TutorialRepository.createStep`, and the persistence/
+DTO/codec layer already round-tripped it — only the planner itself never
+produced one. This matches
+`FACETUNE_TUTORIAL_FIDELITY_AND_GUIDELINES_SOURCE_OF_TRUTH.md`'s "Missing
+guidelines" root cause exactly.
+
+**Fix, scoped narrowly**: both planning entry points gained two new required
+parameters, `faceAttributes: FacialAttributes` and `attributeConfidence:
+AnalysisConfidence` — the same real, already-computed `FaceAnalysis` fields
+`PreviewResultPage`/`MakeupKitRecommendationEntryPage` already hold for the
+recommendation's own `analysisId` (checked there for equality before "How to
+Apply This Look" is ever shown). `_buildPlan` now additionally constructs a
+`PersonalizedTutorialInput` from the same per-category source data already
+being read to build the legacy `TutorialInstruction` (a second, parallel
+`TutorialRecommendationData`/`TutorialKitProductSnapshot` map, built in the
+same loop, not re-derived from the humanized/legacy instruction), runs it
+through `PersonalizedTutorialMetadataPipeline.build`, and attaches each
+result's `spec`/`overlayMetadata` to the matching `PlannedTutorialStep`.
+
+**The legacy written instruction was deliberately left untouched.** The
+source-of-truth's own root-cause wording ("legacy tutorial instructions" are
+not themselves the bug) and TF-1's task scope (wire the pipeline "→
+placement metadata", nothing about rewording written guidance) both point
+the same way: `TutorialInstruction` is still built exactly as ST-11 left it.
+Re-deriving it from the personalized spec instead would have silently
+changed displayed intensity/technique text (the placement rules apply a
+style-based intensity adjustment `TutorialInstruction` never has) — a
+behavior change no test or task asked for. This also kept every pre-existing
+`tutorial_planning_engine_test.dart` assertion passing unmodified.
+
+**Geometry is `null`, on purpose, not a gap hidden from view.**
+`TutorialFaceGeometryProvider` has zero implementations and nothing resolves
+it anywhere in the app — TF-2 (the tutorial-only Gemini geometry planner)
+does not exist yet. `PersonalizedTutorialMetadataPipeline.build` is called
+with no `geometry` argument, which its own existing logic already turns into
+an honest signal: every step's `spec.where.geometryConfidence` comes back
+`unavailable` with zero `geometryAnchors` — not a guessed value. One
+consequence worth stating plainly for whoever picks up TF-2/TF-3: because
+`PersonalizedTutorialOverlayMetadataRenderer` only emits a drawable overlay
+primitive for a region that has a matching geometry anchor,
+`placementMetadata.overlays` comes back **empty** for every step after
+TF-1 alone — the metadata *object* is now real and persisted, but nothing
+visible paints yet. That is the correct, explicit "geometry dependency"
+state TF-1's task description asked for, not a regression; TF-2 supplying
+real anchors is what turns these already-wired overlays non-empty with zero
+further planner changes.
+
+**Stale/legacy detectability**: nothing backfills or coerces old data.
+`PlannedTutorialStep.personalizedSpec`/`placementMetadata` stay nullable —
+a pre-TF-1 planned step (or a persisted `tutorial_steps` row from before
+this phase) has both `null`, and that remains a plain, honest, checkable
+fact, not silently normalized to look personalized. TF-4 is expected to act
+on this signal as part of its broader stale-session validation.
+
+**Files modified**: `tutorial_planning_engine.dart` (the fix itself),
+`get_or_create_tutorial_session.dart`/`tutorial_session_controller.dart`
+(threading the two new required inputs through, `prepareForRecommendation`/
+`prepareForKitRecommendation` now take a `required FaceAnalysis analysis`
+parameter), and the two existing call sites
+(`preview_result_page.dart`/`makeup_kit_recommendation_entry_page.dart`),
+each changed only inside its existing `onOpenTutorial` closure to pass the
+`analysis` object already in scope there — no new widget, route, or
+rendering logic. `TutorialStepViewer`/`TutorialPlacementOverlayLayer`/the
+overlay catalog fallback are untouched; standard Face Analysis and
+Recommendation are untouched (read-only, via the same ambient controllers
+ST-4 already established).
+
+## TF-2: the tutorial-only Gemini geometry & placement planner — backend only, mirroring ST-9's own split
+
+`supabase/functions/plan-tutorial-geometry/` is a new, self-contained Edge
+Function (`index.ts`/`gemini_client.ts`/`prompt.ts`/`schema.ts`/
+`validation.ts`/`types.ts`, plus `validation_test.ts`/`prompt_test.ts`)
+that, given a `tutorialSessionId`, inspects the session's real original
+selfie and returns a strict, validated, per-category geometry & placement
+plan — real zones/paths/arrows in normalized 0.0–1.0 coordinates, grounded
+in the actual photo, one entry per canonical step category the session
+already has real (TF-1-populated) product facts for.
+
+**Scope deliberately matches ST-9, not ST-10: zero Flutter files changed.**
+ST-9 built `generate-tutorial-step` as a standalone Edge Function and left
+all Flutter wiring (`TutorialRepository`, `SupabaseTutorialRepository`,
+`TutorialSessionController`) to ST-10, a separate phase — "the viewer is
+unreachable in a real run today" was stated as the correct, honest state of
+that phase, not a gap. TF-2's own task text has the same shape: its Report
+fields (FUNCTION, MODEL CONFIG, INPUT CONTRACT, OUTPUT SCHEMA, VALIDATION,
+PERSISTENCE, AI CALL COUNT, SECURITY, DEPLOYMENT REQUIRED, MANUAL COMMANDS)
+are all backend/infra-focused, with no "client wiring" field, unlike TF-1's
+report shape. TF-3's own title — "Production Personalized Guideline
+**Activation**" — is what actually consumes this function's persisted
+output. Following that precedent exactly: nothing in
+`lib/features/step_by_step_tutorial/` (or anywhere else in the Flutter app)
+calls this function yet. It is fully built, deployable, and independently
+testable, but unreachable from the running app until a later phase wires it
+in — stated plainly, matching this file's own established convention for
+recording real scope limits rather than hiding them.
+
+**Input contract is one field, mirroring `generate-tutorial-step`'s own
+minimalism**: `{ tutorialSessionId: string }` (UUID). Every other required
+input — original selfie path, existing face attributes, selected style,
+full recommendation, kit snapshot if applicable, canonical step
+categories — is derived server-side from data that already exists once a
+session has been planned by TF-1:
+- original selfie + face attributes: the session's `analysis_id` →
+  `analyses` row (same columns `generate-tutorial-step` already reads).
+- selected style: `tutorial_sessions.makeup_style`.
+- full recommendation / kit snapshot / canonical categories: each of the
+  session's own non-`final_look` `tutorial_steps` rows, read via their
+  `personalized_spec_json` (TF-1's real, already-decided WHAT/WHERE facts —
+  preferred) falling back to `instruction_json` only for a legacy row that
+  predates TF-1 and has no personalized spec yet. Nothing is re-derived
+  from the raw `recommendations`/`kit_makeup_recommendations` tables — this
+  function trusts TF-1's own already-validated per-step snapshot instead of
+  re-deriving a second copy of the same facts, which is also what makes
+  "no product invention"/"kit integrity" checkable at all: Gemini's
+  `colorHex`/`finish` output must exactly echo what these rows already say,
+  never something new.
+
+**Output schema** (`schema.ts`, sent as Gemini's `responseJsonSchema`,
+matching `analyze-face`'s structured-output pattern exactly): one entry per
+requested category —
+`category, placement, direction, intensity, technique, confidence,
+colorHex, finish, zones[], paths[], arrows[]` — where a zone is
+`{shape: ellipse|polygon|soft_band|region, points[], confidence}`, a path
+is `{points[] (≥2), confidence}`, and an arrow is `{from, to, confidence}`.
+`direction`/`intensity` deliberately use the *same camelCase vocabulary*
+`PersonalizedTutorialStepSpecCodec` already persists for
+`personalized_spec_json.how.direction`/`.intensity` (e.g. `upwardOutward`,
+`followBoundary`) — not snake_case — specifically so a later mapping phase
+(TF-3) can match strings directly with no case-conversion layer to get
+wrong. `category` stays the existing snake_case `TutorialStepCategory.code`
+vocabulary (`lip_gloss`, not `lipGloss`), matching every other
+category-coded column in this schema.
+
+**Validation is two-layered, matching `analyze-face`'s established
+posture**: `responseJsonSchema` constrains Gemini's output distribution,
+but `validation.ts` fully re-parses and re-validates every field
+independently afterward, trusting nothing from the schema alone (JSON
+parse failure, non-object shapes, and missing fields are all re-checked by
+hand). Beyond structural validation, three checks are specific to this
+function's own risk surface:
+- **category coverage** — the returned category set must exactly equal the
+  requested set: same size, no duplicates, no unrequested/missing category.
+  A plan that doesn't cover everything asked, or invents an extra category,
+  is rejected outright, not partially accepted.
+- **no product invention** — a returned `colorHex`/`finish` must exactly
+  match (case-insensitively for finish, case-insensitively for hex too via
+  `.toUpperCase()`) the real value already recorded in that category's own
+  `personalized_spec_json`/`instruction_json`. Returning a color that was
+  never given to Gemini, or returning any color when none was given at all,
+  is rejected — this is what makes "the AI cannot manufacture a shade the
+  user was never actually recommended" an enforced invariant, not a prompt
+  request Gemini could ignore.
+- **kit integrity** — for a `makeup_kit`-mode session, every planned
+  category must trace back to a real owned-product snapshot (i.e. that
+  step's `personalized_spec_json.what.productSnapshot` was non-null) — a
+  kit tutorial can never get a geometry plan for a category the user didn't
+  actually own a product for.
+
+No fallback coordinates are ever synthesized for a rejected field — the
+*entire* plan is rejected on any single violation (never a partial
+accept), matching the "reject malformed/out-of-range/impossible geometry;
+never invent fallback coordinates" instruction literally.
+
+**Persistence — one plan per session, three new nullable columns on
+`tutorial_sessions`** (`20260816000100_tutorial_geometry_plan.sql`):
+`geometry_plan_json` (the validated `{steps: [...]}` object),
+`geometry_plan_version` (`tutorial_geometry_plan_v1`), `geometry_model`
+(echoed for display/debugging only, same non-configuration convention as
+the existing `tutorial_model` column). A session with a plan already
+recognizable by a `steps` array in `geometry_plan_json` short-circuits
+immediately on the next call — no quota spent, no Gemini call, matching
+"persist once and reuse" literally. This lives on `tutorial_sessions`
+rather than a new table because a plan is 1:1 with a session, the same
+cardinality `prompt_version`/`tutorial_model` already have.
+
+**Concurrency claim, adapted from `generate-tutorial-step`'s pattern**: a
+conditional `UPDATE ... WHERE geometry_plan_json IS NULL` writes a
+transient `{"planning": true}` marker (itself a valid object, so it costs
+no schema change beyond `geometry_plan_json` itself) before the Gemini
+call; a losing concurrent request sees zero rows matched and either
+returns the winner's now-persisted real plan or reports
+`GEOMETRY_PLANNING_IN_PROGRESS` (409, retryable). Any failure after
+claiming reverts the marker back to `null` in the `catch` block
+(best-effort), exactly mirroring `generate-tutorial-step`'s revert of a
+claimed step back to `failed` — so a genuine failure never permanently
+blocks a retry.
+
+**AI call count**: at most one Gemini call per tutorial session, ever —
+enforced by the claim + the `steps`-array short-circuit together, not by
+client-side discipline alone (defense in depth, matching ST-13's stated
+posture for `generate-tutorial-step`).
+
+**Model/quota configuration, kept independent of every other tutorial AI
+call**: `TUTORIAL_GEOMETRY_MODEL` (default `gemini-3.6-flash`, a text/JSON
+reasoning call, not an image generation call — deliberately not
+`GEMINI_MODEL`/`TUTORIAL_IMAGE_MODEL`, so an operator can tune this
+independently, the same rationale ST-9 already recorded for
+`TUTORIAL_IMAGE_MODEL`). `ai_usage_events`/`consume_ai_quota` gained one
+new operation, `tutorial_geometry_plan` (20/hour, 100/day — deliberately
+much lower than `tutorial_step`'s 80/400, since this runs at most once per
+tutorial rather than once per step; a starting guess, not measured data,
+matching every other limit's own stated caveat).
+
+**Security**: identical posture to `generate-tutorial-step` —
+bearer-token auth via `client.auth.getUser()`, RLS scopes every table read
+to the caller's own rows (a session/step belonging to someone else is
+reported as not-found, never distinguished from "doesn't exist"),
+`isOwnedOriginalPath` (reused from `_shared/storage_ownership.ts`,
+unmodified) re-validates the selfie path segment-by-segment before
+downloading it, and `GEMINI_API_KEY` never leaves the server or appears in
+any log line (only `${stage}_ms` timings and boolean/status flags are
+logged, grepped to confirm).
+
+**Deliberately not attempted here**: mapping `geometry_plan_json` into
+`PersonalizedTutorialStepSpec`/placement metadata/the overlay renderer
+(TF-3's explicit job); any Flutter-side repository/controller/domain
+changes to read this column at all (also implicitly TF-3's concern, since
+nothing consumes it yet); deciding *when* in the live app flow this
+function should be automatically invoked (a UX/orchestration decision that
+belongs with the phase that actually activates guidelines, not this one).
+
+**Files created**: `supabase/functions/plan-tutorial-geometry/` (7 files)
+and `supabase/migrations/20260816000100_tutorial_geometry_plan.sql`.
+**Files modified**: `supabase/functions/_shared/ai_quota.ts` (one new
+`AiOperation` union member, additive — `_shared/storage_ownership.ts` and
+every other existing Edge Function directory untouched) and
+`supabase/config.toml` (one new `[functions.plan-tutorial-geometry]`
+block). No Flutter file, migration touching an existing table's *existing*
+columns, RLS policy, or other Edge Function changed.
+
+**Not independently verified by an automated test run**: same limitation
+ST-9/ST-13 already recorded — no Deno/local-functions tooling is available
+in this environment (confirmed: `deno --version` resolves to "command not
+found" here). `validation_test.ts`/`prompt_test.ts` are real, executable
+Deno tests (`Deno.test(...)`, `jsr:@std/assert@1`) covering schema parse,
+bounds, confidence, category coverage, kit integrity, no product
+invention, and invalid-response rejection as TF-2 required — written and
+manually reviewed, not run in this session. Whoever deploys this should run
+`deno test supabase/functions/plan-tutorial-geometry/` (or
+`supabase functions serve` + integration test) before relying on it.
+
+## TF-3: guideline activation — a projection, not a second decision engine
+
+TF-2 deliberately stopped at persisting `geometry_plan_json`, stating
+plainly that mapping it into `PersonalizedTutorialStepSpec`/placement
+metadata/the overlay renderer, and deciding when to trigger the planning
+call from the live app, were both this phase's job. This section records
+how that turned out, including one real architectural finding that changed
+the intended design mid-phase.
+
+**Finding, before any code changed: the ST-6 catalog fallback no longer
+exists.** ST-6's own notes (this file, above) describe
+`TutorialStepViewer` falling back to `TutorialPlacementOverlayCatalog.defaultFor(step.category)`
+when `step.placementMetadata` is null. That fallback was removed in the
+commit that built the whole MO-era personalized pipeline (`714421d`,
+oddly titled "No Guide Lines" — it is in fact the commit that *introduced*
+`personalized_tutorial.dart`/`PersonalizedTutorialMetadataPipeline`/etc.):
+`TutorialPlacementOverlayCatalog.defaultFor` was renamed to
+`legacyFallbackFor` and marked `@Deprecated`, and
+`TutorialStepViewer`/`PlacementResultComparison` now render
+`step.placementMetadata` directly, with no `??` fallback at all. This is
+deliberate, not a regression to route around: illustrative, unmeasured
+category-typical shapes were judged worse than showing nothing once the
+architecture committed to *real* personalization. Consequence for TF-3:
+"no fake guides when invalid" cannot mean "fall back to the catalog" —
+it means "leave the step's placement metadata exactly as TF-1 left it
+(empty overlays)," which is what every fallback path below actually does.
+
+**Architecture decision: activation bypasses the anchor/region system
+entirely, rather than feeding zones/paths/arrows through it.**
+`PersonalizedTutorialStepSpec.where.geometryAnchors` (populated via
+`TutorialFaceGeometry`, MO-era) models a fundamentally different shape of
+"geometry" than TF-2's plan: one flat per-*region* boundary polygon
+(`TutorialFaceGeometry`'s eyes/brows/nose/lips/forehead/cheeks/jaw/chin),
+versus TF-2's typed, confidence-scored, per-*category* zone/path/arrow
+primitives with no region label at all. Reconciling the two would mean
+either inventing a lossy region-assignment heuristic for TF-2's primitives,
+or changing TF-2's own already-completed contract. Neither was necessary:
+`PersonalizedTutorialWhat`/`where.description`/`how` already carry every
+fact a category needs, and `TutorialPlacementOverlay` (the thing the
+renderer actually draws) has no dependency on the anchor system at all —
+it is just `{type, points, colorHex}`. `TutorialGeometryActivation`
+(`domain/services/tutorial_geometry_activation.dart`) therefore projects a
+`TutorialCategoryGeometryPlan` straight into `TutorialPlacementOverlay`s
+(zone→zone, path→line, arrow→arrow, points passed through unchanged,
+`plan.colorHex` carried onto zone/line overlays) without touching
+`PersonalizedTutorialStepSpec` at all. This also avoids a real constructor
+invariant `PersonalizedTutorialWhere` already enforces —
+`geometryConfidence` must be `unavailable` exactly when `geometryAnchors`
+is empty — which TF-2's plan has no way to satisfy without also
+fabricating anchors. The spec stays exactly as TF-1 built it (an honest
+"no landmark anchors yet," since `TutorialFaceGeometryProvider` is still
+unimplemented); only the step's own `placementMetadata` is upgraded.
+
+**Confidence fallback, mirrored from `PersonalizedTutorialOverlayAccuracyValidator`
+without reusing its (region-specific) code.** That validator's rules —
+`low`/`unavailable` → render nothing, `medium` → broader/simpler (at most
+one arrow per region), `high` → precise — are the right shape but operate
+on anchors/regions TF-2's plan doesn't have. `TutorialGeometryActivation`
+re-implements the same three-tier behavior directly against TF-2's own
+confidence fields: a category below 0.55 renders nothing; 0.55–0.79 keeps
+at most one arrow (mirroring the validator's own arrow de-duplication) and
+drops any individually-weak primitive; 0.8+ keeps every primitive whose
+own confidence clears the same 0.55 floor. A primitive is never trusted
+more than the category bucket it belongs to. "No fake guides" is
+structural, not a special case: every rejection path (`overlays.isEmpty`)
+returns the original `TutorialStep` unchanged — literally `identical()`
+to the input — rather than constructing a new, empty-but-different
+placement metadata object.
+
+**Activation runs inside `TutorialSessionDto.fromRow`, not as a persisted
+write-back.** The two inputs a category's activated overlay needs (its own
+`category`, and the session's `geometry_plan_json`) are already both
+persisted and already both loaded together by the time any repository
+method builds a `TutorialSession`. Re-deriving placement metadata on every
+load is therefore free (pure, synchronous, no AI call) and — unlike a
+persisted `placement_metadata_json` write-back — can never drift out of
+sync with a stale cached value if the mapping logic itself changes later.
+`loadExisting`/`createSession`/`updateSessionStatus`/`resetForRegeneration`/
+`planGeometry` all funnel through `TutorialSessionDto.fromRow`, so every
+one of them gets activation "for free" with no per-method wiring. The one
+new parsing rule this required: `geometry_plan_json` can be `null` (not
+planned), the transient `{"planning": true}` claim marker TF-2's Edge
+Function writes mid-flight (also "not planned yet," not malformed data),
+or a real `{"steps": [...]}` plan — only the last of these is parsed via
+the new `TutorialGeometryPlanCodec`.
+
+**Client-side trigger, added because TF-3's own title says "Production."**
+TF-2 explicitly deferred deciding when to call `plan-tutorial-geometry`
+from the app. This phase adds `TutorialRepository.planGeometry` (mirrors
+`generateStepResult`'s shape exactly: invoke → parse `{session: ...}` via
+the new `TutorialSessionDto.fromResponse` → reload steps → hydrate) and
+`TutorialSessionController.activateGuidelines()`, called opportunistically
+from `TutorialEntryPage.build()` via `WidgetsBinding.instance.addPostFrameCallback`
+every time it renders a session with steps — the same pattern
+`PreviewResultPage` already uses for `loadSavedStatus`. Safe to call on
+every build because `activateGuidelines()` is itself the guard: no-op if
+no session, if a geometry plan already exists, if a session-level
+operation is in flight, or if a step is generating. Deliberately does
+**not** go through `_run`/`_lastRun` — a session that already works
+(guidelines or not) must never flip to a session-level failure state just
+because guideline planning itself failed; a failure here is swallowed
+silently, mirroring `generateStep`'s "otherwise fully functional" posture
+for a single failed step.
+
+**"Step 1/Step N sources" and "Result has no Flutter overlay" were already
+true, unchanged by this phase.** `TutorialStepViewer`'s
+`step.placementImageUrl ?? (index == 0 ? originalImageUrl : previousStep.resultImageUrl)`
+and `generate-tutorial-step`'s identical server-side `cumulativePath`
+logic (ST-9) already implement "Step 1 = original selfie, Step N = Step
+N-1's Result" — TF-3 touches neither. `ComparisonSlider` has never had a
+`rightOverlay` parameter, so a Flutter overlay on the Result side is not a
+behavior to prevent, it is a widget that structurally cannot exist; a new
+test (`placement_result_comparison_test.dart`) makes this explicit rather
+than leaving it merely implied by reading the source.
+
+**Files created**: `domain/entities/tutorial_geometry_plan.dart`,
+`data/models/tutorial_geometry_plan_codec.dart`,
+`domain/services/tutorial_geometry_activation.dart`. Tests:
+`tutorial_geometry_plan_test.dart`, `tutorial_geometry_plan_codec_test.dart`,
+`tutorial_geometry_activation_test.dart`, `placement_result_comparison_test.dart`,
+plus extensions to `tutorial_session_dto_test.dart`,
+`supabase_tutorial_repository_test.dart`, `tutorial_session_controller_test.dart`.
+
+**Files modified**: `tutorial_session.dart` (three new nullable fields —
+`geometryPlan`/`geometryPlanVersion`/`geometryModel`, additive);
+`tutorial_session_dto.dart` (`fromRow` now also parses geometry and applies
+activation; new `fromResponse`); `tutorial_repository.dart`/
+`tutorial_remote_data_source.dart`/`supabase_tutorial_repository.dart`/
+`unavailable_tutorial_repository.dart` (one new method each, `planGeometry`/
+`invokeGeometryPlan`, additive — every existing method's behavior
+unchanged); `tutorial_session_controller.dart` (one new method,
+`activateGuidelines`, additive); `tutorial_entry_page.dart` (one new
+post-frame-callback block, additive). `TutorialStepViewer`,
+`TutorialPlacementOverlayLayer`, `PlacementResultComparison`,
+`TutorialPlacementSourceResolver`, and
+`PersonalizedTutorialOverlayAccuracyValidator` are all unchanged — the
+existing renderer/source-resolution/validator code is exactly what makes
+this phase "wire real data into what already exists" rather than "build a
+second rendering pipeline." Standard Face Analysis, Recommendation, the
+existing final preview, and My Makeup Kit remain untouched.
+
+**Correction, from the runtime bug-fix pass immediately below**:
+`TutorialPlacementOverlayLayer`/`PlacementResultComparison` did turn out to
+need a change once real Gemini geometry started flowing through them — see
+that section for why "unchanged" above was only true until real (non-empty)
+overlay data actually existed to expose the bug.
+
+## Runtime bug fix: overlays still invisible on a real device after TF-3
+
+TF-3 was unit-tested (224 passing tests) but never visually verified on a
+real device — a real fresh tutorial still showed no guidelines at all on
+Foundation and Concealer. Two real, independent gaps were found; one is
+fixed here, one could not be verified or fixed from this environment and is
+recorded as a blocker.
+
+**Fixed: `TutorialPlacementOverlayLayer` assumed its own box == the whole
+source image, which is only sometimes true.** `PlacementResultComparison`
+renders the Placement image with `PrivateImage`'s default `fit:
+BoxFit.cover` inside `ComparisonSlider`'s fixed `AspectRatio(aspectRatio: 3
+/ 4)` box. `BoxFit.cover` scales the source image up until it fills the box
+on *both* axes, then crops whichever axis overflows, centered. Selfies are
+only validated to fall within a broad 0.4–2.5 width/height ratio
+(`LocalImageValidation`, `scan/domain/entities/`) — never cropped or
+resized to any fixed ratio before upload (confirmed: no `image_cropper` or
+equivalent anywhere in `lib/features/scan/`) — so a typical raw
+phone-camera capture (often far taller than 3:4) gets its top and bottom
+significantly cropped when displayed. `TutorialGeometryActivation`'s
+overlay points are normalized against the *whole* source image (matching
+`plan-tutorial-geometry`'s own prompt contract), but the painter was
+mapping them directly onto the box's own edges — i.e. treating the *crop*
+as if it were the *whole image*. A category whose real placement happens
+to sit outside the visible cropped window (a very plausible outcome for
+Concealer's forehead-center zone, or any near-top/near-bottom placement,
+on a tall raw photo) would be pushed off-screen and never paint at all,
+independent of confidence or correctness of the geometry data itself.
+
+Fix: `TutorialCoverTransform` (new, in `tutorial_placement_overlay_layer.dart`)
+reproduces Flutter's own `BoxFit.cover` scale-and-center math as a small,
+independently unit-tested pure class (no widget pump, no image mocking
+needed — see its tests in `tutorial_placement_overlay_layer_test.dart`).
+`TutorialPlacementOverlayLayer` became a `StatefulWidget` that optionally
+resolves the same image URL its sibling Placement image renders (via a
+plain `ImageStream`/`ImageStreamListener` — no new package) to learn the
+source image's real intrinsic size, then uses `TutorialCoverTransform` to
+map each normalized point onto the correct visible pixel instead of the
+naive full-box assumption. `imageUrl` is optional and the fallback (naive
+mapping) is preserved exactly when it's absent or not yet resolved — a
+deliberate degrade-gracefully choice, never a crash, and it's why every
+pre-existing test in `tutorial_placement_overlay_layer_test.dart` (which
+never passes `imageUrl`) kept passing completely unmodified.
+`PlacementResultComparison` now passes `imageUrl: placementImageUrl`
+through — the one call site that needed updating.
+
+**Not fixed, not verifiable from this environment: whether the TF-2/TF-3
+Supabase backend (the `20260816000100_tutorial_geometry_plan.sql`
+migration and the `plan-tutorial-geometry` Edge Function) has actually been
+deployed to the live project.** No Supabase CLI is installed in this
+environment (confirmed: `supabase --version` → command not found, same as
+the Deno limitation already recorded for TF-2), and this session has no
+sanctioned way to query the live database or invoke the live Edge Function
+directly. If either piece is undeployed, `TutorialSessionController.activateGuidelines()`'s
+call to `TutorialRepository.planGeometry` fails — by design, that failure
+is swallowed silently (so a guideline-planning problem never turns a
+working tutorial into a broken one), which means this exact failure mode
+produces **zero overlays and zero visible errors**, indistinguishable from
+the coordinate bug above from a screenshot alone. Diagnostic logging (`[TutorialGeometry]`
+prefix, `debugPrint`, no URLs/paths/secrets ever logged) was added to
+`activateGuidelines()` specifically so the next real run makes this
+observable instead of silent: whether planning was attempted, whether it
+succeeded or failed (and with what failure code), how many categories a
+returned plan covered, and per-step category/confidence/overlay-count.
+Whoever next runs the app on a real device should watch the Flutter console
+for `[TutorialGeometry]` lines while opening a tutorial.
+
+**Stale sessions need no special handling — confirmed, not just assumed.**
+A session created before TF-2/TF-3 existed has `geometryPlan == null` for
+exactly the same reason a brand-new session does immediately after
+creation (the column/plan simply doesn't exist yet) — `activateGuidelines()`'s
+only gate is that null check, so a stale session is planned exactly like a
+fresh one, no separate recovery path needed. A dedicated test
+(`tutorial_session_controller_test.dart`, "a stale session created before
+TF-2/TF-3 existed... triggers planning exactly like a brand-new one") uses
+a step with no `personalizedSpec`/`placementMetadata` at all — the exact
+shape a genuinely pre-TF-1 row has — to prove this concretely rather than
+by inspection alone.
+
+**Files modified this pass**: `tutorial_placement_overlay_layer.dart` (the
+coordinate fix), `placement_result_comparison.dart` (passes `imageUrl`
+through), `tutorial_session_controller.dart` (diagnostic logging only, no
+behavior change). **Files created**: none. **Tests added**:
+`TutorialCoverTransform` unit tests (identity case, tall-image crop,
+wide-image crop, exact-edge mapping) in
+`tutorial_placement_overlay_layer_test.dart`; one new stale-session test in
+`tutorial_session_controller_test.dart`. `flutter analyze`/`flutter test`/
+`dart format` all clean; `flutter build apk --debug` succeeds. No device
+was available in this environment to install and visually verify the
+result (confirmed via `flutter devices`: Windows desktop and two web
+targets only, no Android device or emulator) — the fix is proven correct
+by unit-testing the exact transform math Flutter's own `Image` widget uses,
+not by an on-device screenshot. Whoever has the physical device from the
+bug report should rebuild (`tool/run_dev.ps1`) and re-check Foundation and
+Concealer before this is called visually verified.

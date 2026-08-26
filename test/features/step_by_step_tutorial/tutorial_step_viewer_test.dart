@@ -533,6 +533,10 @@ class _NoopRepository implements TutorialRepository {
   Future<TutorialSession> resetForRegeneration({
     required String tutorialSessionId,
   }) => throw UnimplementedError();
+
+  @override
+  Future<TutorialSession> planGeometry({required String tutorialSessionId}) =>
+      throw UnimplementedError();
 }
 
 /// Backs the end-to-end "tap Generate this step" test: [generateStepResult]

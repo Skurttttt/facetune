@@ -270,6 +270,153 @@ void main() {
     });
   });
 
+  group('planGeometry', () {
+    Map<String, Object?> sessionRow({Object? geometryPlanJson}) => {
+      'id': 'session-1',
+      'user_id': 'user-1',
+      'source_mode': 'standard_recommendation',
+      'analysis_id': 'analysis-1',
+      'recommendation_id': 'recommendation-1',
+      'kit_recommendation_id': null,
+      'makeup_style': 'soft_glam',
+      'generation_number': 1,
+      'total_steps': 1,
+      'generation_status': 'completed',
+      'prompt_version': null,
+      'tutorial_model': null,
+      'tutorial_image_size': null,
+      'geometry_plan_json': geometryPlanJson,
+      'geometry_plan_version': 'tutorial_geometry_plan_v1',
+      'geometry_model': 'gemini-3.6-flash',
+      'created_at': '2026-08-14T00:00:00Z',
+      'updated_at': '2026-08-14T00:00:00Z',
+    };
+
+    test('parses the {session: ...} envelope, reloads steps, and applies '
+        'geometry activation to them', () async {
+      final repository = SupabaseTutorialRepository(
+        _InvokingRemoteDataSource(
+          geometryResponse: {
+            'session': sessionRow(
+              geometryPlanJson: {
+                'steps': [
+                  {
+                    'category': 'blush',
+                    'placement': 'Upper cheekbones',
+                    'direction': 'outward',
+                    'intensity': 'medium',
+                    'technique': 'Blend with a fluffy brush.',
+                    'confidence': 0.9,
+                    'colorHex': null,
+                    'finish': null,
+                    'zones': [
+                      {
+                        'shape': 'polygon',
+                        'points': [
+                          {'x': 0.3, 'y': 0.5},
+                          {'x': 0.35, 'y': 0.55},
+                        ],
+                        'confidence': 0.85,
+                      },
+                    ],
+                    'paths': const [],
+                    'arrows': const [],
+                  },
+                ],
+              },
+            ),
+          },
+          stepsForGeometryPlan: [
+            {
+              'id': 'step-1',
+              'tutorial_session_id': 'session-1',
+              'step_number': 1,
+              'category': 'blush',
+              'title': 'Blush',
+              'instruction_json': {
+                'placement': 'Upper cheekbones',
+                'intensity': 'light',
+                'technique': 'Blend upward.',
+              },
+              'placement_metadata_json': const [],
+              'placement_image_path': null,
+              'result_image_path': null,
+              'model_name': null,
+              'image_size': null,
+              'prompt_version': null,
+              'generation_status': 'not_started',
+              'created_at': '2026-08-14T00:00:00Z',
+              'updated_at': '2026-08-14T00:00:00Z',
+            },
+          ],
+        ),
+      );
+
+      final session = await repository.planGeometry(
+        tutorialSessionId: 'session-1',
+      );
+
+      expect(session.id, 'session-1');
+      expect(session.geometryPlan, isNotNull);
+      // Activation (TF-3) already ran inside TutorialSessionDto.fromRow --
+      // the reloaded step's placement metadata carries the real overlay.
+      expect(session.steps.single.placementMetadata!.overlays, isNotEmpty);
+    });
+
+    test(
+      'maps a GEOMETRY_PLANNING_IN_PROGRESS failure to validation',
+      () async {
+        final repository = SupabaseTutorialRepository(
+          _InvokingRemoteDataSource(
+            geometryError: const TutorialRemoteFailure(
+              status: 409,
+              code: 'GEOMETRY_PLANNING_IN_PROGRESS',
+              message: "This tutorial's geometry is already being planned.",
+              retryable: true,
+            ),
+          ),
+        );
+
+        await expectLater(
+          repository.planGeometry(tutorialSessionId: 'session-1'),
+          throwsA(
+            isA<TutorialFailure>()
+                .having(
+                  (failure) => failure.type,
+                  'type',
+                  TutorialFailureType.validation,
+                )
+                .having((failure) => failure.retryable, 'retryable', isTrue),
+          ),
+        );
+      },
+    );
+
+    test('maps a TUTORIAL_SESSION_NOT_FOUND failure to notFound', () async {
+      final repository = SupabaseTutorialRepository(
+        _InvokingRemoteDataSource(
+          geometryError: const TutorialRemoteFailure(
+            status: 404,
+            code: 'TUTORIAL_SESSION_NOT_FOUND',
+            message: 'This tutorial session could not be found.',
+            retryable: false,
+          ),
+        ),
+      );
+
+      await expectLater(
+        repository.planGeometry(tutorialSessionId: 'session-1'),
+        throwsA(
+          isA<TutorialFailure>().having(
+            (failure) => failure.type,
+            'type',
+            TutorialFailureType.notFound,
+          ),
+        ),
+      );
+    });
+  });
+
   group('resetForRegeneration', () {
     test('excludes the final_look category and returns not_started, '
         're-loaded with fresh steps', () async {
@@ -350,6 +497,10 @@ class _ThrowingRemoteDataSource implements TutorialRemoteDataSource {
       throw UnimplementedError();
 
   @override
+  Future<Object?> invokeGeometryPlan({required String tutorialSessionId}) =>
+      throw UnimplementedError();
+
+  @override
   Future<Map<String, Object?>> insertSession(Map<String, Object?> values) =>
       throw _error;
 
@@ -394,15 +545,26 @@ class _ThrowingRemoteDataSource implements TutorialRemoteDataSource {
       throw UnimplementedError();
 }
 
-/// Backs the [SupabaseTutorialRepository.generateStepResult] tests:
-/// [invoke] either resolves with [response] or throws [error], and
-/// [createSignedUrl] always resolves so the success case can verify
-/// hydration happened.
+/// Backs the [SupabaseTutorialRepository.generateStepResult]/[planGeometry]
+/// tests: [invoke]/[invokeGeometryPlan] each resolve with their own
+/// response or throw their own error, [selectSteps] returns
+/// [stepsForGeometryPlan] (only relevant to [planGeometry], which reloads
+/// steps after the Edge Function responds), and [createSignedUrl] always
+/// resolves so the success case can verify hydration happened.
 class _InvokingRemoteDataSource implements TutorialRemoteDataSource {
-  _InvokingRemoteDataSource({this.response, this.error});
+  _InvokingRemoteDataSource({
+    this.response,
+    this.error,
+    this.geometryResponse,
+    this.geometryError,
+    this.stepsForGeometryPlan = const [],
+  });
 
   final Map<String, Object?>? response;
   final TutorialRemoteFailure? error;
+  final Map<String, Object?>? geometryResponse;
+  final TutorialRemoteFailure? geometryError;
+  final List<Map<String, Object?>> stepsForGeometryPlan;
 
   @override
   String? get currentUserId => 'user-1';
@@ -411,6 +573,14 @@ class _InvokingRemoteDataSource implements TutorialRemoteDataSource {
   Future<Object?> invoke({required String tutorialStepId}) async {
     if (error != null) throw error!;
     return response;
+  }
+
+  @override
+  Future<Object?> invokeGeometryPlan({
+    required String tutorialSessionId,
+  }) async {
+    if (geometryError != null) throw geometryError!;
+    return geometryResponse;
   }
 
   @override
@@ -437,8 +607,9 @@ class _InvokingRemoteDataSource implements TutorialRemoteDataSource {
   ) => throw UnimplementedError();
 
   @override
-  Future<List<Map<String, Object?>>> selectSteps(String tutorialSessionId) =>
-      throw UnimplementedError();
+  Future<List<Map<String, Object?>>> selectSteps(
+    String tutorialSessionId,
+  ) async => stepsForGeometryPlan;
 
   @override
   Future<Map<String, Object?>> insertStep(Map<String, Object?> values) =>
@@ -521,6 +692,10 @@ class _ResettingRemoteDataSource implements TutorialRemoteDataSource {
 
   @override
   Future<Object?> invoke({required String tutorialStepId}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<Object?> invokeGeometryPlan({required String tutorialSessionId}) =>
       throw UnimplementedError();
 
   @override

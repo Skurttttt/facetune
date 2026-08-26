@@ -253,6 +253,23 @@ class SupabaseTutorialRepository implements TutorialRepository {
     }
   }
 
+  @override
+  Future<TutorialSession> planGeometry({
+    required String tutorialSessionId,
+  }) async {
+    try {
+      final payload = await _remote.invokeGeometryPlan(
+        tutorialSessionId: tutorialSessionId,
+      );
+      return TutorialSessionDto.fromResponse(
+        payload,
+        steps: await loadSteps(tutorialSessionId),
+      );
+    } catch (error) {
+      throw _failure(error);
+    }
+  }
+
   /// Never accept a caller-supplied user id — the owner of every write is
   /// always the authenticated session, matching every other repository in
   /// this codebase (e.g. `SupabaseSavedLooksRepository.save`). Row Level
@@ -377,11 +394,11 @@ class SupabaseTutorialRepository implements TutorialRepository {
     );
   }
 
-  /// Maps `generate-tutorial-step`'s (ST-9) error codes onto
-  /// [TutorialFailureType]. The Edge Function's codes are not shared code
-  /// with this client (see ARCHITECTURE_NOTES.md on why `types.ts` is
-  /// duplicated, not cross-imported), so this mapping is maintained by
-  /// convention against that file rather than a shared enum.
+  /// Maps `generate-tutorial-step`'s (ST-9) and `plan-tutorial-geometry`'s
+  /// (TF-2) error codes onto [TutorialFailureType]. Neither Edge Function's
+  /// codes are shared code with this client (see ARCHITECTURE_NOTES.md on
+  /// why `types.ts` is duplicated, not cross-imported), so this mapping is
+  /// maintained by convention against those files rather than a shared enum.
   static TutorialFailureType _remoteFailureType(String code, int status) {
     if (status == 401 || code == 'AUTH_FAILED') {
       return TutorialFailureType.authentication;
@@ -391,6 +408,7 @@ class SupabaseTutorialRepository implements TutorialRepository {
     }
     if (code == 'PREVIOUS_STEP_NOT_READY' ||
         code == 'GENERATION_IN_PROGRESS' ||
+        code == 'GEOMETRY_PLANNING_IN_PROGRESS' ||
         code.toLowerCase().startsWith('invalid_')) {
       return TutorialFailureType.validation;
     }

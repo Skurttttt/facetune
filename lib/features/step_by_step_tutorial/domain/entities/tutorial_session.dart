@@ -1,4 +1,5 @@
 import 'tutorial_generation_status.dart';
+import 'tutorial_geometry_plan.dart';
 import 'tutorial_source_mode.dart';
 import 'tutorial_step.dart';
 
@@ -28,6 +29,9 @@ class TutorialSession {
     this.promptVersion,
     this.tutorialModel,
     this.tutorialImageSize,
+    this.geometryPlan,
+    this.geometryPlanVersion,
+    this.geometryModel,
   });
 
   final String id;
@@ -57,6 +61,19 @@ class TutorialSession {
   final String? promptVersion;
   final String? tutorialModel;
   final int? tutorialImageSize;
+
+  /// TF-2's validated, persisted tutorial-only Gemini geometry & placement
+  /// plan — `null` until planned. [TutorialGeometryActivation] (TF-3) has
+  /// already projected it onto [steps]' own [TutorialStep.placementMetadata]
+  /// by the time this session is hydrated; this field is kept for
+  /// display/debugging and so a caller can tell whether planning has
+  /// happened yet without inspecting every step.
+  final TutorialGeometryPlan? geometryPlan;
+
+  /// Same display/debugging-only convention as [promptVersion]/
+  /// [tutorialModel] — never read as client configuration.
+  final String? geometryPlanVersion;
+  final String? geometryModel;
 
   final TutorialGenerationStatus generationStatus;
   final List<TutorialStep> steps;

@@ -1,8 +1,14 @@
 import 'dart:async';
 
+import 'package:facetune/features/analysis/domain/entities/analysis_confidence.dart';
+import 'package:facetune/features/analysis/domain/entities/face_analysis.dart';
+import 'package:facetune/features/analysis/domain/entities/facial_attributes.dart';
+import 'package:facetune/features/analysis/domain/entities/secure_image_validation.dart';
 import 'package:facetune/features/preview/domain/entities/generated_preview.dart';
 import 'package:facetune/features/recommendation/domain/entities/makeup_recommendation.dart';
+import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_face_geometry.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_generation_status.dart';
+import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_geometry_plan.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_instruction.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/personalized_tutorial.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_placement_metadata.dart';
@@ -37,6 +43,58 @@ TutorialSession _session(
   createdAt: DateTime.utc(2026, 8, 14),
   updatedAt: DateTime.utc(2026, 8, 14),
 );
+
+TutorialGeometryPlan _geometryPlan() => TutorialGeometryPlan(
+  steps: [
+    TutorialCategoryGeometryPlan(
+      category: TutorialStepCategory.foundation,
+      placement: 'Broad face coverage',
+      direction: TutorialDirection.outward,
+      intensity: TutorialIntensity.medium,
+      technique: 'Work outward in thin layers.',
+      confidence: 0.9,
+      zones: [
+        TutorialGeometryZone(
+          shape: TutorialGeometryZoneShape.region,
+          points: [
+            TutorialNormalizedPoint(x: 0.2, y: 0.2),
+            TutorialNormalizedPoint(x: 0.8, y: 0.8),
+          ],
+          confidence: 0.85,
+        ),
+      ],
+    ),
+  ],
+);
+
+extension _TutorialSessionGeometryPlanFixture on TutorialSession {
+  /// Test-only reconstruction (no production `copyWith` exists for this
+  /// entity) so fixtures can express "a session that already has a
+  /// geometry plan" without duplicating every other field by hand at each
+  /// call site.
+  TutorialSession copyWithGeometryPlan(TutorialGeometryPlan plan) =>
+      TutorialSession(
+        id: id,
+        userId: userId,
+        sourceMode: sourceMode,
+        sourceAnalysisId: sourceAnalysisId,
+        sourceRecommendationId: sourceRecommendationId,
+        sourceKitResultId: sourceKitResultId,
+        styleCode: styleCode,
+        generationNumber: generationNumber,
+        totalSteps: totalSteps,
+        promptVersion: promptVersion,
+        tutorialModel: tutorialModel,
+        tutorialImageSize: tutorialImageSize,
+        geometryPlan: plan,
+        geometryPlanVersion: 'tutorial_geometry_plan_v1',
+        geometryModel: 'gemini-3.6-flash',
+        generationStatus: generationStatus,
+        steps: steps,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+      );
+}
 
 TutorialStep _step({
   required String id,
@@ -101,10 +159,44 @@ GeneratedPreview _preview() => GeneratedPreview(
   createdAt: DateTime.utc(2026, 8, 14),
 );
 
+FaceAnalysis _faceAnalysis() => FaceAnalysis(
+  id: analysisId,
+  originalImagePath: 'user-1/analyses/$analysisId/original/img.jpg',
+  validation: const SecureImageValidation(
+    faceCount: 1,
+    lightingAcceptable: true,
+    sharpnessAcceptable: true,
+    faceVisible: true,
+    framingAcceptable: true,
+  ),
+  attributes: const FacialAttributes(
+    faceShape: FaceShape.oval,
+    skinTone: SkinTone.medium,
+    undertone: Undertone.warm,
+    eyeShape: EyeShape.almond,
+    lipShape: LipShape.medium,
+    hairColor: HairColor.brown,
+    eyeColor: EyeColor.brown,
+  ),
+  confidence: const AnalysisConfidence(
+    faceShape: 0.9,
+    skinTone: 0.9,
+    undertone: 0.9,
+    eyeShape: 0.9,
+    lipShape: 0.9,
+    hairColor: 0.9,
+    eyeColor: 0.9,
+  ),
+  modelId: 'gemini-3.6-flash',
+  promptVersion: 'face_analysis_v2',
+  createdAt: DateTime.utc(2026, 8, 14),
+);
+
 Future<void> _prepare(TutorialSessionController controller) =>
     controller.prepareForRecommendation(
       recommendation: _recommendation(),
       preview: _preview(),
+      analysis: _faceAnalysis(),
     );
 
 void main() {
@@ -620,6 +712,149 @@ void main() {
       },
     );
   });
+
+  group('activateGuidelines (TF-3)', () {
+    test('is a no-op when no session is loaded', () async {
+      final controller = TutorialSessionController(
+        _FakeRepository(),
+        GetOrCreateTutorialSession(_FakeRepository()),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.activateGuidelines();
+
+      expect(controller.state.status, TutorialSessionStatus.initial);
+    });
+
+    test('is a no-op when the session already has a geometry plan', () async {
+      final session = _session(
+        TutorialGenerationStatus.completed,
+        steps: [_step(id: 'step-1', stepNumber: 1)],
+      ).copyWithGeometryPlan(_geometryPlan());
+      final repository = _StepGenerationRepository(session);
+      final controller = TutorialSessionController(
+        repository,
+        GetOrCreateTutorialSession(repository),
+      );
+      addTearDown(controller.dispose);
+      await _prepare(controller);
+
+      await controller.activateGuidelines();
+
+      expect(repository.geometryPlanCalls, 0);
+    });
+
+    test(
+      'calls planGeometry and merges the updated session into state',
+      () async {
+        final session = _session(
+          TutorialGenerationStatus.completed,
+          steps: [_step(id: 'step-1', stepNumber: 1)],
+        );
+        final planned = session.copyWithGeometryPlan(_geometryPlan());
+        final repository = _StepGenerationRepository(session)
+          ..geometryPlanResult = planned;
+        final controller = TutorialSessionController(
+          repository,
+          GetOrCreateTutorialSession(repository),
+        );
+        addTearDown(controller.dispose);
+        await _prepare(controller);
+
+        await controller.activateGuidelines();
+
+        expect(repository.geometryPlanCalls, 1);
+        expect(controller.state.session?.geometryPlan, isNotNull);
+      },
+    );
+
+    test('a failure is swallowed silently -- the session keeps working exactly '
+        'as it was', () async {
+      final session = _session(
+        TutorialGenerationStatus.completed,
+        steps: [_step(id: 'step-1', stepNumber: 1)],
+      );
+      final repository = _StepGenerationRepository(session)
+        ..geometryPlanFailure = const TutorialFailure(
+          TutorialFailureType.server,
+          "This tutorial's guidelines could not be planned.",
+          retryable: true,
+        );
+      final controller = TutorialSessionController(
+        repository,
+        GetOrCreateTutorialSession(repository),
+      );
+      addTearDown(controller.dispose);
+      await _prepare(controller);
+
+      await controller.activateGuidelines();
+
+      expect(controller.state.status, isNot(TutorialSessionStatus.failed));
+      expect(controller.state.session, isNotNull);
+    });
+
+    test('is a no-op while a step is already generating', () async {
+      final session = _session(
+        TutorialGenerationStatus.generating,
+        steps: [_step(id: 'step-1', stepNumber: 1)],
+      );
+      final repository = _StepGenerationRepository(session)..blocking = true;
+      final controller = TutorialSessionController(
+        repository,
+        GetOrCreateTutorialSession(repository),
+      );
+      addTearDown(controller.dispose);
+      await _prepare(controller);
+
+      unawaited(controller.generateStep('step-1'));
+      await controller.activateGuidelines();
+
+      expect(repository.geometryPlanCalls, 0);
+    });
+
+    test('a stale session created before TF-2/TF-3 existed (no geometry plan, '
+        'no personalizedSpec on any step) triggers planning exactly like a '
+        'brand-new one -- staleness needs no special-casing here', () async {
+      final legacyStep = TutorialStep(
+        id: 'step-1',
+        tutorialSessionId: 'session-1',
+        stepNumber: 1,
+        category: TutorialStepCategory.foundation,
+        title: 'Apply Foundation',
+        instruction: const TutorialInstruction(
+          category: TutorialStepCategory.foundation,
+          placement: 'All over',
+          intensity: 'light',
+          technique: 'Blend with a sponge.',
+        ),
+        // Deliberately no placementMetadata/personalizedSpec -- exactly
+        // what a step planned before TF-1/TF-2/TF-3 existed looks like.
+        generationStatus: TutorialStepGenerationStatus.notStarted,
+        createdAt: DateTime.utc(2026, 8, 14),
+        updatedAt: DateTime.utc(2026, 8, 14),
+      );
+      final staleSession = _session(
+        TutorialGenerationStatus.completed,
+        steps: [legacyStep],
+      );
+      final planned = staleSession.copyWithGeometryPlan(_geometryPlan());
+      final repository = _StepGenerationRepository(staleSession)
+        ..geometryPlanResult = planned;
+      final controller = TutorialSessionController(
+        repository,
+        GetOrCreateTutorialSession(repository),
+      );
+      addTearDown(controller.dispose);
+      await _prepare(controller);
+
+      expect(controller.state.session?.geometryPlan, isNull);
+
+      await controller.activateGuidelines();
+
+      expect(repository.geometryPlanCalls, 1);
+      expect(controller.state.session?.geometryPlan, isNotNull);
+    });
+  });
 }
 
 class _FakeRepository implements TutorialRepository {
@@ -704,6 +939,10 @@ class _FakeRepository implements TutorialRepository {
   Future<TutorialSession> resetForRegeneration({
     required String tutorialSessionId,
   }) => throw UnimplementedError();
+
+  @override
+  Future<TutorialSession> planGeometry({required String tutorialSessionId}) =>
+      throw UnimplementedError();
 }
 
 /// A minimal in-memory "database" backing a successful (or, once
@@ -864,6 +1103,10 @@ class _CreatingRepository implements TutorialRepository {
   Future<TutorialSession> resetForRegeneration({
     required String tutorialSessionId,
   }) => throw UnimplementedError();
+
+  @override
+  Future<TutorialSession> planGeometry({required String tutorialSessionId}) =>
+      throw UnimplementedError();
 }
 
 class _BlockingRepository implements TutorialRepository {
@@ -947,6 +1190,10 @@ class _BlockingRepository implements TutorialRepository {
   Future<TutorialSession> resetForRegeneration({
     required String tutorialSessionId,
   }) => throw UnimplementedError();
+
+  @override
+  Future<TutorialSession> planGeometry({required String tutorialSessionId}) =>
+      throw UnimplementedError();
 }
 
 /// Backs [TutorialSessionController.generateStep]/[TutorialSessionController.regenerate]
@@ -970,6 +1217,10 @@ class _StepGenerationRepository implements TutorialRepository {
   bool resetBlocking = false;
   int resetCalls = 0;
   final List<Completer<TutorialSession>> _pendingReset = [];
+
+  int geometryPlanCalls = 0;
+  TutorialSession? geometryPlanResult;
+  TutorialFailure? geometryPlanFailure;
 
   void completeOldest(TutorialStep step) => _pending.removeAt(0).complete(step);
 
@@ -1093,5 +1344,14 @@ class _StepGenerationRepository implements TutorialRepository {
       updatedAt: session.updatedAt,
     );
     return session;
+  }
+
+  @override
+  Future<TutorialSession> planGeometry({
+    required String tutorialSessionId,
+  }) async {
+    geometryPlanCalls++;
+    if (geometryPlanFailure != null) throw geometryPlanFailure!;
+    return geometryPlanResult ?? session;
   }
 }

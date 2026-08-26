@@ -182,6 +182,7 @@ class PreviewResultPage extends ConsumerWidget {
                       .prepareForRecommendation(
                         recommendation: recommendation,
                         preview: preview,
+                        analysis: analysis,
                       );
                   context.push(AppConstants.tutorialRoute);
                 },

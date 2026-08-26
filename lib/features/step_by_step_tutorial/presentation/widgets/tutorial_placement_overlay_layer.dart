@@ -23,41 +23,175 @@ class PersonalizedTutorialOverlayLayer extends StatelessWidget {
 /// stacked over (a placement image), scaled to fill this widget's box.
 ///
 /// Every [TutorialPlacementOverlay.points] entry is normalized `0.0`–`1.0`
-/// (guide-independent of screen size — see the domain type's doc comment),
-/// so this widget maps them to the actual displayed box size at paint
-/// time via [LayoutBuilder]/[CustomPainter.size] rather than ever reading a
-/// fixed pixel coordinate from the overlay data itself.
-class TutorialPlacementOverlayLayer extends StatelessWidget {
-  const TutorialPlacementOverlayLayer({required this.metadata, super.key});
+/// relative to the *whole source image* — the same convention
+/// `plan-tutorial-geometry` (TF-2) uses when it asks Gemini for coordinates,
+/// and the same convention every other geometry primitive in this feature
+/// already uses. This widget's box, however, is not guaranteed to show the
+/// whole source image: [PlacementResultComparison] displays it with
+/// `BoxFit.cover` inside a fixed-aspect-ratio box, which *crops* the source
+/// image whenever its own aspect ratio differs from the box's (selfies are
+/// only validated to fall within a broad 0.4–2.5 ratio range — see
+/// `LocalImageValidation` — never guaranteed to already match the box).
+/// Passing [imageUrl] (the same URL the sibling Placement image renders)
+/// lets this widget resolve the source image's real intrinsic size and
+/// reproduce the identical `BoxFit.cover` crop math internally, so a
+/// normalized point maps onto the correct *visible* pixel — not onto the
+/// naive assumption that this box's edges are the source image's edges.
+/// [imageUrl] is optional: when it is `null`, or its size has not resolved
+/// yet, this falls back to the previous full-box mapping (only exactly
+/// correct when the source image already matches the box's own aspect
+/// ratio), which is a safe degradation, never a crash or a fabricated
+/// coordinate.
+class TutorialPlacementOverlayLayer extends StatefulWidget {
+  const TutorialPlacementOverlayLayer({
+    required this.metadata,
+    this.imageUrl,
+    super.key,
+  });
 
   final TutorialPlacementMetadata metadata;
+  final String? imageUrl;
+
+  @override
+  State<TutorialPlacementOverlayLayer> createState() =>
+      _TutorialPlacementOverlayLayerState();
+}
+
+class _TutorialPlacementOverlayLayerState
+    extends State<TutorialPlacementOverlayLayer> {
+  ImageStream? _stream;
+  ImageStreamListener? _listener;
+  Size? _imageSize;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveImageSize();
+  }
+
+  @override
+  void didUpdateWidget(TutorialPlacementOverlayLayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.imageUrl != widget.imageUrl) {
+      _imageSize = null;
+      _resolveImageSize();
+    }
+  }
+
+  void _resolveImageSize() {
+    final url = widget.imageUrl;
+    if (url == null) return;
+    final stream = NetworkImage(url).resolve(const ImageConfiguration());
+    final listener = ImageStreamListener(
+      (info, synchronousCall) {
+        if (!mounted) return;
+        setState(() {
+          _imageSize = Size(
+            info.image.width.toDouble(),
+            info.image.height.toDouble(),
+          );
+        });
+      },
+      // A failed resolution (offline, expired signed URL, decode error)
+      // just leaves `_imageSize` null -- the full-box fallback mapping
+      // below, never a crash and never a fabricated size.
+      onError: (error, stackTrace) {},
+    );
+    _detachListener();
+    _stream = stream;
+    _listener = listener;
+    stream.addListener(listener);
+  }
+
+  void _detachListener() {
+    final stream = _stream;
+    final listener = _listener;
+    if (stream != null && listener != null) stream.removeListener(listener);
+  }
+
+  @override
+  void dispose() {
+    _detachListener();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (metadata.overlays.isEmpty) return const SizedBox.shrink();
+    if (widget.metadata.overlays.isEmpty) return const SizedBox.shrink();
     return LayoutBuilder(
       builder: (context, constraints) => CustomPaint(
         size: Size(constraints.maxWidth, constraints.maxHeight),
-        painter: _PlacementOverlayPainter(metadata.overlays),
+        painter: _PlacementOverlayPainter(widget.metadata.overlays, _imageSize),
       ),
     );
   }
 }
 
+/// Reproduces Flutter's own `BoxFit.cover` scale-and-center transform so a
+/// point normalized `0.0`–`1.0` against a source image's *whole* extent
+/// maps onto the correct visible pixel of a [boxSize] box showing that same
+/// source image with `fit: BoxFit.cover` — the exact fit
+/// `PrivateImage`/`Image.network` uses for the tutorial's Placement image.
+///
+/// `BoxFit.cover` scales [imageSize] up uniformly until it fills [boxSize]
+/// on *both* axes, then centers it — cropping whichever axis overflows.
+/// This class computes that same scale/offset once and applies it to every
+/// point, rather than the naive (and only sometimes correct) assumption
+/// that the box's own edges are the source image's edges.
+///
+/// Pure geometry, independent of Flutter's image-loading pipeline — kept
+/// deliberately testable on its own (see
+/// `tutorial_placement_overlay_layer_test.dart`) without needing to mock a
+/// resolved [ImageStream].
+class TutorialCoverTransform {
+  TutorialCoverTransform({required this.imageSize, required this.boxSize})
+    : assert(imageSize.width > 0 && imageSize.height > 0),
+      _scale = math.max(
+        boxSize.width / imageSize.width,
+        boxSize.height / imageSize.height,
+      );
+
+  final Size imageSize;
+  final Size boxSize;
+  final double _scale;
+
+  double get _scaledWidth => imageSize.width * _scale;
+  double get _scaledHeight => imageSize.height * _scale;
+
+  /// How far, in box-local pixels, the scaled image extends past the box on
+  /// each axis. Zero on the axis `BoxFit.cover` fits exactly; negative
+  /// (i.e. an inward offset) on the axis it crops, since the scaled image
+  /// is centered and therefore starts before the box's own origin there.
+  double get offsetX => (boxSize.width - _scaledWidth) / 2;
+  double get offsetY => (boxSize.height - _scaledHeight) / 2;
+
+  /// Maps a point normalized `0.0`–`1.0` against the whole source image to
+  /// its visible position in box-local pixels.
+  Offset map(double normalizedX, double normalizedY) => Offset(
+    offsetX + normalizedX * _scaledWidth,
+    offsetY + normalizedY * _scaledHeight,
+  );
+}
+
 class _PlacementOverlayPainter extends CustomPainter {
-  const _PlacementOverlayPainter(this.overlays);
+  const _PlacementOverlayPainter(this.overlays, this.imageSize);
 
   final List<TutorialPlacementOverlay> overlays;
+
+  /// The source image's real intrinsic size, when known — see the doc
+  /// comment on [TutorialPlacementOverlayLayer.imageUrl] for why this is
+  /// required to map a normalized point correctly whenever the source
+  /// image doesn't already match this painter's own aspect ratio.
+  final Size? imageSize;
 
   static const _defaultZoneColor = AppColors.rose;
   static const _defaultStrokeColor = Colors.white;
 
   @override
   void paint(Canvas canvas, Size size) {
+    final mapPoint = _pointMapper(size);
     for (final overlay in overlays) {
-      final points = overlay.points
-          .map((point) => Offset(point.x * size.width, point.y * size.height))
-          .toList(growable: false);
+      final points = overlay.points.map(mapPoint).toList(growable: false);
       if (points.isEmpty) continue;
       final shortestSide = math.min(size.width, size.height);
       switch (overlay.type) {
@@ -100,6 +234,24 @@ class _PlacementOverlayPainter extends CustomPainter {
           _paintLabel(canvas, points.first, overlay.label, shortestSide);
       }
     }
+  }
+
+  /// Builds the normalized-point-to-canvas-offset function for this paint
+  /// pass. When [imageSize] is unknown, this is the previous naive mapping
+  /// (`point * size`) — only exactly correct when the source image already
+  /// matches [size]'s own aspect ratio. When [imageSize] is known, this
+  /// delegates to [TutorialCoverTransform], which reproduces the identical
+  /// `BoxFit.cover` scale-and-center transform `Image.network(fit:
+  /// BoxFit.cover)` applies, so a point normalized against the *whole*
+  /// source image lands on the same visible pixel the image itself shows
+  /// there — not on a pixel that was cropped away.
+  Offset Function(TutorialPlacementPoint) _pointMapper(Size size) {
+    final source = imageSize;
+    if (source == null || source.width <= 0 || source.height <= 0) {
+      return (point) => Offset(point.x * size.width, point.y * size.height);
+    }
+    final transform = TutorialCoverTransform(imageSize: source, boxSize: size);
+    return (point) => transform.map(point.x, point.y);
   }
 
   /// A zone is a soft circle for one point, a rounded capsule between two
@@ -254,5 +406,6 @@ class _PlacementOverlayPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _PlacementOverlayPainter oldDelegate) =>
-      !identical(oldDelegate.overlays, overlays);
+      !identical(oldDelegate.overlays, overlays) ||
+      oldDelegate.imageSize != imageSize;
 }

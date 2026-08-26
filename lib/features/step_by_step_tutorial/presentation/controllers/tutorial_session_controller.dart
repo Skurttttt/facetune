@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../analysis/domain/entities/face_analysis.dart';
 import '../../../authentication/presentation/controllers/auth_controller.dart';
 import '../../../makeup_kit/domain/entities/kit_generated_preview.dart';
 import '../../../makeup_kit/domain/entities/kit_makeup_recommendation.dart';
@@ -67,14 +69,24 @@ class TutorialSessionController extends StateNotifier<TutorialSessionState> {
   Future<TutorialSession?> Function()? _lastRun;
   String? _sourceOriginalImageUrl;
 
+  /// [analysis] must be the real, already-completed `FaceAnalysis` for
+  /// `recommendation.analysisId` — its `attributes`/`confidence` reach
+  /// `GetOrCreateTutorialSession.forRecommendation` for real per-category
+  /// placement (see `TutorialPlanningEngine.planFromRecommendation`'s doc
+  /// comment). Callers (`PreviewResultPage`) already hold this exact
+  /// object, checked against the same `analysisId`, before offering "How
+  /// to Apply This Look."
   Future<void> prepareForRecommendation({
     required MakeupRecommendation recommendation,
     required GeneratedPreview preview,
+    required FaceAnalysis analysis,
   }) {
     _sourceOriginalImageUrl = preview.originalImageUrl;
     _pendingGenerate = () => _getOrCreate.forRecommendation(
       recommendation: recommendation,
       preview: preview,
+      faceAttributes: analysis.attributes,
+      attributeConfidence: analysis.confidence,
     );
     return _run(
       () => _repository.loadExisting(
@@ -86,14 +98,20 @@ class TutorialSessionController extends StateNotifier<TutorialSessionState> {
     );
   }
 
+  /// See [prepareForRecommendation]'s doc comment for [analysis]'s
+  /// contract; `MakeupKitRecommendationEntryPage` holds the same kind of
+  /// object for kit mode.
   Future<void> prepareForKitRecommendation({
     required KitMakeupRecommendation recommendation,
     required KitGeneratedPreview preview,
+    required FaceAnalysis analysis,
   }) {
     _sourceOriginalImageUrl = preview.originalImageUrl;
     _pendingGenerate = () => _getOrCreate.forKitRecommendation(
       recommendation: recommendation,
       preview: preview,
+      faceAttributes: analysis.attributes,
+      attributeConfidence: analysis.confidence,
     );
     return _run(
       () => _repository.loadExisting(
@@ -123,6 +141,100 @@ class TutorialSessionController extends StateNotifier<TutorialSessionState> {
     final operation = _lastRun;
     if (operation == null) return;
     await _run(operation);
+  }
+
+  /// Triggers TF-2's tutorial-only geometry planning
+  /// (`plan-tutorial-geometry`) for the currently loaded session if it
+  /// doesn't have a geometry plan yet, then reloads it so
+  /// `TutorialGeometryActivation` (already applied inside every
+  /// `TutorialSessionDto.fromRow`) can upgrade each step's placement
+  /// metadata with the result (TF-3 — "Production Personalized Guideline
+  /// Activation").
+  ///
+  /// A no-op — not an error — if: no session is loaded; the session already
+  /// has a geometry plan (avoids a redundant network round-trip — the
+  /// backend itself is also idempotent, see
+  /// `TutorialRepository.planGeometry`'s doc comment); a session-level
+  /// operation is already in flight; or a step is currently generating.
+  /// `TutorialEntryPage` calls this opportunistically every time it renders
+  /// a session with steps, relying entirely on these internal guards rather
+  /// than tracking its own "already tried" state.
+  ///
+  /// Deliberately does not go through [_run]/[_lastRun]: a session that
+  /// already works (guidelines or not) must never be replaced by a
+  /// session-level failure state just because guideline planning itself
+  /// failed. A failure here is swallowed and the viewer simply keeps
+  /// whatever placement metadata it already had — the same "otherwise
+  /// fully functional" principle [generateStep] already applies to a
+  /// single failed step.
+  Future<void> activateGuidelines() async {
+    final session = state.session;
+    if (session == null || session.geometryPlan != null) {
+      debugPrint(
+        '[TutorialGeometry] activateGuidelines skipped: '
+        '${session == null ? "no session loaded" : "geometry plan already present"}',
+      );
+      return;
+    }
+    if (state.status == TutorialSessionStatus.loading ||
+        state.generatingStepId != null) {
+      debugPrint(
+        '[TutorialGeometry] activateGuidelines skipped: '
+        'session=${session.id} busy (status=${state.status}, '
+        'generatingStepId=${state.generatingStepId})',
+      );
+      return;
+    }
+    final operation = ++_operationEpoch;
+    debugPrint(
+      '[TutorialGeometry] activateGuidelines: requesting plan for '
+      'session=${session.id} steps=${session.steps.length}',
+    );
+    try {
+      final updated = await _repository.planGeometry(
+        tutorialSessionId: session.id,
+      );
+      if (!mounted || operation != _operationEpoch) return;
+      _logActivationResult(updated);
+      state = TutorialSessionState(
+        status: TutorialSessionState.statusFor(updated),
+        session: updated,
+        originalImageUrl: _sourceOriginalImageUrl,
+      );
+    } catch (error) {
+      // Best-effort only -- see the doc comment above for why this must
+      // not surface as a session-level failure. Logged (never a message
+      // that could carry a URL/path) purely so a silent failure here is
+      // still observable in the debug console.
+      debugPrint(
+        '[TutorialGeometry] activateGuidelines failed for '
+        'session=${session.id}: ${error.runtimeType}'
+        '${error is TutorialFailure ? ' technicalCode=${error.technicalCode} retryable=${error.retryable}' : ''}',
+      );
+    }
+  }
+
+  /// Diagnostic-only: reports, per step, whether TF-2's geometry plan
+  /// covered its category and whether that produced real overlay
+  /// primitives (TF-3's [TutorialGeometryActivation], already applied
+  /// inside `TutorialSessionDto.fromRow` by the time [session] reaches
+  /// here). Never logs a URL, storage path, or other identifying value.
+  void _logActivationResult(TutorialSession session) {
+    final plan = session.geometryPlan;
+    debugPrint(
+      '[TutorialGeometry] plan for session=${session.id}: '
+      '${plan == null ? "none (not planned)" : "categories=${plan.steps.length}"}',
+    );
+    for (final step in session.steps) {
+      final categoryPlan = plan?.forCategory(step.category);
+      final overlayCount = step.placementMetadata?.overlays.length ?? 0;
+      debugPrint(
+        '[TutorialGeometry]   step=${step.stepNumber} '
+        'category=${step.category.code} '
+        'planConfidence=${categoryPlan?.confidence ?? "n/a"} '
+        'overlays=$overlayCount',
+      );
+    }
   }
 
   /// Generates one missing step's Result image via the secure backend

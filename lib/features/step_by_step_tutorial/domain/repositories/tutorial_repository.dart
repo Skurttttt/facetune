@@ -127,4 +127,20 @@ abstract interface class TutorialRepository {
   Future<TutorialSession> resetForRegeneration({
     required String tutorialSessionId,
   });
+
+  /// Calls the secure backend (`plan-tutorial-geometry`, TF-2) to plan
+  /// [tutorialSessionId]'s tutorial-only Gemini geometry & placement plan,
+  /// then returns the updated session with fresh signed URLs — its steps
+  /// already carry [TutorialGeometryActivation]'s projection of that plan
+  /// (applied inside `TutorialSessionDto.fromRow`, the same as every other
+  /// method here).
+  ///
+  /// The backend already no-ops safely and cheaply for a session that
+  /// already has a plan (it returns the existing row without calling
+  /// Gemini again), so this is not itself unsafe to call more than once —
+  /// but callers should still avoid calling it for a session that already
+  /// has [TutorialSession.geometryPlan], as a network-cost optimization
+  /// (mirrors [generateStepResult]'s identical convention), not a
+  /// correctness requirement.
+  Future<TutorialSession> planGeometry({required String tutorialSessionId});
 }

@@ -1,13 +1,52 @@
+import 'package:facetune/features/analysis/domain/entities/analysis_confidence.dart';
+import 'package:facetune/features/analysis/domain/entities/facial_attributes.dart';
 import 'package:facetune/features/makeup_kit/domain/entities/kit_generated_preview.dart';
 import 'package:facetune/features/makeup_kit/domain/entities/kit_makeup_recommendation.dart';
 import 'package:facetune/features/preview/domain/entities/generated_preview.dart';
 import 'package:facetune/features/recommendation/domain/entities/makeup_recommendation.dart';
+import 'package:facetune/features/step_by_step_tutorial/domain/entities/personalized_tutorial.dart';
+import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_instruction.dart';
+import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_plan.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_step_category.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/services/tutorial_planning_engine.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _recommendationId = 'recommendation-1';
 const _analysisId = 'analysis-1';
+
+/// Real, already-analyzed face attributes — the same shape
+/// `PreviewResultPage`/`MakeupKitRecommendationEntryPage` already hold via
+/// `FaceAnalysis.attributes` for this exact `analysisId` (TF-1 wires this
+/// through to `PersonalizedTutorialPlacementRules`, which cannot run
+/// without it).
+FacialAttributes _faceAttributes({
+  FaceShape faceShape = FaceShape.oval,
+  SkinTone skinTone = SkinTone.medium,
+  Undertone undertone = Undertone.warm,
+  EyeShape eyeShape = EyeShape.almond,
+  LipShape lipShape = LipShape.medium,
+  HairColor hairColor = HairColor.brown,
+  EyeColor eyeColor = EyeColor.brown,
+}) => FacialAttributes(
+  faceShape: faceShape,
+  skinTone: skinTone,
+  undertone: undertone,
+  eyeShape: eyeShape,
+  lipShape: lipShape,
+  hairColor: hairColor,
+  eyeColor: eyeColor,
+);
+
+/// Matches `_faceAttributes()` — `FaceAnalysis.confidence`'s real shape.
+AnalysisConfidence _confidence({double value = 0.9}) => AnalysisConfidence(
+  faceShape: value,
+  skinTone: value,
+  undertone: value,
+  eyeShape: value,
+  lipShape: value,
+  hairColor: value,
+  eyeColor: value,
+);
 
 MakeupRecommendationItem _item({
   String name = 'Warm peach',
@@ -158,6 +197,8 @@ void main() {
           'lipGloss': _item(intensity: 'not applicable'),
         }),
         preview: _preview(),
+        faceAttributes: _faceAttributes(),
+        attributeConfidence: _confidence(),
       );
 
       final categories = plan.steps.map((step) => step.category).toList();
@@ -186,6 +227,8 @@ void main() {
         final plan = TutorialPlanningEngine.planFromRecommendation(
           recommendation: _recommendation(_fullGlamItems()),
           preview: _preview(),
+          faceAttributes: _faceAttributes(),
+          attributeConfidence: _confidence(),
         );
 
         expect(plan.totalSteps, 11);
@@ -198,6 +241,8 @@ void main() {
       final plan = TutorialPlanningEngine.planFromRecommendation(
         recommendation: _recommendation(_fullGlamItems()),
         preview: _preview(),
+        faceAttributes: _faceAttributes(),
+        attributeConfidence: _confidence(),
       );
 
       final blush = plan.steps.firstWhere(
@@ -228,6 +273,8 @@ void main() {
         final plan = TutorialPlanningEngine.planFromRecommendation(
           recommendation: _recommendation(scrambled),
           preview: _preview(),
+          faceAttributes: _faceAttributes(),
+          attributeConfidence: _confidence(),
         );
 
         expect(plan.steps.map((step) => step.category).toList(), [
@@ -266,6 +313,8 @@ void main() {
             ],
           ),
           preview: _kitPreview(),
+          faceAttributes: _faceAttributes(),
+          attributeConfidence: _confidence(),
         );
 
         expect(plan.steps.map((step) => step.category).toList(), [
@@ -294,6 +343,8 @@ void main() {
           ],
         ),
         preview: _kitPreview(),
+        faceAttributes: _faceAttributes(),
+        attributeConfidence: _confidence(),
       );
 
       // 3 owned-product steps + 1 final step, not 10 + 1.
@@ -316,6 +367,8 @@ void main() {
           snapshots: [_snapshot(productId: 'p1', category: 'lipstick')],
         ),
         preview: _kitPreview(),
+        faceAttributes: _faceAttributes(),
+        attributeConfidence: _confidence(),
       );
 
       expect(plan.totalSteps, 2);
@@ -351,6 +404,8 @@ void main() {
           ],
         ),
         preview: _kitPreview(),
+        faceAttributes: _faceAttributes(),
+        attributeConfidence: _confidence(),
       );
 
       final step = plan.steps.first;
@@ -372,6 +427,8 @@ void main() {
           snapshots: [_snapshot(productId: 'p1', category: 'lipstick')],
         ),
         preview: _kitPreview(),
+        faceAttributes: _faceAttributes(),
+        attributeConfidence: _confidence(),
       );
 
       final categories = plan.steps.map((step) => step.category);
@@ -387,6 +444,8 @@ void main() {
       final plan = TutorialPlanningEngine.planFromRecommendation(
         recommendation: _recommendation({'foundation': _item()}),
         preview: preview,
+        faceAttributes: _faceAttributes(),
+        attributeConfidence: _confidence(),
       );
 
       expect(plan.reusesFinalPreview, isTrue);
@@ -415,6 +474,8 @@ void main() {
             'blush': _item(intensity: 'skip'),
           }),
           preview: _preview(),
+          faceAttributes: _faceAttributes(),
+          attributeConfidence: _confidence(),
         );
 
         expect(plan.steps, isEmpty);
@@ -431,6 +492,8 @@ void main() {
           snapshots: [_snapshot(productId: 'p1', category: 'foundation')],
         ),
         preview: kitPreview,
+        faceAttributes: _faceAttributes(),
+        attributeConfidence: _confidence(),
       );
 
       expect(plan.reusesFinalPreview, isTrue);
@@ -457,6 +520,8 @@ void main() {
           snapshots: [_snapshot(productId: 'p1', category: 'blush')],
         ),
         preview: _kitPreview(),
+        faceAttributes: _faceAttributes(),
+        attributeConfidence: _confidence(),
       );
 
       final step = plan.steps.first;
@@ -473,6 +538,8 @@ void main() {
             'blush': _item(finish: 'satin', intensity: 'light'),
           }),
           preview: _preview(),
+          faceAttributes: _faceAttributes(),
+          attributeConfidence: _confidence(),
         );
 
         final step = plan.steps.first;
@@ -496,6 +563,8 @@ void main() {
           ],
         ),
         preview: _kitPreview(),
+        faceAttributes: _faceAttributes(),
+        attributeConfidence: _confidence(),
       );
 
       expect(
@@ -517,6 +586,8 @@ void main() {
           ],
         ),
         preview: _kitPreview(),
+        faceAttributes: _faceAttributes(),
+        attributeConfidence: _confidence(),
       );
 
       expect(
@@ -539,6 +610,8 @@ void main() {
           ],
         ),
         preview: _kitPreview(),
+        faceAttributes: _faceAttributes(),
+        attributeConfidence: _confidence(),
       );
 
       for (final step in plan.steps) {
@@ -552,11 +625,174 @@ void main() {
       final plan = TutorialPlanningEngine.planFromRecommendation(
         recommendation: _recommendation(_fullGlamItems()),
         preview: _preview(),
+        faceAttributes: _faceAttributes(),
+        attributeConfidence: _confidence(),
       );
 
       for (final step in plan.steps) {
         expect(step.instruction.category, step.category, reason: step.title);
       }
+    });
+  });
+
+  group('TF-1 — production planner invokes the personalized pipeline', () {
+    test('every non-final step carries a real personalized spec and placement '
+        'metadata, keyed to the step\'s own category', () {
+      final plan = TutorialPlanningEngine.planFromRecommendation(
+        recommendation: _recommendation(_fullGlamItems()),
+        preview: _preview(),
+        faceAttributes: _faceAttributes(),
+        attributeConfidence: _confidence(),
+      );
+
+      for (final step in plan.steps) {
+        if (step.category == TutorialStepCategory.finalLook) continue;
+        final spec = step.personalizedSpec;
+        expect(spec, isNotNull, reason: step.title);
+        expect(spec!.stepNumber, step.stepNumber, reason: step.title);
+        expect(spec.what.category, step.category, reason: step.title);
+        expect(step.placementMetadata, isNotNull, reason: step.title);
+        // The overlay *structure* is real (TF-1), but its overlay list is
+        // legitimately empty for every step: `PersonalizedTutorialOverlayMetadataRenderer`
+        // only emits a primitive for a region that has a matching
+        // `geometryAnchor`, and no anchors exist yet because TF-2 (the
+        // tutorial-only geometry planner) has not been built — see the
+        // "no fake geometry fallback" group below. This is the honest
+        // state, not a bug: visible guideline *drawing* is TF-2/TF-3's
+        // job, not TF-1's.
+        expect(
+          step.placementMetadata!.overlays,
+          isEmpty,
+          reason:
+              '${step.title}: overlays must stay empty rather than '
+              'fabricated while no real geometry anchors exist',
+        );
+      }
+    });
+
+    test('kit mode also invokes the personalized pipeline, using the owned '
+        'snapshot as the spec\'s product facts', () {
+      final plan = TutorialPlanningEngine.planFromKitRecommendation(
+        recommendation: _kitRecommendation(
+          selections: [_selection(productId: 'p1', category: 'lipstick')],
+          snapshots: [
+            _snapshot(
+              productId: 'p1',
+              category: 'lipstick',
+              productName: 'My Everyday Lipstick',
+              colorLabel: 'Rosewood',
+            ),
+          ],
+        ),
+        preview: _kitPreview(),
+        faceAttributes: _faceAttributes(),
+        attributeConfidence: _confidence(),
+      );
+
+      final lipstickStep = plan.steps.first;
+      expect(lipstickStep.personalizedSpec, isNotNull);
+      expect(lipstickStep.personalizedSpec!.what.kitSnapshot?.productId, 'p1');
+      expect(
+        lipstickStep.personalizedSpec!.what.productName,
+        'My Everyday Lipstick',
+      );
+    });
+
+    test('the final "complete look" step never gets a personalized spec — it '
+        'is a reused image reference, not an application placement step', () {
+      final plan = TutorialPlanningEngine.planFromRecommendation(
+        recommendation: _recommendation({'foundation': _item()}),
+        preview: _preview(),
+        faceAttributes: _faceAttributes(),
+        attributeConfidence: _confidence(),
+      );
+
+      expect(plan.steps.last.category, TutorialStepCategory.finalLook);
+      expect(plan.steps.last.personalizedSpec, isNull);
+      expect(plan.steps.last.placementMetadata, isNull);
+    });
+
+    test('an entirely inapplicable recommendation never calls the personalized '
+        'pipeline (no steps to build a spec for)', () {
+      // Regression guard: `PersonalizedTutorialInput` throws on an empty
+      // `recommendations` list, so the empty-plan early return must stay
+      // ahead of the pipeline call — this must not throw.
+      final plan = TutorialPlanningEngine.planFromRecommendation(
+        recommendation: _recommendation({
+          'foundation': _item(intensity: 'none'),
+        }),
+        preview: _preview(),
+        faceAttributes: _faceAttributes(),
+        attributeConfidence: _confidence(),
+      );
+
+      expect(plan.steps, isEmpty);
+    });
+  });
+
+  group('TF-1 — no fake geometry fallback', () {
+    test('geometry confidence is honestly unavailable and no anchors are '
+        'fabricated, since TF-2\'s geometry planner does not exist yet', () {
+      final plan = TutorialPlanningEngine.planFromRecommendation(
+        recommendation: _recommendation(_fullGlamItems()),
+        preview: _preview(),
+        faceAttributes: _faceAttributes(),
+        attributeConfidence: _confidence(),
+      );
+
+      for (final step in plan.steps) {
+        final spec = step.personalizedSpec;
+        if (spec == null) continue;
+        expect(
+          spec.where.geometryConfidence,
+          TutorialPlacementConfidence.unavailable,
+          reason:
+              '${step.title}: geometry must be an explicit, honest '
+              'dependency gap, never a guessed confidence level',
+        );
+        expect(
+          spec.where.geometryAnchors,
+          isEmpty,
+          reason:
+              '${step.title}: no anchor points may be invented while '
+              'TutorialFaceGeometryProvider has no implementation',
+        );
+      }
+    });
+  });
+
+  group('TF-1 — stale/legacy input remains detectable', () {
+    test('a freshly planned step always carries a personalized spec, unlike a '
+        'pre-TF-1 legacy step, which stays honestly distinguishable', () {
+      final plan = TutorialPlanningEngine.planFromRecommendation(
+        recommendation: _recommendation({'foundation': _item()}),
+        preview: _preview(),
+        faceAttributes: _faceAttributes(),
+        attributeConfidence: _confidence(),
+      );
+      final freshStep = plan.steps.first;
+      expect(freshStep.personalizedSpec, isNotNull);
+
+      // This is exactly the shape production created before this phase
+      // (and what a stale persisted `tutorial_steps` row still looks
+      // like today): a step with no personalized spec at all. Nothing
+      // in this phase backfills, coerces, or hides that gap — the field
+      // stays nullable and a legacy/stale step remains identifiable by
+      // its absence, which is what TF-4's stale-session handling acts
+      // on.
+      const legacyStep = PlannedTutorialStep(
+        stepNumber: 1,
+        category: TutorialStepCategory.foundation,
+        title: 'Foundation',
+        instruction: TutorialInstruction(
+          category: TutorialStepCategory.foundation,
+          placement: 'All over',
+          intensity: 'light',
+          technique: 'Blend with a sponge.',
+        ),
+      );
+      expect(legacyStep.personalizedSpec, isNull);
+      expect(legacyStep.placementMetadata, isNull);
     });
   });
 }

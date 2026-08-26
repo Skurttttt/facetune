@@ -1,7 +1,60 @@
 import 'package:facetune/features/step_by_step_tutorial/data/models/tutorial_session_dto.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_generation_status.dart';
+import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_instruction.dart';
 import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_source_mode.dart';
+import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_step.dart';
+import 'package:facetune/features/step_by_step_tutorial/domain/entities/tutorial_step_category.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+Map<String, Object?> _geometryStep({
+  String category = 'blush',
+  double confidence = 0.9,
+  List<Map<String, Object?>> zones = const [],
+}) => {
+  'category': category,
+  'placement': 'Sweep across the upper cheekbones.',
+  'direction': 'outward',
+  'intensity': 'medium',
+  'technique': 'Blend with a fluffy brush.',
+  'confidence': confidence,
+  'colorHex': null,
+  'finish': null,
+  'zones': zones.isNotEmpty
+      ? zones
+      : [
+          {
+            'shape': 'polygon',
+            'points': [
+              {'x': 0.3, 'y': 0.5},
+              {'x': 0.35, 'y': 0.55},
+              {'x': 0.32, 'y': 0.6},
+            ],
+            'confidence': confidence,
+          },
+        ],
+  'paths': const [],
+  'arrows': const [],
+};
+
+TutorialStep _step({
+  String id = 'step-1',
+  TutorialStepCategory category = TutorialStepCategory.blush,
+}) => TutorialStep(
+  id: id,
+  tutorialSessionId: 'session-1',
+  stepNumber: 1,
+  category: category,
+  title: 'Blush',
+  instruction: TutorialInstruction(
+    category: category,
+    placement: 'Upper cheekbones',
+    intensity: 'light',
+    technique: 'Blend upward.',
+  ),
+  generationStatus: TutorialStepGenerationStatus.notStarted,
+  createdAt: DateTime.utc(2026, 8, 14),
+  updatedAt: DateTime.utc(2026, 8, 14),
+);
 
 Map<String, Object?> _validRow({
   String sourceMode = 'standard_recommendation',
@@ -93,6 +146,79 @@ void main() {
       final row = _validRow()..remove('makeup_style');
       expect(
         () => TutorialSessionDto.fromRow(row, steps: const []),
+        throwsFormatException,
+      );
+    });
+
+    test('geometryPlan is null when geometry_plan_json is absent', () {
+      final session = TutorialSessionDto.fromRow(_validRow(), steps: const []);
+      expect(session.geometryPlan, isNull);
+    });
+
+    test('geometryPlan is null while a claim is only mid-flight, not yet a '
+        'real plan', () {
+      final row = _validRow();
+      row['geometry_plan_json'] = {'planning': true};
+      final session = TutorialSessionDto.fromRow(row, steps: const []);
+      expect(session.geometryPlan, isNull);
+    });
+
+    test('a real geometry_plan_json is parsed and applied to matching steps '
+        '(TF-3 activation, applied automatically inside fromRow)', () {
+      final row = _validRow();
+      row['geometry_plan_json'] = {
+        'steps': [_geometryStep(category: 'blush')],
+      };
+      row['geometry_plan_version'] = 'tutorial_geometry_plan_v1';
+      row['geometry_model'] = 'gemini-3.6-flash';
+
+      final session = TutorialSessionDto.fromRow(
+        row,
+        steps: [_step(category: TutorialStepCategory.blush)],
+      );
+
+      expect(session.geometryPlan, isNotNull);
+      expect(session.geometryPlan!.steps, hasLength(1));
+      expect(session.geometryPlanVersion, 'tutorial_geometry_plan_v1');
+      expect(session.geometryModel, 'gemini-3.6-flash');
+      // Activation already ran -- the step's placement metadata now
+      // carries the real overlay, not the empty one it started with.
+      expect(session.steps.single.placementMetadata!.overlays, isNotEmpty);
+    });
+
+    test('a step whose category the plan does not cover is left untouched', () {
+      final row = _validRow();
+      row['geometry_plan_json'] = {
+        'steps': [_geometryStep(category: 'blush')],
+      };
+
+      final session = TutorialSessionDto.fromRow(
+        row,
+        steps: [_step(category: TutorialStepCategory.lipstick)],
+      );
+
+      expect(session.steps.single.placementMetadata, isNull);
+    });
+  });
+
+  group('fromResponse', () {
+    test('unwraps the {session: ...} envelope and delegates to fromRow', () {
+      final session = TutorialSessionDto.fromResponse({
+        'session': _validRow(),
+      }, steps: const []);
+      expect(session.id, 'session-1');
+    });
+
+    test('rejects a payload missing the session key', () {
+      expect(
+        () => TutorialSessionDto.fromResponse({}, steps: const []),
+        throwsFormatException,
+      );
+    });
+
+    test('rejects a non-object payload', () {
+      expect(
+        () => TutorialSessionDto.fromResponse('not an object', steps: const []),
         throwsFormatException,
       );
     });

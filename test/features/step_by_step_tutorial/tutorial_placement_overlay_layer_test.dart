@@ -192,4 +192,79 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  group('TutorialCoverTransform (runtime bug fix)', () {
+    test('maps points identically to the naive box-size mapping when the '
+        'source image already matches the box aspect ratio', () {
+      final transform = TutorialCoverTransform(
+        imageSize: const Size(900, 1200), // 3:4, same as the box below
+        boxSize: const Size(300, 400),
+      );
+
+      final center = transform.map(0.5, 0.5);
+      expect(center.dx, closeTo(150, 0.001));
+      expect(center.dy, closeTo(200, 0.001));
+      expect(transform.offsetX, closeTo(0, 0.001));
+      expect(transform.offsetY, closeTo(0, 0.001));
+    });
+
+    test('crops the top/bottom of a much taller source image, matching '
+        'BoxFit.cover exactly -- normalized points near the top of a raw '
+        'phone photo can legitimately map off-screen', () {
+      // A real phone photo (e.g. 1080x2400-class) forced into the
+      // tutorial's fixed 3:4 comparison box: the box's width fits
+      // exactly, but the image is far taller than 3:4, so BoxFit.cover
+      // crops its top and bottom, centered.
+      final transform = TutorialCoverTransform(
+        imageSize: const Size(900, 2000),
+        boxSize: const Size(300, 400),
+      );
+
+      // Width axis fits with no crop.
+      expect(transform.offsetX, closeTo(0, 0.001));
+      // Height axis is cropped -- the scaled image is taller than the
+      // box, so it starts above the box's own origin (negative offset).
+      expect(transform.offsetY, lessThan(0));
+
+      // The exact center of the source image must still land on the
+      // exact center of the box, regardless of cropping.
+      final center = transform.map(0.5, 0.5);
+      expect(center.dx, closeTo(150, 0.001));
+      expect(center.dy, closeTo(200, 0.001));
+
+      // A point near the very top of the source image (e.g. hairline/
+      // forehead) legitimately falls outside the visible box -- this is
+      // real cropping, not a bug in the transform itself. Before this
+      // fix, the naive mapping would have placed this same point at
+      // `0.1 * 400 = 40` (visible, but on the wrong pixel of the actual
+      // displayed image).
+      final nearTop = transform.map(0.5, 0.1);
+      expect(nearTop.dy, lessThan(0));
+    });
+
+    test('crops the left/right of a much wider source image', () {
+      final transform = TutorialCoverTransform(
+        imageSize: const Size(2000, 900),
+        boxSize: const Size(300, 400),
+      );
+
+      expect(transform.offsetY, closeTo(0, 0.001));
+      expect(transform.offsetX, lessThan(0));
+    });
+
+    test('a point at the exact edge of a cropped axis lands at the box edge, '
+        'not fabricated', () {
+      final transform = TutorialCoverTransform(
+        imageSize: const Size(900, 2000),
+        boxSize: const Size(300, 400),
+      );
+      // The visible fraction of the tall image's height is
+      // boxHeight / scaledHeight = 400 / (2000 * (300/900)) = 0.6, so the
+      // visible vertical range is centered: [0.2, 0.8].
+      final top = transform.map(0.5, 0.2);
+      final bottom = transform.map(0.5, 0.8);
+      expect(top.dy, closeTo(0, 0.01));
+      expect(bottom.dy, closeTo(400, 0.01));
+    });
+  });
 }

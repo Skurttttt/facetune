@@ -89,4 +89,8 @@ class UnavailableTutorialRepository implements TutorialRepository {
   Future<TutorialSession> resetForRegeneration({
     required String tutorialSessionId,
   }) => throw _failure;
+
+  @override
+  Future<TutorialSession> planGeometry({required String tutorialSessionId}) =>
+      throw _failure;
 }

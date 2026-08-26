@@ -1,3 +1,5 @@
+import 'package:facetune/features/analysis/domain/entities/analysis_confidence.dart';
+import 'package:facetune/features/analysis/domain/entities/facial_attributes.dart';
 import 'package:facetune/features/makeup_kit/domain/entities/kit_generated_preview.dart';
 import 'package:facetune/features/makeup_kit/domain/entities/kit_makeup_recommendation.dart';
 import 'package:facetune/features/preview/domain/entities/generated_preview.dart';
@@ -18,6 +20,30 @@ import 'package:flutter_test/flutter_test.dart';
 const _analysisId = 'analysis-1';
 const _recommendationId = 'recommendation-1';
 const _kitRecommendationId = 'kit-recommendation-1';
+
+/// Real, already-analyzed face attributes — TF-1 requires
+/// `GetOrCreateTutorialSession.forRecommendation`/`forKitRecommendation` to
+/// receive these and thread them into `TutorialPlanningEngine`, rather than
+/// planning without them.
+const _faceAttributes = FacialAttributes(
+  faceShape: FaceShape.oval,
+  skinTone: SkinTone.medium,
+  undertone: Undertone.warm,
+  eyeShape: EyeShape.almond,
+  lipShape: LipShape.medium,
+  hairColor: HairColor.brown,
+  eyeColor: EyeColor.brown,
+);
+
+const _attributeConfidence = AnalysisConfidence(
+  faceShape: 0.9,
+  skinTone: 0.9,
+  undertone: 0.9,
+  eyeShape: 0.9,
+  lipShape: 0.9,
+  hairColor: 0.9,
+  eyeColor: 0.9,
+);
 
 MakeupRecommendation _recommendation({bool applicable = true}) =>
     MakeupRecommendation(
@@ -112,6 +138,28 @@ KitGeneratedPreview _kitPreview() => KitGeneratedPreview(
   createdAt: DateTime.utc(2026, 8, 14),
 );
 
+/// Thin wrapper so every call site below stays close to its pre-TF-1 shape
+/// while still passing the two new required personalization inputs.
+Future<TutorialSession> _forRecommendation(
+  GetOrCreateTutorialSession usecase, {
+  MakeupRecommendation? recommendation,
+  GeneratedPreview? preview,
+}) => usecase.forRecommendation(
+  recommendation: recommendation ?? _recommendation(),
+  preview: preview ?? _preview(),
+  faceAttributes: _faceAttributes,
+  attributeConfidence: _attributeConfidence,
+);
+
+Future<TutorialSession> _forKitRecommendation(
+  GetOrCreateTutorialSession usecase,
+) => usecase.forKitRecommendation(
+  recommendation: _kitRecommendation(),
+  preview: _kitPreview(),
+  faceAttributes: _faceAttributes,
+  attributeConfidence: _attributeConfidence,
+);
+
 void main() {
   group('reopening an existing valid tutorial', () {
     test('resumes it instead of creating a new one', () async {
@@ -122,10 +170,7 @@ void main() {
       final repository = _RecordingRepository(existingBeforeCreate: existing);
       final usecase = GetOrCreateTutorialSession(repository);
 
-      final result = await usecase.forRecommendation(
-        recommendation: _recommendation(),
-        preview: _preview(),
-      );
+      final result = await _forRecommendation(usecase);
 
       expect(result.id, 'existing-session');
       expect(repository.createSessionCalls, 0);
@@ -164,10 +209,7 @@ void main() {
       );
       final usecase = GetOrCreateTutorialSession(repository);
 
-      final session = await usecase.forRecommendation(
-        recommendation: _recommendation(),
-        preview: _preview(),
-      );
+      final session = await _forRecommendation(usecase);
 
       // The already-existing session is reused, not recreated.
       expect(repository.createSessionCalls, 0);
@@ -188,10 +230,7 @@ void main() {
         final repository = _RecordingRepository();
         final usecase = GetOrCreateTutorialSession(repository);
 
-        final session = await usecase.forRecommendation(
-          recommendation: _recommendation(),
-          preview: _preview(),
-        );
+        final session = await _forRecommendation(usecase);
 
         expect(repository.createSessionCalls, 1);
         expect(repository.createStepTitles, [
@@ -210,10 +249,7 @@ void main() {
         final repository = _RecordingRepository();
         final usecase = GetOrCreateTutorialSession(repository);
 
-        await usecase.forRecommendation(
-          recommendation: _recommendation(),
-          preview: _preview(),
-        );
+        await _forRecommendation(usecase);
 
         expect(repository.lastCreateSessionPromptVersion, 'tutorial_plan_v1');
       },
@@ -225,10 +261,7 @@ void main() {
         final repository = _RecordingRepository();
         final usecase = GetOrCreateTutorialSession(repository);
 
-        await usecase.forRecommendation(
-          recommendation: _recommendation(),
-          preview: _preview(),
-        );
+        await _forRecommendation(usecase);
 
         expect(repository.updateStepImagesCalls, hasLength(1));
         final call = repository.updateStepImagesCalls.single;
@@ -248,12 +281,30 @@ void main() {
       final repository = _RecordingRepository();
       final usecase = GetOrCreateTutorialSession(repository);
 
-      await usecase.forRecommendation(
-        recommendation: _recommendation(),
-        preview: _preview(),
-      );
+      await _forRecommendation(usecase);
 
       expect(repository.updatedSessionStatus, TutorialGenerationStatus.queued);
+    });
+
+    test('production planner invokes the personalized pipeline (TF-1) — every '
+        'created step carries placement metadata, unlike the pre-TF-1 '
+        'always-null value', () async {
+      final repository = _RecordingRepository();
+      final usecase = GetOrCreateTutorialSession(repository);
+
+      final session = await _forRecommendation(usecase);
+
+      for (final step in session.steps) {
+        if (step.category == TutorialStepCategory.finalLook) continue;
+        // The pipeline was genuinely invoked (a real
+        // `TutorialPlacementMetadata` object reaches `createStep`,
+        // instead of the pre-TF-1 hardcoded `null`) — its `overlays`
+        // list is legitimately empty until TF-2 supplies real geometry
+        // anchors, see `tutorial_planning_engine_test.dart`'s "no fake
+        // geometry fallback" group for why that's correct, not missing
+        // coverage.
+        expect(step.placementMetadata, isNotNull, reason: step.title);
+      }
     });
   });
 
@@ -265,10 +316,7 @@ void main() {
           ..simulateDuplicateSessionRaceOnCreate = true;
         final usecase = GetOrCreateTutorialSession(repository);
 
-        final session = await usecase.forRecommendation(
-          recommendation: _recommendation(),
-          preview: _preview(),
-        );
+        final session = await _forRecommendation(usecase);
 
         // The race "winner" is simulated as already having a persisted
         // session by the time our createSession call is rejected.
@@ -287,10 +335,7 @@ void main() {
         final usecase = GetOrCreateTutorialSession(repository);
 
         await expectLater(
-          usecase.forRecommendation(
-            recommendation: _recommendation(),
-            preview: _preview(),
-          ),
+          _forRecommendation(usecase),
           throwsA(
             isA<TutorialFailure>().having(
               (failure) => failure.type,
@@ -310,9 +355,9 @@ void main() {
       final usecase = GetOrCreateTutorialSession(repository);
 
       await expectLater(
-        usecase.forRecommendation(
+        _forRecommendation(
+          usecase,
           recommendation: _recommendation(applicable: false),
-          preview: _preview(),
         ),
         throwsA(isA<TutorialFailure>()),
       );
@@ -327,10 +372,7 @@ void main() {
         final repository = _RecordingRepository();
         final usecase = GetOrCreateTutorialSession(repository);
 
-        final session = await usecase.forKitRecommendation(
-          recommendation: _kitRecommendation(),
-          preview: _kitPreview(),
-        );
+        final session = await _forKitRecommendation(usecase);
 
         expect(repository.createStepTitles, ['Lipstick', 'Final Look']);
         expect(session.steps, hasLength(2));
@@ -348,10 +390,7 @@ void main() {
       final repository = _RecordingRepository(existingBeforeCreate: existing);
       final usecase = GetOrCreateTutorialSession(repository);
 
-      final result = await usecase.forKitRecommendation(
-        recommendation: _kitRecommendation(),
-        preview: _kitPreview(),
-      );
+      final result = await _forKitRecommendation(usecase);
 
       expect(result.id, 'existing-kit-session');
       expect(repository.createSessionCalls, 0);
@@ -643,6 +682,10 @@ class _RecordingRepository implements TutorialRepository {
   Future<TutorialSession> resetForRegeneration({
     required String tutorialSessionId,
   }) => throw UnimplementedError();
+
+  @override
+  Future<TutorialSession> planGeometry({required String tutorialSessionId}) =>
+      throw UnimplementedError();
 
   @override
   Future<TutorialSession> updateSessionStatus({

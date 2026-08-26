@@ -1,11 +1,16 @@
+import '../../../analysis/domain/entities/analysis_confidence.dart';
+import '../../../analysis/domain/entities/facial_attributes.dart';
 import '../../../makeup_kit/domain/entities/kit_generated_preview.dart';
 import '../../../makeup_kit/domain/entities/kit_makeup_recommendation.dart';
 import '../../../makeup_kit/domain/entities/makeup_kit_category.dart';
 import '../../../preview/domain/entities/generated_preview.dart';
 import '../../../recommendation/domain/entities/makeup_recommendation.dart';
+import '../entities/personalized_tutorial.dart';
 import '../entities/tutorial_instruction.dart';
 import '../entities/tutorial_plan.dart';
+import '../entities/tutorial_source_mode.dart';
 import '../entities/tutorial_step_category.dart';
+import 'personalized_tutorial_metadata_pipeline.dart';
 
 /// Turns an already-generated look — a standard [MakeupRecommendation] or a
 /// My Makeup Kit [KitMakeupRecommendation] — into an ordered, dynamically
@@ -100,11 +105,23 @@ abstract final class TutorialPlanningEngine {
     '',
   };
 
+  /// [faceAttributes]/[attributeConfidence] are the same real, already-
+  /// analyzed facial attributes `PreviewResultPage`/
+  /// `MakeupKitRecommendationEntryPage` already hold for this exact
+  /// `recommendation.analysisId` (see `FaceAnalysis.attributes`/
+  /// `.confidence`) — required, not optional, because
+  /// `PersonalizedTutorialPlacementRules` (MO-2) cannot derive real
+  /// per-category placement without them, and this engine must not
+  /// invent semantic attributes it wasn't given.
   static TutorialPlan planFromRecommendation({
     required MakeupRecommendation recommendation,
     required GeneratedPreview preview,
+    required FacialAttributes faceAttributes,
+    required AnalysisConfidence attributeConfidence,
   }) {
     final byCategory = <TutorialStepCategory, TutorialInstruction>{};
+    final recommendationData =
+        <TutorialStepCategory, TutorialRecommendationData>{};
     for (final entry in recommendation.items.entries) {
       final category = _recommendationKeyToCategory[entry.key];
       if (category == null) continue;
@@ -124,9 +141,25 @@ abstract final class TutorialPlanningEngine {
         finish: item.finish,
         tip: item.reasoning,
       );
+      recommendationData[category] = TutorialRecommendationData(
+        category: category,
+        placement: item.placement,
+        intensity: item.intensity,
+        technique: item.technique,
+        colorName: item.name,
+        colorHex: item.hex,
+        finish: item.finish,
+        reasoning: item.reasoning,
+      );
     }
     return _buildPlan(
       byCategory,
+      recommendationData: recommendationData,
+      sourceMode: TutorialSourceMode.standardRecommendation,
+      faceAttributes: faceAttributes,
+      attributeConfidence: attributeConfidence,
+      selectedStyle: recommendation.styleCode,
+      kitSnapshots: const [],
       reusableResultImagePath: preview.generatedImagePath,
       reusableResultImageUrl: preview.generatedImageUrl,
       reusableModelId: preview.modelId,
@@ -134,11 +167,18 @@ abstract final class TutorialPlanningEngine {
     );
   }
 
+  /// See [planFromRecommendation]'s doc comment for why [faceAttributes]/
+  /// [attributeConfidence] are required here too.
   static TutorialPlan planFromKitRecommendation({
     required KitMakeupRecommendation recommendation,
     required KitGeneratedPreview preview,
+    required FacialAttributes faceAttributes,
+    required AnalysisConfidence attributeConfidence,
   }) {
     final byCategory = <TutorialStepCategory, TutorialInstruction>{};
+    final recommendationData =
+        <TutorialStepCategory, TutorialRecommendationData>{};
+    final kitSnapshots = <TutorialStepCategory, TutorialKitProductSnapshot>{};
     for (final selection in recommendation.selections) {
       final kitCategory = MakeupKitCategory.fromCode(selection.category);
       if (kitCategory == null) continue;
@@ -172,9 +212,43 @@ abstract final class TutorialPlanningEngine {
         // structured data, never invented for categories that don't have it).
         tip: _foundationTip(snapshot),
       );
+      // Fed to `PersonalizedTutorialInput` unhumanized/untouched — this is
+      // the raw recommendation fact the personalized pipeline projects for
+      // itself; `byCategory`'s humanized copy above is a display concern
+      // only `TutorialInstruction` (the legacy written-guidance path)
+      // needs.
+      recommendationData[category] = TutorialRecommendationData(
+        category: category,
+        placement: selection.placement,
+        intensity: selection.intensity,
+        technique: selection.technique,
+        productName: snapshot.productName,
+        colorName: snapshot.colorLabel,
+        colorHex: selection.colorHex,
+        finish: selection.finish,
+      );
+      // The immutable owned-product snapshot `PersonalizedTutorialPlacementRules`
+      // requires one-per-category for kit mode (guide §11/ST-2 snapshot
+      // semantics) — sourced from `snapshot`, never live inventory.
+      kitSnapshots[category] = TutorialKitProductSnapshot(
+        productId: snapshot.productId,
+        category: category,
+        colorHex: snapshot.colorHex,
+        finish: snapshot.finish,
+        productName: snapshot.productName,
+        colorName: snapshot.colorLabel,
+        foundationDepth: snapshot.foundationDepth,
+        foundationUndertone: snapshot.foundationUndertone,
+      );
     }
     return _buildPlan(
       byCategory,
+      recommendationData: recommendationData,
+      sourceMode: TutorialSourceMode.makeupKit,
+      faceAttributes: faceAttributes,
+      attributeConfidence: attributeConfidence,
+      selectedStyle: recommendation.styleCode,
+      kitSnapshots: kitSnapshots.values.toList(growable: false),
       reusableResultImagePath: preview.generatedImagePath,
       reusableResultImageUrl: preview.generatedImageUrl,
       reusableModelId: preview.modelId,
@@ -184,6 +258,13 @@ abstract final class TutorialPlanningEngine {
 
   static TutorialPlan _buildPlan(
     Map<TutorialStepCategory, TutorialInstruction> byCategory, {
+    required Map<TutorialStepCategory, TutorialRecommendationData>
+    recommendationData,
+    required TutorialSourceMode sourceMode,
+    required FacialAttributes faceAttributes,
+    required AnalysisConfidence attributeConfidence,
+    required String selectedStyle,
+    required List<TutorialKitProductSnapshot> kitSnapshots,
     required String reusableResultImagePath,
     required String reusableResultImageUrl,
     required String reusableModelId,
@@ -197,6 +278,28 @@ abstract final class TutorialPlanningEngine {
       return const TutorialPlan(steps: [], reusesFinalPreview: false);
     }
 
+    // TF-2 (the tutorial-only Gemini geometry planner) does not exist yet
+    // — `TutorialFaceGeometryProvider` has no implementation and nothing
+    // resolves it. Geometry is therefore left `null` here rather than
+    // fabricated: `PersonalizedTutorialMetadataPipeline.build` already
+    // represents that honestly (every step's `where.geometryConfidence`
+    // comes back `unavailable` with zero `geometryAnchors`, not a guessed
+    // value), which is the correct explicit-dependency signal until a
+    // later phase wires a real provider through.
+    final personalizedMetadata = PersonalizedTutorialMetadataPipeline.build(
+      input: PersonalizedTutorialInput(
+        sourceMode: sourceMode,
+        faceAttributes: faceAttributes,
+        attributeConfidence: attributeConfidence,
+        selectedStyle: selectedStyle,
+        recommendations: [
+          for (final category in orderedCategories)
+            recommendationData[category]!,
+        ],
+        kitSnapshots: kitSnapshots,
+      ),
+    );
+
     final steps = <PlannedTutorialStep>[
       for (final (index, category) in orderedCategories.indexed)
         PlannedTutorialStep(
@@ -204,7 +307,8 @@ abstract final class TutorialPlanningEngine {
           category: category,
           title: _title(category),
           instruction: byCategory[category]!,
-          placementMetadata: null,
+          placementMetadata: personalizedMetadata[index].overlayMetadata,
+          personalizedSpec: personalizedMetadata[index].spec,
         ),
       PlannedTutorialStep(
         stepNumber: orderedCategories.length + 1,

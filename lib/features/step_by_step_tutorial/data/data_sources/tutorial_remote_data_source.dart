@@ -11,6 +11,12 @@ abstract interface class TutorialRemoteDataSource {
   /// on any non-2xx response.
   Future<Object?> invoke({required String tutorialStepId});
 
+  /// Invokes `plan-tutorial-geometry` (TF-2) for [tutorialSessionId],
+  /// returning its raw JSON payload (`{session: <tutorial_sessions row>}`)
+  /// for `TutorialSessionDto.fromResponse` to parse. Throws
+  /// [TutorialRemoteFailure] on any non-2xx response.
+  Future<Object?> invokeGeometryPlan({required String tutorialSessionId});
+
   /// Finds a session by its unique source key (see
   /// `tutorial_sessions_recommendation_variation_unique` /
   /// `tutorial_sessions_kit_recommendation_variation_unique`). Exactly one
@@ -89,23 +95,46 @@ class SupabaseTutorialRemoteDataSource extends SupabaseRemoteDataSource
       );
       return response.data;
     } on FunctionException catch (error) {
-      final details = error.details;
-      final root = details is Map
-          ? details.map((key, value) => MapEntry(key.toString(), value))
-          : const <String, Object?>{};
-      final nested = root['error'];
-      final payload = nested is Map
-          ? nested.map((key, value) => MapEntry(key.toString(), value))
-          : root;
-      throw TutorialRemoteFailure(
-        status: error.status,
-        code: payload['code']?.toString() ?? '',
-        message:
-            payload['message']?.toString() ??
-            'This step could not be generated.',
-        retryable: payload['retryable'] == true,
+      throw _remoteFailure(error, 'This step could not be generated.');
+    }
+  }
+
+  @override
+  Future<Object?> invokeGeometryPlan({
+    required String tutorialSessionId,
+  }) async {
+    try {
+      final response = await client.functions.invoke(
+        'plan-tutorial-geometry',
+        body: {'tutorialSessionId': tutorialSessionId},
+      );
+      return response.data;
+    } on FunctionException catch (error) {
+      throw _remoteFailure(
+        error,
+        "This tutorial's guidelines could not be planned.",
       );
     }
+  }
+
+  static TutorialRemoteFailure _remoteFailure(
+    FunctionException error,
+    String defaultMessage,
+  ) {
+    final details = error.details;
+    final root = details is Map
+        ? details.map((key, value) => MapEntry(key.toString(), value))
+        : const <String, Object?>{};
+    final nested = root['error'];
+    final payload = nested is Map
+        ? nested.map((key, value) => MapEntry(key.toString(), value))
+        : root;
+    return TutorialRemoteFailure(
+      status: error.status,
+      code: payload['code']?.toString() ?? '',
+      message: payload['message']?.toString() ?? defaultMessage,
+      retryable: payload['retryable'] == true,
+    );
   }
 
   @override

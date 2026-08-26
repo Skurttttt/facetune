@@ -104,6 +104,7 @@ class MakeupKitRecommendationEntryPage extends ConsumerWidget {
                         .prepareForKitRecommendation(
                           recommendation: look.recommendation!,
                           preview: look.preview!,
+                          analysis: analysis,
                         );
                     context.push(AppConstants.tutorialRoute);
                   },
