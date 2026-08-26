@@ -1,11 +1,14 @@
 /**
  * AI operations that consume a server-enforced quota.
  *
- * This union mirrors the live `ai_usage_events_operation_valid` constraint and
- * the `consume_ai_quota` allow-list, whose current definition comes from the
- * last applied migration that touched them, `20260826000200_tutorial_v2_planner`.
- * The last three entries belong to V1/V2 tutorial functions that are still
- * deployed and ACTIVE.
+ * This union mirrors the `ai_usage_events_operation_valid` constraint and the
+ * `consume_ai_quota` allow-list as defined by the newest migration that
+ * touches them, `20260827000200_tutorial_v3_planner`.
+ *
+ * `tutorial_step` and `tutorial_geometry_plan` belong to V1 and
+ * `tutorial_v2_plan` to V2; all three of those functions are still deployed
+ * and ACTIVE. `tutorial_v3_plan` is added by the V3 planner migration, which
+ * is written but not yet applied.
  *
  * Any future migration that redefines either object must be a strict SUPERSET
  * of this list. Dropping an operation here would make a deployed Edge Function
@@ -19,7 +22,8 @@ export type AiOperation =
   | "kit_makeup_preview"
   | "tutorial_step"
   | "tutorial_geometry_plan"
-  | "tutorial_v2_plan";
+  | "tutorial_v2_plan"
+  | "tutorial_v3_plan";
 
 export interface QuotaDecision {
   allowed: boolean;
