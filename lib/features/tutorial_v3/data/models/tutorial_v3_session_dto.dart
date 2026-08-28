@@ -1,10 +1,14 @@
 import '../../domain/entities/tutorial_v3_canonical_preview.dart';
-import '../../domain/entities/tutorial_v3_guideline_status.dart';
+import '../../domain/entities/tutorial_v3_category.dart';
+import '../../domain/entities/tutorial_v3_geometry.dart';
+import '../../domain/entities/tutorial_v3_geometry_status.dart';
 import '../../domain/entities/tutorial_v3_session.dart';
 import '../../domain/entities/tutorial_v3_session_snapshot.dart';
 import '../../domain/entities/tutorial_v3_session_status.dart';
 import '../../domain/entities/tutorial_v3_source_mode.dart';
 import '../../domain/entities/tutorial_v3_step.dart';
+import '../../domain/errors/tutorial_v3_failure.dart';
+import '../../domain/validation/tutorial_v3_geometry_validator.dart';
 import '../../domain/value_objects/tutorial_v3_plan_version.dart';
 import 'tutorial_v3_step_spec_codec.dart';
 
@@ -87,22 +91,56 @@ abstract final class TutorialV3SessionDto {
 
   static TutorialV3Step stepFromRow(Map<String, Object?> row) {
     final snapshot = row['product_snapshot_json'];
-    return TutorialV3Step(
-      spec: TutorialV3StepSpecCodec.decode(
-        spec: _map(row, 'step_spec_json'),
-        productSnapshot: snapshot is Map
-            ? snapshot.cast<String, Object?>()
-            : null,
-      ),
-      guidelineStatus: _required(
-        TutorialV3GuidelineStatus.fromCode(_string(row, 'guideline_status')),
-        'guideline_status',
-        row['guideline_status'],
-      ),
-      guidelineStoragePath: _optionalString(row, 'guideline_image_path'),
-      attemptCount: _intOr(row, 'attempt_count', 0),
-      lastErrorCode: _optionalString(row, 'guideline_error'),
+    final spec = TutorialV3StepSpecCodec.decode(
+      spec: _map(row, 'step_spec_json'),
+      productSnapshot: snapshot is Map ? snapshot.cast<String, Object?>() : null,
     );
+    final schemaVersion = row['geometry_schema_version'] == null
+        ? null
+        : _int(row, 'geometry_schema_version');
+
+    return TutorialV3Step(
+      spec: spec,
+      geometryStatus: _required(
+        TutorialV3GeometryStatus.fromCode(_string(row, 'geometry_status')),
+        'geometry_status',
+        row['geometry_status'],
+      ),
+      geometry: _geometry(row, spec.category, schemaVersion),
+      geometrySchemaVersion: schemaVersion,
+      attemptCount: _intOr(row, 'attempt_count', 0),
+      lastErrorCode: _optionalString(row, 'geometry_error'),
+    );
+  }
+
+  /// Decodes stored geometry, or returns `null` when it cannot be rendered.
+  ///
+  /// Two cases yield `null` rather than an exception, because neither should
+  /// make an entire tutorial unopenable:
+  ///
+  /// * a document written against a different schema version — the step is
+  ///   surfaced as stale (`hasStaleGeometry`) and can simply be re-mapped;
+  /// * a document that fails validation — the step behaves as unmapped, which
+  ///   is exactly the "a missing overlay beats a wrong one" rule.
+  ///
+  /// The validator itself stays strict: nothing invalid is ever returned as
+  /// usable geometry.
+  static TutorialV3Geometry? _geometry(
+    Map<String, Object?> row,
+    TutorialV3Category category,
+    int? schemaVersion,
+  ) {
+    final raw = row['geometry_json'];
+    if (raw is! Map) return null;
+    if (schemaVersion != tutorialV3GeometrySchemaVersion) return null;
+    try {
+      return TutorialV3GeometryValidator.validate(
+        raw.cast<String, Object?>(),
+        expectedCategory: category,
+      );
+    } on TutorialV3Failure {
+      return null;
+    }
   }
 
   static T _required<T>(T? value, String key, Object? raw) {

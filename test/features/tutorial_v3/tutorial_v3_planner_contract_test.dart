@@ -31,6 +31,23 @@ void main() {
     'supabase/migrations/20260827000200_tutorial_v3_planner.sql',
   );
 
+  /// The migration that most recently redefines the quota vocabulary.
+  ///
+  /// Resolved rather than hard-coded: whichever migration owns the constraint
+  /// today is the one the shared TypeScript union has to match, so a later
+  /// phase adding an operation cannot leave this test comparing against a
+  /// superseded definition.
+  final currentQuotaMigration = (Directory(
+    '${root.path}${Platform.pathSeparator}supabase'
+    '${Platform.pathSeparator}migrations',
+  ).listSync().whereType<File>().where((file) => file.path.endsWith('.sql')).toList()
+        ..sort((a, b) => a.path.compareTo(b.path)))
+      .lastWhere(
+        (file) =>
+            file.readAsStringSync().contains('ai_usage_events_operation_valid'),
+      )
+      .readAsStringSync();
+
   /// String literals inside the `{...}` or `[...]` block following [anchor].
   Set<String> literalsAfter(String text, String anchor, String open) {
     final start = text.indexOf(anchor);
@@ -290,7 +307,7 @@ void main() {
       expect(constraintOps, contains('tutorial_v3_plan'));
     });
 
-    test('the shared TypeScript union matches the SQL exactly', () {
+    test('the shared TypeScript union matches the current SQL exactly', () {
       final union = quotaModule.substring(
         quotaModule.indexOf('export type AiOperation'),
         quotaModule.indexOf(';', quotaModule.indexOf('export type AiOperation')),
@@ -301,7 +318,7 @@ void main() {
           .toSet();
 
       final constraint = RegExp(r'check \(operation in \(([^)]*)\)\)')
-          .firstMatch(quotaMigration)!
+          .firstMatch(currentQuotaMigration)!
           .group(1)!;
       final constraintOps = RegExp("'([a-z0-9_]+)'")
           .allMatches(constraint)

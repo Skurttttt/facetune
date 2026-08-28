@@ -9,20 +9,26 @@ You are Claude Code using Opus 5.
 
 Act as:
 - Principal Software Engineer
+- Principal Mobile Architect
 - Senior Flutter Architect
 - Senior Dart Engineer
+- Senior Clean Architecture Engineer
 - Senior Supabase/Postgres Engineer
+- Senior Supabase Edge Function Engineer
 - Senior AI Integration Engineer
-- Multimodal Prompt Engineer
-- Security Engineer
+- Senior Gemini / Multimodal Engineer
+- Senior Structured Output / Schema Engineer
+- Senior Geometry / Rendering Engineer
+- Senior Backend Security Engineer
 - QA/Test Architect
+- Senior Visual QA Engineer
 - Git Safety Engineer
 - Mobile Performance Engineer
 - Technical Product Engineer
 
 V3's central rule:
 
-> No intermediate makeup appearance generation. Every non-final tutorial step is a personalized guideline image generated independently from the ORIGINAL SELFIE.
+> No intermediate makeup appearance generation. Every non-final tutorial step displays the ORIGINAL SELFIE unchanged with a personalized deterministic Flutter guideline overlay whose geometry is derived from the persisted Step Spec and the user's actual face.
 
 Before every phase:
 
@@ -40,7 +46,7 @@ If not exact, STOP.
 Read:
 - `FACETUNE_STEP_BY_STEP_TUTORIAL_V3_SOURCE_OF_TRUTH.md`
 - `CODEX_MASTER_GUIDE.md`
-- all current files relevant to the phase
+- all current files/reports relevant to the phase
 
 Global prohibitions:
 - no development on `main`
@@ -48,12 +54,15 @@ Global prohibitions:
 - no reset/force push/branch deletion
 - no unrelated cleanup
 - no Gemini secret exposure
+- no `service_role` use from client/test harness
 - no RLS disabling
 - no public-storage workaround
 - no original-selfie overwrite
 - no cumulative makeup-result generation
 - no previous-guideline → next-guideline dependency
-- no generic universal placement
+- no AI-generated replacement guideline selfie
+- no universal static placement coordinates
+- no AI-controlled overlay styling
 - no automatic next phase
 
 Use `npx -y supabase ...`.
@@ -63,8 +72,13 @@ Every phase completion report must include:
 2. Architecture decisions
 3. Tests and results
 4. Risks/limitations
-5. Acceptance status
-6. STOP
+5. Security impact
+6. Acceptance status
+7. STOP
+
+Open release blocker to preserve in all relevant reports:
+
+> The previously exposed legacy Supabase `service_role` credential remains an OPEN HIGH-PRIORITY SECURITY ITEM until migrated/revoked. Do not use or expose it. Production/release is blocked until remediation is complete.
 
 ---
 
@@ -100,6 +114,29 @@ No feature code, migrations, deployment, UI, or remote writes.
 
 ---
 
+# V3-0.5 — Remote Migration / Function Recovery
+
+## Goal
+Recover exact local source for already-applied/deployed tutorial artifacts before any new V3 remote write.
+
+## Rules
+- recover historical applied migration source exactly
+- recover deployed function source where missing
+- verify hashes where possible
+- preserve live quota-operation superset
+- do not apply unapplied historical WIP migrations
+- no destructive repair
+- no remote mutation unless explicitly authorized
+
+## Deliverable
+Create/update:
+
+`docs/tutorial_v3/V3-0.5_REMOTE_RECOVERY_REPORT.md`
+
+## STOP
+
+---
+
 # V3-1 — Domain Contracts + Step Spec
 
 ## Goal
@@ -112,7 +149,7 @@ Strong types for:
 - V3 Step Spec
 - tutorial category
 - source mode
-- guideline status
+- guideline/geometry status
 - product snapshot
 - target-reference mode
 - plan version
@@ -139,8 +176,8 @@ Strong types for:
 - dynamic count
 - final look last
 - no intermediate Result entity/state
-- original selfie is base for every non-final step
-- Step Spec drives both Flutter text and guideline image intent
+- original selfie is authoritative base for every non-final step
+- Step Spec drives both Flutter instructional text and geometry intent
 - no independent per-step instruction invention
 
 ## Tests
@@ -158,14 +195,13 @@ Dynamic plans, ordering, duplicates, Kit constraints, face-attribute scoping, fi
 Create isolated V3 persistence without reusing V1/V2 schema accidentally.
 
 ## Precondition
-Read V3-0 audit.
+Read V3-0 and V3-0.5 reports.
 
 ## Prefer
 - `tutorial_v3_sessions`
 - `tutorial_v3_steps`
-- `tutorial_v3_assets`
 
-unless current repository conventions justify a safer equivalent.
+Do not invent additional tables unless current repository conventions justify them.
 
 ## Persist
 Session:
@@ -184,7 +220,7 @@ Step:
 - category
 - validated Step Spec
 - product snapshot
-- guideline status/reference
+- current guideline/geometry status/reference fields if already established
 - retry/error metadata
 
 ## Security
@@ -194,6 +230,9 @@ Step:
 - server-side ownership validation
 - no edit of historical applied migrations
 - storage/history cleanup compatibility
+
+## Critical
+Current schema may still contain image-guideline fields from the earlier architecture. Do not prematurely rewrite them here unless this phase explicitly authorizes migration evolution.
 
 ## Tests
 Migration/security/repository-contract tests.
@@ -211,21 +250,22 @@ Implement Clean Architecture persistence/session behavior.
 - create/load session
 - load plan/steps
 - persist plan
-- update guideline state
-- persist guideline asset
+- update step guideline/geometry state
 - reject incompatible plan versions
 - resume/reopen
-- reuse ready guideline
-- retry failed guideline
+- reuse ready compatible step visualization data
+- retry failed mapping/generation state
 
 States may include:
-`planning`, `plan_ready`, `generating`, `ready`, `failed`, `incompatible`.
+`planning`, `plan_ready`, `mapping`, `ready`, `failed`, `incompatible`.
+
+If older code still uses `generating`, preserve backward compatibility until an explicitly authorized migration refactor.
 
 ## Critical
 Do not port V2 cumulative-result state machinery.
 
 ## Tests
-DTO/codec, stale version, ownership, reload, idempotency, ready-asset reuse, failed state.
+DTO/codec, stale version, ownership, reload, idempotency, compatible ready reuse, failed state.
 
 ## STOP
 
@@ -234,7 +274,7 @@ DTO/codec, stale version, ownership, reload, idempotency, ready-asset reuse, fai
 # V3-4 — Personalized Master Tutorial Planner
 
 ## Goal
-Generate ONE complete dynamic tutorial plan before any guideline image is generated.
+Generate ONE complete dynamic tutorial plan before any guideline geometry is mapped.
 
 ## Server-verified inputs
 - authenticated user
@@ -273,10 +313,16 @@ Generate ONE complete dynamic tutorial plan before any guideline image is genera
 - selected look mandatory
 - final look last
 - no makeup-result-generation instructions
+- Step Spec must contain enough spatial specificity for deterministic geometry mapping
 
 ## Model
-Planner model must be server-configurable.
-If `gemini-3.6-flash` is used for structured planning, verify it against the current integration before hardcoding.
+Server-configurable:
+
+`TUTORIAL_V3_PLANNER_MODEL`
+
+Current approved default:
+
+`gemini-3.6-flash`
 
 ## Validation
 Strict schema + semantic validation + bounded retry.
@@ -288,164 +334,429 @@ Prompt/parser/malformed-response/dynamic-plan/Kit-ownership tests.
 
 ---
 
-# V3-5 — Guideline Image Model Capability Gate
+# V3-5 — Historical Guideline Model Capability Gate / Decision Record
 
-## Goal
-Verify the user's requested guideline model can actually output images before implementation.
+## Status
+COMPLETED HISTORICAL PHASE.
 
-Requested model:
+Do not rerun automatically.
 
-`gemini-3.6-flash`
+## Historical finding
+`gemini-3.6-flash` in the current integration is suitable for image-in → text/JSON structured output, not the required image-output guideline workflow.
 
-Required capability:
+The image-output model spike used `gemini-3.1-flash-image`.
+
+Subsequent behavioral gates rejected AI-generated replacement guideline selfies:
+
+### V3-6A.1
+Two-image renderer:
 
 ```text
-source image(s) IN
-+ structured instruction IN
-→ image bytes OUT
+Original Selfie + Canonical Final + Step Spec → generated guideline image
 ```
 
-## Verify
-1. endpoint/API version
-2. request format
-3. image input support
-4. multiple input/reference image support if needed
-5. image-output support
-6. response shape
-7. inline image/MIME behavior
-8. image edit/annotation capability
+Rejected because finished makeup/style from the canonical target leaked into non-current categories.
 
-Do not confuse:
-`image IN → text/JSON OUT`
-with:
-`image IN → image OUT`.
+### V3-6A.2
+Single-image renderer:
+
+```text
+Original Selfie + Step Spec → generated guideline image
+```
+
+Rejected because region-fill annotation altered source facial surfaces, especially Foundation skin tone and Lip Color surface.
+
+## Permanent conclusion
+Do not continue generative-image prompt tuning for tutorial guideline selfies without explicit architectural approval.
+
+The current architecture uses structured geometry + Flutter rendering.
+
+## Evidence
+Read:
+- `docs/tutorial_v3/V3-5_GUIDELINE_MODEL_GATE.md`
+- `docs/tutorial_v3/V3-6A_GUIDELINE_BEHAVIOR_SMOKE_GATE.md`
+- `docs/tutorial_v3/V3-6A.1_LIVE_SMOKE_PROBE_REPORT.md`
+- `docs/tutorial_v3/V3-6A.2_SINGLE_IMAGE_RENDERER_GATE.md`
+
+## STOP
+
+---
+
+# V3-6R — Personalized Deterministic Geometry Renderer Gate
+
+## Goal
+Prove that FaceTune can produce personalized, dynamic, safe guideline visuals without generating a replacement selfie.
+
+## Architecture under test
+
+```text
+ORIGINAL SELFIE
++ PERSISTED CURRENT STEP SPEC
++ SCOPED RELEVANT FACE ATTRIBUTES
+        ↓
+TUTORIAL_V3_GEOMETRY_MODEL
+        ↓
+STRICT NORMALIZED GEOMETRY JSON
+        ↓
+VALIDATION
+        ↓
+FLUTTER CUSTOMPAINTER
+        ↓
+ORIGINAL JPG + TRANSPARENT GUIDELINE OVERLAY
+```
+
+## Model
+Server-side:
+
+`TUTORIAL_V3_GEOMETRY_MODEL = gemini-3.6-flash`
+
+Do not use `gemini-3.1-flash-image` for tutorial guideline rendering.
+
+Do not modify the premium preview model.
+
+## AI responsibility
+Gemini receives:
+- original selfie
+- persisted current Step Spec
+- minimum sufficient scoped face attributes
+
+Gemini returns strict JSON only.
+
+Gemini does NOT return:
+- image bytes
+- SVG
+- HTML
+- Flutter code
+- text labels
+- colors
+- opacity
+- fonts
+- gradients
+- animation
+- arbitrary style
+
+## Coordinate system
+
+```text
+x ∈ [0,1]
+y ∈ [0,1]
+origin = top-left
+coordinateSpace = normalized_original_image
+```
+
+## Required primitive families
+Use a strict sealed/discriminated schema for:
+- region
+- ellipse
+- polyline
+- arrow
+- marker
+
+## Semantic roles
+Examples:
+- coverage_zone
+- placement_zone
+- application_path
+- blend_direction
+- boundary
+- exclusion
+- focus_marker
+
+AI may not invent arbitrary roles.
+
+## Validation
+Reject:
+- unsupported schema version
+- category mismatch
+- unknown primitive
+- unknown role
+- NaN/infinity
+- out-of-range coordinates
+- malformed regions/polylines
+- invalid radii
+- zero-length arrows
+- excessive primitive/point counts
+- category-incompatible primitives
+- unexpected text/style/code fields
+
+Do not silently clamp invalid geometry.
+
+## Flutter renderer
+Prefer deterministic native Flutter `CustomPainter`.
+
+Concept:
+
+```text
+Stack
+├── Image(originalSelfie)
+└── CustomPaint(validatedGeometry)
+```
+
+Flutter owns all visual style.
+
+## Transform correctness
+Implement/test original-image normalized coordinates → displayed image rect under actual BoxFit/alignment behavior.
+
+Use proven image-fit math such as `applyBoxFit` / `Alignment.inscribe` or equivalent.
+
+Inspect real EXIF/orientation/mirroring behavior before applying transforms.
+
+## Full category gate
+Test ALL canonical categories using actual project codes:
+- Foundation
+- Concealer
+- Blush
+- Highlighter
+- Eyeshadow
+- Lipstick / Lip Color
+- Lip Gloss
+- Contour / Bronzer
+- Eyebrow
+- Eyeliner
+
+Do not permanently rename category codes.
+
+## Personalization differential
+Prove the system is not static.
+
+At minimum test representative categories such as Blush, Eyeliner, and Lip Color with two genuinely different valid Step Specs requiring different placements.
+
+Geometry must differ because Step Specs differ, not because of random offsets.
+
+## Original integrity
+Hash the original portrait before and after.
+
+The hash must be identical.
+
+The renderer must never write to the original source path.
+
+## Temporary probe
+Use an isolated temporary Edge Function such as:
+
+`map-tutorial-v3-guideline-geometry-probe`
+
+Do not use `service_role`.
+Do not mutate shared secrets.
+Do not use broad deploy or `--prune`.
+Keep JWT verification ON.
+Use safe ephemeral probe authentication without fragile global string substitution.
+
+## No database work
+No migrations, SQL, RLS changes, or production persistence in V3-6R.
+
+## Evidence
+Save local, gitignored evidence under:
+
+`build/tutorial_v3_geometry_gate/`
+
+Include:
+- original image
+- validated geometry JSON
+- actual Flutter-rendered overlay previews
+- prompts/metadata
+- contact sheet if useful
+
+## PASS criteria
+All must hold:
+1. original selfie byte-identical
+2. strict normalized geometry returned
+3. invalid geometry rejected
+4. Flutter deterministic rendering works
+5. all canonical categories representable
+6. geometry reasonably matches Step Spec
+7. personalization differential proves non-static behavior
+8. no AI replacement selfie exists
+9. no AI typography/style control exists
+10. BoxFit/coordinate transform correct
+
+## FAIL criteria
+Fail if geometry repeatedly maps to wrong facial regions, complex categories cannot be represented, Step Spec is ignored, coordinates drift materially, static presets are effectively used, or invalid output cannot be safely rejected.
 
 ## Deliverable
 Create:
 
-`docs/tutorial_v3/V3-5_GUIDELINE_MODEL_GATE.md`
+`docs/tutorial_v3/V3-6R_DETERMINISTIC_GEOMETRY_RENDERER_GATE.md`
 
 Classify:
+- PASS
+- FAIL
+- BLOCKED BY INFRASTRUCTURE
 
-`SUPPORTED`
+If PASS:
 
-or
+`READY FOR EXPLICIT V3-6B GEOMETRY PIPELINE AUTHORIZATION`
 
-`NOT SUPPORTED`
+If not:
 
-If not supported, STOP and report exact incompatibility.
-
-**Do not silently substitute another model.**
-
-No feature implementation in this phase.
+`BLOCKED — DO NOT START V3-6B`
 
 ## STOP
 
 ---
 
-# V3-6 — Personalized Guideline Image Pipeline
+# V3-6B — Production Personalized Geometry Pipeline
 
 ## Precondition
-V3-5 has an explicitly approved image-output-capable model.
+V3-6R has an evidence-backed PASS.
 
 ## Goal
-Generate one personalized guideline image from the original selfie for a persisted Step Spec.
+Implement the secure production pipeline that maps one persisted non-final Step Spec to validated normalized geometry for deterministic Flutter rendering.
 
-## Inputs
+## Client request
+Client sends identifiers only, such as:
+- session ID
+- step index / step ID
+
+Do not trust client-supplied:
+- Step Spec JSON
+- analysis ID without ownership resolution
+- storage paths
+- face attributes
+- category
+- selected look
+- arbitrary prompt text
+
+## Server resolves
+- authenticated user
+- V3 session
+- current V3 step
+- analysis
+- original selfie
+- persisted Step Spec
+- scoped relevant face attributes
+- recommendation / Kit recommendation context as needed for integrity validation
+- source mode
+- plan/geometry versions
+
+The canonical final preview is NOT an input to the geometry mapper.
+
+## Kit security
+For Kit sessions, re-read and validate authoritative ownership/product snapshot context server-side where required.
+
+Never rely solely on optional client/domain-owned product ID sets.
+
+## Geometry mapper
+Use server-side:
+
+`TUTORIAL_V3_GEOMETRY_MODEL`
+
+Build prompt/context server-side from authoritative persisted records.
+
+The mapper is not a second planner.
+
+## Geometry persistence
+Design the smallest V3-specific persistence evolution necessary after inspecting current schema.
+
+Persist:
+- geometry schema/version
+- validated geometry payload or safe reference
+- mapping status
+- attempt/error metadata
+
+Do not silently repurpose old image-path fields if that creates ambiguous semantics.
+
+Do not edit historical applied migrations.
+Use a new migration if schema evolution is required.
+
+## State lifecycle
+Conceptually:
+
 ```text
-IMAGE A = original selfie
-Role: exact visual base / identity
-
-IMAGE B = canonical final preview
-Role: exact unmodified destination reference
-
-DATA C = persisted current V3 Step Spec
-Role: authoritative instruction
-
-DATA D = scoped relevant face attributes
-Role: personalization
+pending/failed
+→ atomic claim
+→ mapping
+→ Gemini structured output
+→ strict validation
+→ persist validated geometry
+→ ready
 ```
 
-## Strict prompt
-> Preserve the source selfie and identity. Do not apply makeup. Do not retouch or beautify. Do not intentionally alter facial features or lighting. Add only the visual instructional zones, arrows, paths, bands, or markers required by the persisted Step Spec for the CURRENT category.
-
-> The canonical final preview is reference only. Use it to understand the intended category placement/style. Do not copy the finished makeup onto the selfie.
-
-> Visualize the Step Spec. Do not invent a new instruction.
-
-## Allowed
-- translucent zones
-- arrows
-- paths
-- soft bands
-- minimal markers
-
-## Forbidden
-- finished makeup appearance
-- unrelated-category guidance
-- AI typography required for correctness
-- new makeup look
-- previous guideline as input
-- beautification
-
-## Edge Function
-Use V3-specific slug such as:
-`generate-tutorial-v3-guideline`
-
-## Configuration
-Server-side:
-`TUTORIAL_V3_GUIDELINE_MODEL`
+Idempotency:
+- ready compatible geometry is reused
+- duplicate concurrent mapping prevented
+- bounded retries only
+- stale/incompatible geometry version is explicit
 
 ## Security
-Client sends identifiers only.
-Server resolves and validates session, step, analysis, recommendation, canonical preview, and storage ownership.
-
-## Storage
-Analysis-owned private V3 path.
-Never overwrite selfie or canonical preview.
-
-## Idempotency
-Atomic claim/equivalent, ready reuse, bounded retry.
+- authenticated Edge Function
+- client sends identifiers only
+- server ownership validation
+- Gemini key server-side
+- no public storage workaround
+- no `service_role` use from client
+- no arbitrary client prompt
 
 ## Tests
-Prompt contract, current-category lock, no-makeup rule, response parsing, corrupt image, ownership, path safety, idempotency.
+Must cover:
+- ownership
+- session/step context mismatch
+- source-mode mismatch
+- Kit ownership/snapshot integrity
+- exact Step Spec authority
+- prompt contract
+- structured response parsing
+- invalid coordinate rejection
+- unknown primitive/role rejection
+- category mismatch
+- complexity limits
+- idempotency
+- duplicate claims
+- retry/failure
+- compatible ready reuse
+- stale geometry version
+- no canonical preview sent to mapper
+- no AI image output path
+
+## Deliverable
+Create:
+
+`docs/tutorial_v3/V3-6B_PRODUCTION_GEOMETRY_PIPELINE_REPORT.md`
+
+## Do Not
+No Flutter tutorial screen in this phase.
+No prefetch implementation.
+No V3-7/V3-8.
+No premium preview changes.
 
 ## STOP
 
 ---
 
-# V3-7 — Hybrid Generation + Prefetch
+# V3-7 — Hybrid Geometry Mapping + Prefetch
 
 ## Goal
-Make guideline generation responsive without generating the whole tutorial upfront.
+Make guideline geometry responsive without mapping the whole tutorial upfront.
 
 ## Flow
+
 ```text
 create/load session
 ↓
-generate/load plan
+generate/load persisted plan
 ↓
-show text shell
+show text/tutorial shell
 ↓
-generate current guideline
+load/map current geometry
 ↓
-display
+render original selfie + overlay
 ↓
-prefetch next guideline only
+prefetch NEXT geometry only
 ↓
-cache
+cache validated geometry
 ```
 
 ## Rules
 - default prefetch depth = 1
-- no duplicate concurrent request
-- every guideline begins from original selfie
-- revisiting uses cache
+- no duplicate concurrent mapping
+- every geometry request starts from original selfie + persisted Step Spec
+- previous geometry never becomes AI input
+- revisiting uses compatible cached geometry
 - failed prefetch does not break current step
-- final step has no guideline-generation call
+- final step has no geometry-mapping call
+- no generated guideline JPG cache
 
 ## Tests
-Current+1, duplicate prevention, resume, failed prefetch, cached revisit, final-step no-op.
+Current+1, duplicate prevention, resume, failed prefetch, cached revisit, version invalidation, final-step no-op.
 
 ## STOP
 
@@ -454,14 +765,18 @@ Current+1, duplicate prevention, resume, failed prefetch, cached revisit, final-
 # V3-8 — Tutorial UI
 
 ## Goal
-Build the real V3 tutorial screen.
+Build the real V3 tutorial screen using the original selfie plus deterministic overlay geometry.
 
 ## Required layout
+
 ```text
 STEP N OF TOTAL
 CATEGORY
 
-[ LARGE PERSONALIZED GUIDELINE IMAGE ]
+[ Stack
+  ├── ORIGINAL SELFIE
+  └── PERSONALIZED GUIDELINE CustomPaint
+]
 
 TARGET LOOK
 [ exact canonical final preview thumbnail / expandable reference ]
@@ -491,18 +806,28 @@ TIP
 - no Guidelines ↔ Result slider
 - no intermediate makeup-result UI
 - all text from persisted Step Spec
-- canonical preview is exact and unmodified
+- canonical preview exact and unmodified
 - dynamic total count
-- loading/error/retry states
-- cached guidelines appear immediately
+- loading/error/retry states for geometry
+- cached geometry appears immediately
 - final screen reuses premium canonical preview
+- overlay style controlled centrally by Flutter
+- original selfie is never modified/overwritten
+
+## Geometry transform
+Use the tested image-space transform from V3-6R/6B.
+
+Overlay must remain aligned across:
+- screen sizes
+- portrait aspect ratios
+- expected BoxFit/alignment behavior
 
 ## Target crop
 MVP uses full canonical final preview.
 Do not use AI-generated target crops.
 
 ## Tests
-Dynamic steps, loading/error/retry, target reference, final screen, Previous/Next, Kit/standard text.
+Dynamic steps, loading/error/retry, target reference, geometry alignment, final screen, Previous/Next, Kit/standard text, accessibility where relevant.
 
 ## STOP
 
@@ -511,20 +836,21 @@ Dynamic steps, loading/error/retry, target reference, final screen, Previous/Nex
 # V3-9 — My Makeup Kit Integration
 
 ## Goal
-Connect V3 to existing My Makeup Kit safely.
+Connect V3 geometry tutorial flow to existing My Makeup Kit safely.
 
 ## Rules
 - use persisted Kit recommendation
 - owned selected products only
-- server validates product IDs
-- persist product snapshots
+- server validates authoritative ownership where necessary
+- persist/reuse product snapshots
 - incomplete kit valid
 - omit unavailable categories where appropriate
 - no independent product selection
 - no core Kit rewrite
+- geometry mapper never invents products/shades
 
 ## Tests
-Unowned rejection, incomplete Kit, cross-account safety, snapshots, routing, historical product changes.
+Unowned rejection, incomplete Kit, cross-account safety, snapshots, routing, historical product changes, geometry only for valid persisted steps.
 
 ## STOP
 
@@ -546,54 +872,67 @@ Do not trust arbitrary client URLs/paths.
 
 ## Reopen
 - reuse valid V3 session
-- reject incompatible old sessions
+- reuse compatible ready geometry
+- reject incompatible old sessions/geometry versions
 - create new V3 session only through supported flow
-- no regeneration every visit
+- no remapping every visit when compatible geometry is ready
 
 ## Tests
-Standard entry, history entry, ownership, missing recommendation/final preview, cache reuse.
+Standard entry, history entry, ownership, missing recommendation/final preview, geometry cache reuse, incompatible-version behavior.
 
 ## STOP
 
 ---
 
-# V3-11 — Visual Prompt Hardening
+# V3-11 — Geometry + Visual Hardening
 
 ## Goal
-Improve actual guideline quality from real outputs, not theory.
+Improve actual guideline usefulness from real rendered outputs, not theory.
 
 ## Device samples
+Test all canonical categories:
 - Foundation
 - Concealer
-- Contour/Bronzer
 - Blush
+- Highlighter
 - Eyeshadow
-- Eyeliner
 - Lip Color
+- Lip Gloss
+- Contour/Bronzer
+- Eyebrow
+- Eyeliner
 
 ## Find first failure point
+
 ```text
 source records
 → Step Spec
-→ prompt
-→ model output
-→ storage
+→ geometry prompt
+→ structured model output
+→ validator
+→ persisted geometry
+→ image-space transform
+→ CustomPainter
 → UI
 ```
 
 ## Fix only evidenced problems
-- finished makeup appears
-- face altered
 - wrong placement
-- unrelated arrows
-- selected-look disconnect
-- target disconnect
+- wrong direction
+- malformed region
+- coordinate drift
+- BoxFit misalignment
+- overly cosmetic-looking Flutter styling
+- selected-look disconnect in Step Spec
 - weak face personalization
-- AI text appears
-- unclear zones/arrows
+- unrelated primitives
+- excessive/unclear geometry
 
-Do not change the Step Spec to agree with a wrong image.
-Do not hide AI failures with fake Flutter decoration.
+Do not change the Step Spec merely to agree with wrong geometry.
+
+Do not hide wrong geometry with cosmetic-looking decoration.
+
+Do not return to AI-generated replacement images.
 
 ## Deliverable
 Before/after QA report.
@@ -609,14 +948,15 @@ Evaluate whether focused target references improve learning.
 
 Examples:
 - blush → cheek-focused canonical view
-- eyes → eye-focused canonical view
+- eyeshadow → eye-focused canonical view
 - lips → lip-focused canonical view
 
 ## Rules
 - derive from actual canonical final preview
 - no AI redraw/recreation
-- no major geometry subsystem merely for thumbnails
-- keep full preview if reliable cropping is unavailable
+- target crop is UI/reference only
+- do not feed target crop to geometry mapper
+- keep full preview if reliable non-generative cropping is unavailable
 
 Retain only if stable and more useful.
 
@@ -631,12 +971,15 @@ Make V3 production-responsible without hurting correctness.
 
 Measure:
 - planner latency
-- guideline latency
+- geometry-mapper latency
+- geometry payload bytes
+- primitives/points per step
 - calls/tutorial
 - abandonment cost
 - retries
-- storage
+- cache hit rate
 - prefetch usefulness
+- Flutter overlay render cost
 
 Verify:
 - authenticated quota
@@ -645,10 +988,12 @@ Verify:
 - idempotency
 - duplicate prevention
 - current+1 prefetch
-- storage lifecycle
-- history-deletion limits
+- geometry version compatibility
+- history-deletion lifecycle
 
-Do not sacrifice guideline correctness just to improve benchmarks.
+Expect geometry mapping to be materially cheaper/lighter than image generation, but measure rather than assume.
+
+Do not sacrifice geometry correctness just to improve benchmarks.
 
 ## STOP
 
@@ -661,6 +1006,7 @@ Decide whether V3 is genuinely ready.
 
 ## Automated
 Run:
+
 ```bash
 flutter analyze
 flutter test
@@ -682,11 +1028,14 @@ Kit:
 Categories:
 - Foundation
 - Concealer
-- Contour/Bronzer
 - Blush
+- Highlighter
 - Eyeshadow
-- Eyeliner
 - Lip Color
+- Lip Gloss
+- Contour/Bronzer
+- Eyebrow
+- Eyeliner
 
 Lifecycle:
 - start
@@ -699,15 +1048,23 @@ Lifecycle:
 
 ## Visual acceptance
 Every tested guideline must:
-- preserve recognizable identity
-- add no finished makeup appearance
+- leave original selfie visually unchanged underneath
 - teach current category only
-- match Step Spec
+- match persisted Step Spec
 - make sense for face attributes
-- make sense for selected look
-- clearly connect to canonical target
-- use understandable zones/arrows
+- make sense for selected look through planner-authored Step Spec
+- clearly connect to canonical target in UI
+- use understandable zones/arrows/paths
 - require no AI typography
+- exhibit no coordinate drift/clipping
+- remain aligned across supported device layouts
+
+## Personalization acceptance
+Prove with evidence:
+- same selected look + different relevant face attributes can produce legitimately different Step Specs/geometry
+- same user + different selected look can produce legitimately different Step Specs/geometry
+
+No fake/random offset personalization.
 
 ## Protected regression
 Verify:
@@ -718,10 +1075,14 @@ Verify:
 - My Makeup Kit
 - Kit recommendation/preview
 - auth
-- RLS/storage
+- RLS/private storage
+
+## Security acceptance
+Production/release cannot be READY while the exposed legacy `service_role` remediation remains open.
 
 ## Deliverable
 Create:
+
 `docs/tutorial_v3/V3_FINAL_ACCEPTANCE_REPORT.md`
 
 Classify:
@@ -735,33 +1096,33 @@ Use evidence, not merely green tests.
 
 ---
 
-# V3-15 — Optional Controlled Model Comparison
+# V3-15 — Optional Controlled Geometry-Model Comparison
 
 ## Goal
-Only after V3 works, compare image-capable models/configurations.
+Only after V3 works, compare structured-output-capable models/configurations for geometry mapping.
 
 Use the SAME:
 - original selfie
-- analysis
-- selected look
-- recommendation
-- canonical target
-- Step Spec
-- prompt
-- image size where possible
+- persisted Step Spec
+- scoped face attributes
+- geometry schema
+- validation rules
+- Flutter renderer
 
 Judge:
-- identity preservation
-- no-makeup compliance
-- placement usefulness
-- category lock
-- target alignment
-- personalization
+- Step Spec alignment
+- facial-region localization
+- valid-JSON rate
+- validation-pass rate
+- personalization fidelity
+- geometry stability
 - latency
 - cost
 
-Do not choose a model merely because its image looks prettier.
+Do not compare models by prettier rendered screenshots when the underlying Step Spec/geometry is worse.
 
-The best model is the one that teaches the selected final look most faithfully.
+Do not use image-generation models merely because they can make attractive composites.
+
+The best geometry model is the one that maps the authoritative Step Spec most faithfully and reliably.
 
 ## STOP

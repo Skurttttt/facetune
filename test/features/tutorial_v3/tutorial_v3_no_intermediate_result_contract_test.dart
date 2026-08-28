@@ -3,7 +3,7 @@ import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_catego
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_guideline_base_image.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_guideline_graphic.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_guideline_intent.dart';
-import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_guideline_status.dart';
+import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_geometry_status.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_session.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_session_status.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_source_mode.dart';
@@ -29,14 +29,14 @@ void main() {
   });
 
   test('no guideline status represents a produced makeup appearance', () {
-    for (final status in TutorialV3GuidelineStatus.values) {
+    for (final status in TutorialV3GeometryStatus.values) {
       expect(
         status.code.contains('result'),
         isFalse,
         reason: '${status.code} looks like a result state',
       );
     }
-    expect(TutorialV3GuidelineStatus.values.map((s) => s.code), <String>[
+    expect(TutorialV3GeometryStatus.values.map((s) => s.code), <String>[
       'not_required',
       'pending',
       'generating',

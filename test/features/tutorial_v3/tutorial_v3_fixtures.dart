@@ -1,7 +1,10 @@
 import 'package:facetune/features/analysis/domain/entities/facial_attributes.dart';
 import 'package:facetune/features/makeup_kit/domain/entities/makeup_kit_finish.dart';
 import 'package:facetune/features/makeup_kit/domain/value_objects/normalized_hex_color.dart';
+import 'package:facetune/features/tutorial_v3/data/models/tutorial_v3_geometry_codec.dart';
+import 'package:facetune/features/tutorial_v3/domain/catalog/tutorial_v3_geometry_catalog.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_category.dart';
+import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_geometry.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_guideline_graphic.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_guideline_visual_intent.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_plan.dart';
@@ -170,3 +173,64 @@ TutorialV3Plan planTeaching(
   ];
   return planOf(steps: steps, sourceMode: sourceMode);
 }
+
+/// A minimal valid geometry document for [category].
+///
+/// The primitive is chosen from the catalog rather than hard-coded, so the
+/// fixture is legal for every category — a `placement_zone` would be rejected
+/// on foundation, and an `application_path` on blush.
+TutorialV3Geometry testGeometry({
+  TutorialV3Category category = TutorialV3Category.blush,
+  int schemaVersion = tutorialV3GeometrySchemaVersion,
+  List<TutorialV3Primitive>? primitives,
+}) => TutorialV3Geometry(
+  schemaVersion: schemaVersion,
+  category: category,
+  coordinateSpace: tutorialV3CoordinateSpace,
+  primitives: primitives ?? [_primitiveFor(category)],
+);
+
+TutorialV3Primitive _primitiveFor(TutorialV3Category category) {
+  final roles = TutorialV3GeometryCatalog.rolesFor(category);
+  for (final role in TutorialV3GeometryRole.values) {
+    if (!roles.contains(role)) continue;
+    final kinds = TutorialV3GeometryCatalog.kindsFor(role);
+    if (kinds.contains(TutorialV3PrimitiveKind.ellipse)) {
+      return TutorialV3Ellipse(
+        role: role,
+        center: const NormalizedPoint(0.3, 0.45),
+        radiusX: 0.09,
+        radiusY: 0.06,
+      );
+    }
+    if (kinds.contains(TutorialV3PrimitiveKind.polyline)) {
+      return TutorialV3Polyline(
+        role: role,
+        vertices: const [NormalizedPoint(0.3, 0.45), NormalizedPoint(0.4, 0.43)],
+      );
+    }
+    if (kinds.contains(TutorialV3PrimitiveKind.arrow)) {
+      return TutorialV3Arrow(
+        role: role,
+        start: const NormalizedPoint(0.3, 0.45),
+        end: const NormalizedPoint(0.4, 0.38),
+      );
+    }
+    if (kinds.contains(TutorialV3PrimitiveKind.marker)) {
+      return TutorialV3Marker(
+        role: role,
+        position: const NormalizedPoint(0.3, 0.45),
+      );
+    }
+  }
+  throw ArgumentError.value(
+    category,
+    'category',
+    'teaches no geometry, so it has no valid fixture',
+  );
+}
+
+/// The wire form of [testGeometry], as the database stores it.
+Map<String, dynamic> testGeometryJson({
+  TutorialV3Category category = TutorialV3Category.blush,
+}) => TutorialV3GeometryCodec.encode(testGeometry(category: category));

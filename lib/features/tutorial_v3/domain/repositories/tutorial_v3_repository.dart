@@ -1,4 +1,5 @@
 import '../entities/tutorial_v3_canonical_preview.dart';
+import '../entities/tutorial_v3_geometry.dart';
 import '../entities/tutorial_v3_plan.dart';
 import '../entities/tutorial_v3_session_snapshot.dart';
 import '../entities/tutorial_v3_source_mode.dart';
@@ -35,24 +36,29 @@ class TutorialV3SessionRequest {
   final String? kitRecommendationId;
 }
 
-/// What happened when a step was prepared for guideline generation.
-enum TutorialV3GuidelineOutcome {
-  /// The step already had a validated guideline, which was returned
-  /// untouched. No generation should run and no quota should be spent.
+/// What happened when a step was prepared for geometry mapping.
+enum TutorialV3GeometryOutcome {
+  /// The step already held validated geometry, returned untouched. No mapping
+  /// should run and no quota should be spent.
   reusedExisting('reused_existing'),
 
-  /// The step was claimed and is now `generating`. The caller owns that
-  /// claim and must finish it with a success or a failure.
-  claimedForGeneration('claimed_for_generation');
+  /// The step was claimed and is now `generating`. The caller owns that claim
+  /// and must finish it with a success or a failure.
+  claimedForGeneration('claimed_for_mapping'),
 
-  const TutorialV3GuidelineOutcome(this.code);
+  /// The step held geometry written under a different schema version. It was
+  /// discarded and claimed for fresh mapping — never reused and never
+  /// rendered, because this build cannot interpret that vocabulary.
+  claimedAfterStaleGeometry('claimed_after_stale_geometry');
+
+  const TutorialV3GeometryOutcome(this.code);
 
   final String code;
 }
 
 /// The result of preparing one step.
-class TutorialV3GuidelinePreparation {
-  const TutorialV3GuidelinePreparation({
+class TutorialV3GeometryPreparation {
+  const TutorialV3GeometryPreparation({
     required this.session,
     required this.stepIndex,
     required this.outcome,
@@ -60,34 +66,37 @@ class TutorialV3GuidelinePreparation {
 
   final TutorialV3LoadedSession session;
   final int stepIndex;
-  final TutorialV3GuidelineOutcome outcome;
+  final TutorialV3GeometryOutcome outcome;
 
   TutorialV3Step get step => session.stepAt(stepIndex)!;
 
-  /// Whether the caller must actually generate an image.
-  bool get requiresGeneration =>
-      outcome == TutorialV3GuidelineOutcome.claimedForGeneration;
+  /// Whether the caller must actually run the mapper.
+  bool get requiresMapping =>
+      outcome != TutorialV3GeometryOutcome.reusedExisting;
+
+  /// Whether a document from an incompatible schema version was discarded to
+  /// get here. Worth surfacing: it is the one case where a step that looked
+  /// complete has to be mapped again.
+  bool get replacedStaleGeometry =>
+      outcome == TutorialV3GeometryOutcome.claimedAfterStaleGeometry;
 }
 
 /// The V3 tutorial persistence and session lifecycle.
 ///
-/// Nothing here generates anything — planning and image generation belong to
-/// later phases. This layer's job is to make a revisited tutorial reuse what
-/// is already persisted: a reopened tutorial loads the stored plan and the
-/// stored guidelines, and only what is genuinely missing is left for a
-/// generation phase to fill in.
+/// This layer's job is to make a revisited tutorial reuse what is already
+/// persisted: a reopened tutorial loads the stored plan and the stored
+/// geometry, and only what is genuinely missing is mapped again.
 ///
-/// There is deliberately no cumulative-result machinery. V3 has one asset per
-/// step and no per-step makeup appearance, so there is no result lifecycle to
-/// advance, no "previous result" to carry forward, and no dependency between
-/// one step's state and the next.
+/// V3 stores coordinates, not pixels. There is no image path, no storage
+/// object per step, and no cumulative-result machinery — no per-step makeup
+/// appearance exists to advance, carry forward, or depend on.
 abstract interface class TutorialV3Repository {
   /// Loads the tutorial for [request]'s canonical preview, creating an empty
   /// session if none exists yet.
   ///
-  /// Idempotent: the canonical preview plus the plan version is the natural
-  /// key, so calling this twice returns the same session rather than starting
-  /// a second tutorial for the same look.
+  /// Idempotent: the canonical preview is the natural key, so calling this
+  /// twice returns the same session rather than starting a second tutorial for
+  /// the same look.
   ///
   /// A session this build cannot interpret comes back as
   /// [TutorialV3IncompatibleSession] rather than throwing, so a reopened
@@ -103,8 +112,8 @@ abstract interface class TutorialV3Repository {
   /// Stores a validated plan against an existing session.
   ///
   /// The plan is validated again before it is written, and the whole write is
-  /// atomic: a replan cannot leave a session claiming a plan with a partial
-  /// or interleaved step set.
+  /// atomic: a replan cannot leave a session claiming a plan with a partial or
+  /// interleaved step set.
   Future<TutorialV3LoadedSession> persistPlan({
     required String sessionId,
     required TutorialV3Plan plan,
@@ -118,44 +127,48 @@ abstract interface class TutorialV3Repository {
     required String error,
   });
 
-  /// Prepares one step for guideline generation.
+  /// Prepares one step for geometry mapping.
   ///
-  /// A step that is already `ready` is returned untouched with
-  /// [TutorialV3GuidelineOutcome.reusedExisting], so revisiting a tutorial
-  /// never regenerates work that already exists. Otherwise the step is
-  /// claimed by moving it to `generating`, which is what prevents two
-  /// concurrent callers generating the same `(sessionId, stepIndex)`.
+  /// A step that already holds compatible geometry is returned untouched with
+  /// [TutorialV3GeometryOutcome.reusedExisting], so revisiting a tutorial
+  /// never re-spends quota. Otherwise the step is claimed atomically, which is
+  /// what prevents two concurrent callers mapping the same
+  /// `(sessionId, stepIndex)`.
   ///
-  /// Refuses a step that is already in flight, a step that has exhausted its
-  /// bounded retries, and the final-look step, which generates nothing.
-  Future<TutorialV3GuidelinePreparation> prepareGuideline({
+  /// Refuses a step already in flight, a step that has exhausted its bounded
+  /// retries, and the final-look step, which maps nothing.
+  Future<TutorialV3GeometryPreparation> prepareGeometry({
     required String sessionId,
     required int stepIndex,
   });
 
-  /// Records that a step's guideline generation failed.
+  /// Records that a step's geometry mapping failed.
   ///
   /// The Step Spec is left intact and the attempt count is incremented so a
-  /// bounded retry is possible. No placeholder asset is ever attached.
-  Future<TutorialV3LoadedSession> markGuidelineFailed({
+  /// bounded retry is possible. No partial or placeholder geometry is stored:
+  /// a missing overlay shows as missing.
+  Future<TutorialV3LoadedSession> markGeometryFailed({
     required String sessionId,
     required int stepIndex,
     required String error,
   });
 
-  /// Attaches a generated guideline to a step and marks it ready.
+  /// Attaches validated geometry to a step and marks it ready.
   ///
-  /// [storagePath] must be an owner-scoped path for exactly this session and
-  /// step; anything else is rejected rather than persisted, so one step can
-  /// never be given another step's or another user's asset.
-  Future<TutorialV3LoadedSession> persistGuideline({
+  /// [geometry] must already have passed `TutorialV3GeometryValidator`, and
+  /// its category must match the step's persisted Step Spec — geometry
+  /// describing a different category is rejected rather than stored.
+  Future<TutorialV3LoadedSession> persistGeometry({
     required String sessionId,
     required int stepIndex,
-    required String storagePath,
+    required TutorialV3Geometry geometry,
     String? modelName,
     String? promptVersion,
   });
 
   /// A short-lived signed URL for a private asset.
+  ///
+  /// Still used for the original selfie and the canonical preview, which are
+  /// real stored images. Geometry itself is never a stored object.
   Future<String> createSignedUrl(String storagePath);
 }

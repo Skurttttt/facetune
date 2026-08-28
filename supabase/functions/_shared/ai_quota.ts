@@ -3,12 +3,12 @@
  *
  * This union mirrors the `ai_usage_events_operation_valid` constraint and the
  * `consume_ai_quota` allow-list as defined by the newest migration that
- * touches them, `20260827000200_tutorial_v3_planner`.
+ * touches them, `20260828000100_tutorial_v3_geometry`.
  *
  * `tutorial_step` and `tutorial_geometry_plan` belong to V1 and
  * `tutorial_v2_plan` to V2; all three of those functions are still deployed
- * and ACTIVE. `tutorial_v3_plan` is added by the V3 planner migration, which
- * is written but not yet applied.
+ * and ACTIVE. `tutorial_v3_plan` is applied. `tutorial_v3_geometry` is added by the V3
+ * geometry migration, which is written but not yet applied.
  *
  * Any future migration that redefines either object must be a strict SUPERSET
  * of this list. Dropping an operation here would make a deployed Edge Function
@@ -23,7 +23,8 @@ export type AiOperation =
   | "tutorial_step"
   | "tutorial_geometry_plan"
   | "tutorial_v2_plan"
-  | "tutorial_v3_plan";
+  | "tutorial_v3_plan"
+  | "tutorial_v3_geometry";
 
 export interface QuotaDecision {
   allowed: boolean;

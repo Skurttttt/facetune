@@ -40,12 +40,30 @@ abstract interface class TutorialV3RemoteDataSource {
     required List<Map<String, Object?>> steps,
   });
 
+  /// Atomically claims one step for geometry mapping.
+  ///
+  /// Delegates to `claim_tutorial_v3_geometry`, which decides reuse, in-flight,
+  /// exhausted, final-look and not-found in a single statement. Doing this
+  /// client-side would be a read-then-write that two concurrent callers could
+  /// both win.
+  ///
+  /// [schemaVersion] is the geometry schema THIS BUILD can interpret. The
+  /// RPC reuses a stored document only when it matches, so a document from a
+  /// different build is re-mapped rather than rendered.
+  ///
+  /// Returns the RPC's outcome object.
+  Future<Map<String, Object?>> claimGeometry({
+    required String sessionId,
+    required int stepIndex,
+    required int maxAttempts,
+    required int schemaVersion,
+  });
+
   /// Updates one step, matching on the session and step index so a step can
   /// never be updated through another session's id.
   ///
   /// Returns the updated row, or `null` when [expectedStatuses] is supplied
-  /// and the step was not in one of those states — which is how a generation
-  /// claim stays race-safe.
+  /// and the step was not in one of those states.
   Future<Map<String, Object?>?> updateStep({
     required String sessionId,
     required int stepIndex,
@@ -98,11 +116,7 @@ class SupabaseTutorialV3RemoteDataSource extends SupabaseRemoteDataSource
   Future<Map<String, Object?>> insertSession(
     Map<String, Object?> values,
   ) async {
-    final row = await client
-        .from(_sessions)
-        .insert(values)
-        .select()
-        .single();
+    final row = await client.from(_sessions).insert(values).select().single();
     return row.cast<String, Object?>();
   }
 
@@ -152,6 +166,26 @@ class SupabaseTutorialV3RemoteDataSource extends SupabaseRemoteDataSource
   }
 
   @override
+  Future<Map<String, Object?>> claimGeometry({
+    required String sessionId,
+    required int stepIndex,
+    required int maxAttempts,
+    required int schemaVersion,
+  }) async {
+    final outcome = await client.rpc(
+      'claim_tutorial_v3_geometry',
+      params: {
+        'p_session_id': sessionId,
+        'p_step_index': stepIndex,
+        'p_max_attempts': maxAttempts,
+        'p_schema_version': schemaVersion,
+      },
+    );
+    if (outcome is Map) return outcome.cast<String, Object?>();
+    return <String, Object?>{'outcome': 'unknown'};
+  }
+
+  @override
   Future<Map<String, Object?>?> updateStep({
     required String sessionId,
     required int stepIndex,
@@ -164,7 +198,7 @@ class SupabaseTutorialV3RemoteDataSource extends SupabaseRemoteDataSource
         .eq('tutorial_v3_session_id', sessionId)
         .eq('step_index', stepIndex);
     if (expectedStatuses != null) {
-      query = query.inFilter('guideline_status', expectedStatuses);
+      query = query.inFilter('geometry_status', expectedStatuses);
     }
     final row = await query.select().maybeSingle();
     return row?.cast<String, Object?>();

@@ -1,5 +1,6 @@
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_category.dart';
-import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_guideline_status.dart';
+import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_geometry.dart';
+import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_geometry_status.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_guideline_visual_intent.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_scoped_face_attributes.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_source_mode.dart';
@@ -494,62 +495,64 @@ void main() {
     test('a planned guideline step starts pending', () {
       final step = TutorialV3Step.planned(guidelineStep());
 
-      expect(step.guidelineStatus, TutorialV3GuidelineStatus.pending);
-      expect(step.guidelineStoragePath, isNull);
-      expect(step.hasGuideline, isFalse);
+      expect(step.geometryStatus, TutorialV3GeometryStatus.pending);
+      expect(step.geometry, isNull);
+      expect(step.hasGeometry, isFalse);
       expect(() => TutorialV3PlanValidator.validateStep(step), returnsNormally);
     });
 
     test('a planned final look never needs generation', () {
       final step = TutorialV3Step.planned(finalLookStep());
 
-      expect(step.guidelineStatus, TutorialV3GuidelineStatus.notRequired);
-      expect(step.guidelineStatus.canStartGeneration, isFalse);
+      expect(step.geometryStatus, TutorialV3GeometryStatus.notRequired);
+      expect(step.geometryStatus.canStartGeneration, isFalse);
       expect(() => TutorialV3PlanValidator.validateStep(step), returnsNormally);
     });
 
-    test('the final look may not own a generated asset', () {
+    test('the final look may not own geometry', () {
       final step = TutorialV3Step(
         spec: finalLookStep(),
-        guidelineStatus: TutorialV3GuidelineStatus.ready,
-        guidelineStoragePath: 'user/analyses/a/tutorial-v3/s/step_0002.png',
+        geometryStatus: TutorialV3GeometryStatus.ready,
+        geometry: testGeometry(),
+        geometrySchemaVersion: tutorialV3GeometrySchemaVersion,
       );
 
       expect(
         () => TutorialV3PlanValidator.validateStep(step),
-        throwsValidation('must not have guideline status'),
+        throwsValidation('must not have geometry status'),
       );
     });
 
     test('a guideline step may not be marked as not required', () {
       final step = TutorialV3Step(
         spec: guidelineStep(),
-        guidelineStatus: TutorialV3GuidelineStatus.notRequired,
+        geometryStatus: TutorialV3GeometryStatus.notRequired,
       );
 
       expect(
         () => TutorialV3PlanValidator.validateStep(step),
-        throwsValidation('requires a guideline image'),
+        throwsValidation('requires mapped geometry'),
       );
     });
 
-    test('a ready step must have an asset', () {
+    test('a ready step must carry a document', () {
       final step = TutorialV3Step(
         spec: guidelineStep(),
-        guidelineStatus: TutorialV3GuidelineStatus.ready,
+        geometryStatus: TutorialV3GeometryStatus.ready,
       );
 
       expect(
         () => TutorialV3PlanValidator.validateStep(step),
-        throwsValidation('has no guideline asset'),
+        throwsValidation('is ready but has no geometry'),
       );
     });
 
-    test('an unfinished step must not have an asset', () {
+    test('an unfinished step must not carry a document', () {
       final step = TutorialV3Step(
         spec: guidelineStep(),
-        guidelineStatus: TutorialV3GuidelineStatus.failed,
-        guidelineStoragePath: 'user/analyses/a/tutorial-v3/s/step_0001.png',
+        geometryStatus: TutorialV3GeometryStatus.failed,
+        geometry: testGeometry(),
+        geometrySchemaVersion: tutorialV3GeometrySchemaVersion,
       );
 
       expect(
@@ -558,37 +561,68 @@ void main() {
       );
     });
 
+    test('geometry must describe the category the step teaches', () {
+      // A blush document rendered on an eyeliner step would draw a confidently
+      // wrong overlay, so the categories must agree exactly.
+      final step = TutorialV3Step(
+        spec: guidelineStep(category: TutorialV3Category.eyeliner),
+        geometryStatus: TutorialV3GeometryStatus.ready,
+        geometry: testGeometry(category: TutorialV3Category.blush),
+        geometrySchemaVersion: tutorialV3GeometrySchemaVersion,
+      );
+
+      expect(
+        () => TutorialV3PlanValidator.validateStep(step),
+        throwsValidation('teaches "eyeliner" but carries "blush" geometry'),
+      );
+    });
+
     test('a failed step keeps its spec and may be retried', () {
       final spec = guidelineStep();
       final step = TutorialV3Step(
         spec: spec,
-        guidelineStatus: TutorialV3GuidelineStatus.failed,
+        geometryStatus: TutorialV3GeometryStatus.failed,
         attemptCount: 2,
-        lastErrorCode: 'gemini_no_image_output',
+        lastErrorCode: 'invalid_geometry',
       );
 
       expect(step.spec, same(spec));
-      expect(step.guidelineStatus.canStartGeneration, isTrue);
-      expect(step.hasGuideline, isFalse);
+      expect(step.geometryStatus.canStartGeneration, isTrue);
+      expect(step.hasGeometry, isFalse);
       expect(() => TutorialV3PlanValidator.validateStep(step), returnsNormally);
     });
 
     test('a ready step is reusable rather than regenerated', () {
       final step = TutorialV3Step(
         spec: guidelineStep(),
-        guidelineStatus: TutorialV3GuidelineStatus.ready,
-        guidelineStoragePath: 'user/analyses/a/tutorial-v3/s/step_0001.png',
+        geometryStatus: TutorialV3GeometryStatus.ready,
+        geometry: testGeometry(),
+        geometrySchemaVersion: tutorialV3GeometrySchemaVersion,
       );
 
-      expect(step.hasGuideline, isTrue);
-      expect(step.guidelineStatus.canStartGeneration, isFalse);
+      expect(step.hasGeometry, isTrue);
+      expect(step.hasStaleGeometry, isFalse);
+      expect(step.geometryStatus.canStartGeneration, isFalse);
       expect(() => TutorialV3PlanValidator.validateStep(step), returnsNormally);
+    });
+
+    test('a document written by an older build reads as stale', () {
+      // Stale is a property of the persisted row, not a validation error: the
+      // repository re-maps it rather than refusing to open the tutorial.
+      final step = TutorialV3Step(
+        spec: guidelineStep(),
+        geometryStatus: TutorialV3GeometryStatus.ready,
+        geometry: testGeometry(),
+        geometrySchemaVersion: tutorialV3GeometrySchemaVersion - 1,
+      );
+
+      expect(step.hasStaleGeometry, isTrue);
     });
 
     test('rejects a negative attempt count', () {
       final step = TutorialV3Step(
         spec: guidelineStep(),
-        guidelineStatus: TutorialV3GuidelineStatus.pending,
+        geometryStatus: TutorialV3GeometryStatus.pending,
         attemptCount: -1,
       );
 

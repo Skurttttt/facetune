@@ -421,7 +421,7 @@ export function planRows(
       category: step.category,
       step_spec_json: stepSpecOf(step, context),
       product_snapshot_json: isFinal ? null : productSnapshotOf(step),
-      guideline_status: isFinal ? "not_required" : "pending",
+      geometry_status: isFinal ? "not_required" : "pending",
     };
   });
 }

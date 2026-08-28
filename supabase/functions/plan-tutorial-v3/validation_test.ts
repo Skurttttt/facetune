@@ -420,7 +420,7 @@ Deno.test("planRows shapes the atomic plan write", () => {
   assertEquals(rows.length, 2);
   assertEquals(rows[0].step_index, 1);
   assertEquals(rows[0].category, "blush");
-  assertEquals(rows[0].guideline_status, "pending");
+  assertEquals(rows[0].geometry_status, "pending");
 
   const spec = rows[0].step_spec_json as Record<string, unknown>;
   assertEquals(spec.selected_style_code, "soft_glam");
@@ -435,7 +435,7 @@ Deno.test("planRows shapes the atomic plan write", () => {
 
   assertEquals(rows[1].step_index, 2);
   assertEquals(rows[1].category, "final_look");
-  assertEquals(rows[1].guideline_status, "not_required");
+  assertEquals(rows[1].geometry_status, "not_required");
   assertEquals(rows[1].product_snapshot_json, null);
   const finalSpec = rows[1].step_spec_json as Record<string, unknown>;
   assertEquals("guideline_visual_intent" in finalSpec, false);

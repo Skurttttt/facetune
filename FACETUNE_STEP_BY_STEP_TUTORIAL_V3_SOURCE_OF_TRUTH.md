@@ -1,6 +1,6 @@
 # FaceTune Step-by-Step Tutorial V3 — Source of Truth
 
-**Status:** Authoritative V3 specification  
+**Status:** Authoritative V3 specification — deterministic personalized geometry renderer architecture  
 **Branch:** `feature/step-by-step-tutorial-v3`  
 **Implementation agent:** Claude Code using Opus 5  
 **Stack:** Flutter/Dart + Riverpod + Clean Architecture + Supabase + Gemini through authenticated Edge Functions
@@ -18,27 +18,43 @@ There is NO:
 - Eyeshadow Result
 - Eyeliner Result
 - Lip Result
+- AI-generated replacement selfie for tutorial steps
 
-Every non-final step produces only a **personalized guideline image**.
+Every non-final step displays the **original selfie unchanged** with a **personalized deterministic guideline overlay** rendered by Flutter.
 
 Core flow:
 
 ```text
-Original Selfie
-+ Face Analysis
-+ Selected Look
-+ Persisted Recommendation
-+ Canonical Final Preview
-+ Current Persisted Step Spec
+USER SELFIE
++ FACE ANALYSIS
++ SELECTED LOOK
++ PERSISTED RECOMMENDATION
++ CANONICAL FINAL PREVIEW
         ↓
-Personalized Guideline Image
+MASTER TUTORIAL PLANNER
+        ↓
+VALIDATED + PERSISTED PERSONALIZED STEP SPEC
+        ↓
+ORIGINAL SELFIE
++ CURRENT STEP SPEC
++ SCOPED RELEVANT FACE ATTRIBUTES
+        ↓
+AI GEOMETRY MAPPER
+        ↓
+VALIDATED NORMALIZED GEOMETRY JSON
+        ↓
+FLUTTER DETERMINISTIC OVERLAY RENDERER
+        ↓
+ORIGINAL JPG + TRANSPARENT PERSONALIZED GUIDELINE OVERLAY
 ```
 
-Every step starts again from the ORIGINAL SELFIE.
+The original selfie pixels remain authoritative and immutable.
 
-A generated guideline image must NEVER become the source image for the next step.
+The geometry mapper never returns a replacement face image.
 
-This removes recursive image drift by design.
+A previous guideline overlay must NEVER become an AI input for the next step.
+
+This removes recursive visual drift and generative surface corruption by design.
 
 ## 2. Product Goal
 
@@ -52,7 +68,7 @@ The tutorial must teach the user:
 - WHY that placement suits their face
 - how the step contributes to the exact selected final look
 
-The tutorial must be dynamic and personalized. It is not a generic makeup course.
+The tutorial must be dynamic and personalized. It is not a generic makeup course and it must not reduce to one static overlay template per category.
 
 ## 3. Protected Baseline
 
@@ -91,7 +107,7 @@ Protect existing FaceTune:
 
 ## 4. Security
 
-Required architecture:
+Required AI architecture:
 
 ```text
 Flutter
@@ -107,12 +123,20 @@ Never:
 - trust arbitrary client storage paths
 - overwrite original selfies
 - bypass server-side ownership validation
+- use `service_role` from Flutter
+- print, log, echo, or persist privileged credentials in test output
 
 Use:
 
 `npx -y supabase ...`
 
 not bare `supabase`.
+
+### Open security release blocker
+
+The previously exposed legacy Supabase `service_role` credential remains an **OPEN HIGH-PRIORITY SECURITY ITEM** until it is migrated/revoked. It grants RLS-bypass privileges.
+
+This does not change renderer feasibility results, but production/release is blocked until credential remediation is complete and verified without exposing secret values.
 
 ## 5. Canonical Final Look
 
@@ -127,6 +151,8 @@ The canonical final preview:
 - must not be modified
 - must not be regenerated for tutorial use
 - remains visible as the target reference
+- is an input to the **Master Tutorial Planner**
+- is **NOT** sent to the geometry mapper
 
 Final step:
 
@@ -139,71 +165,91 @@ No new final image.
 
 ## 6. Strict No-Makeup Guideline Rule
 
-Guideline images teach placement only.
+Guideline overlays teach placement only.
 
 Foundation:
-- coverage zones
+- coverage regions
+- eye/lip exclusions when required
 - blending direction
 - NO visible applied foundation
 
 Concealer:
-- placement zones
+- placement regions
 - tap/blend direction
 - NO visible concealer result
 
 Blush:
-- cheek zones
+- personalized cheek regions
 - blend direction
 - NO finished blush appearance
 
-Contour:
+Contour/Bronzer:
 - cheek/temple/jaw guidance
-- NO finished contour
+- NO finished contour/bronzer appearance
+
+Highlighter:
+- localized highlight bands/regions
+- NO finished highlighter appearance
 
 Eyeshadow:
 - lid/crease/outer-zone guidance
-- NO finished eyeshadow
+- NO finished eyeshadow appearance
+
+Eyebrow:
+- brow application/stroke paths
+- NO finished brow fill
 
 Eyeliner:
 - path/wing direction
 - NO finished eyeliner
 
-Lips:
-- coverage/outline guidance
+Lip Color:
+- lip boundary/coverage guidance
 - NO finished lipstick
 
-Allowed guideline graphics:
-- translucent zones
+Lip Gloss:
+- lip application region/path
+- NO finished glossy lip appearance
+
+Allowed visual primitives:
+- translucent regions
+- ellipses
 - arrows
-- paths
-- soft bands
+- polylines/paths
+- soft bands produced deterministically by Flutter
 - minimal markers
+- explicit exclusion regions
 
 Forbidden:
+- AI-generated replacement face image
 - finished makeup appearance
 - unrelated category guidance
 - beautification
 - retouching
 - intentional facial alteration
 - generated tutorial typography relied on for correctness
+- AI-controlled colors/opacities/fonts/gradients/blend modes
 
 ## 7. Independent Steps
 
 Correct:
 
 ```text
-Original Selfie + Step 1 Spec + Canonical Final → Step 1 Guideline
-Original Selfie + Step 2 Spec + Canonical Final → Step 2 Guideline
-Original Selfie + Step 3 Spec + Canonical Final → Step 3 Guideline
+Original Selfie + Step 1 Spec + Scoped Attributes → Step 1 Geometry
+Original Selfie + Step 2 Spec + Scoped Attributes → Step 2 Geometry
+Original Selfie + Step 3 Spec + Scoped Attributes → Step 3 Geometry
 ```
+
+The canonical final preview influences these steps **through the persisted Step Specs created by the Master Planner**, not by being sent directly to the geometry mapper.
 
 Forbidden:
 
 ```text
-Step 1 Guideline → Step 2 Guideline → Step 3 Guideline
+Step 1 Geometry → Step 2 Geometry → Step 3 Geometry
+Step 1 Composite Image → Step 2 AI Input
 ```
 
-Guideline images are terminal instructional assets, not AI inputs.
+Guideline geometry is a terminal instructional artifact for the current step, not an AI input to later steps.
 
 ## 8. One Master Tutorial Planner
 
@@ -224,15 +270,20 @@ Output:
 
 `FULL VALIDATED TUTORIAL PLAN`
 
-Persist it before guideline generation.
+Persist it before geometry mapping.
 
-Individual guideline calls are not allowed to invent different:
+Individual geometry calls are not allowed to invent different:
 - placement
 - direction
 - intensity
 - product
 - technique
 - rationale
+- selected look
+
+The planner is the makeup decision-maker.
+
+The geometry mapper is only a spatial translator.
 
 ## 9. Canonical Step Spec
 
@@ -283,12 +334,14 @@ Invariant:
 ```text
 WRITTEN INSTRUCTION
 =
-GUIDELINE INTENT
+GUIDELINE VISUAL INTENT
 =
 SELECTED LOOK
 =
 CANONICAL TARGET
 ```
+
+The geometry mapper must not reinterpret this invariant. It receives the minimum sufficient subset needed to place the already-decided instruction on the actual face image.
 
 ## 10. Dynamic Step Count
 
@@ -301,7 +354,7 @@ Full Glam may have more still.
 Rules:
 - Final Look always last
 - Foundation early when present
-- Lip Gloss after lip color when both exist
+- Lip Gloss after Lip Color when both exist
 - irrelevant/missing categories may be omitted
 - Kit mode may omit unavailable categories
 - never add filler steps
@@ -334,6 +387,10 @@ Soft Glam + Long Face
 
 Same look, different personalized application.
 
+This personalization is encoded by the planner into the persisted Step Spec.
+
+The geometry mapper must produce different geometry when different valid Step Specs require different placement. It must not use one static coordinate template per category.
+
 ## 12. Category-Specific Attributes
 
 Preferred primary relevance:
@@ -345,12 +402,14 @@ Preferred primary relevance:
 | Contour/Bronzer | face shape, selected look |
 | Blush | face shape, selected look |
 | Highlighter | face shape, selected look |
-| Brows | brow/face context if available, selected look |
+| Eyebrow | brow/face context if available, selected look |
 | Eyeshadow | eye shape, selected look |
 | Eyeliner | eye shape, selected look |
 | Lip Color/Gloss | lip shape, selected look |
 
-Do not flood every prompt with irrelevant attributes.
+Do not flood every geometry request with irrelevant attributes.
+
+The mapper receives only relevant scoped attributes plus the authoritative current Step Spec.
 
 ## 13. My Makeup Kit
 
@@ -365,25 +424,27 @@ Kit mode must:
 
 Do not rewrite core My Makeup Kit behavior.
 
-## 14. Guideline Prompt Philosophy
+## 14. Geometry Mapper Philosophy
 
-For every guideline generation:
+For every non-final step, the geometry mapper must follow this intent:
 
-> Preserve the original selfie and identity. Do not apply makeup. Do not retouch skin. Do not beautify. Do not intentionally alter lighting or facial features. Add only the instructional zones, arrows, paths, or markers required by the persisted Step Spec for the CURRENT category.
+> You are a spatial geometry mapper, not a makeup artist. The makeup decision has already been made and persisted in the current Step Spec. Locate that exact instruction on the supplied original selfie and return only normalized structured geometry. Do not redesign the makeup, do not choose a different placement, and do not output an image.
 
-> The canonical final preview is an unmodified target reference. Use it only to understand the intended placement/style of the current category. Do not copy the finished makeup onto the selfie.
+> The original selfie defines the coordinate space. Return geometry for the CURRENT category only. The Step Spec is authoritative. Relevant face attributes may help locate facial regions but may not override or reinterpret the Step Spec.
 
-> Visualize the persisted Step Spec. Do not invent a different instruction.
+> Return strict structured data only. Do not return prose, SVG, HTML, Flutter code, image bytes, colors, opacity, typography, or arbitrary styling.
 
-## 15. No AI Typography
+The canonical final preview is **not** part of the geometry request.
+
+## 15. No AI Typography and No AI Styling
 
 Critical text is rendered by Flutter.
 
-AI guideline images should focus on:
-- zones
-- arrows
-- paths
-- markers
+AI geometry output contains only:
+- normalized coordinates
+- primitive kind
+- semantic role
+- geometry parameters required by the schema
 
 Flutter renders:
 - Apply
@@ -395,7 +456,19 @@ Flutter renders:
 - Step number
 - Product/shade
 
-Do not make correctness depend on AI-rendered words.
+The model must not control:
+- color
+- hex/RGB
+- opacity
+- stroke width
+- font
+- text labels
+- shadow
+- gradient
+- animation
+- blend mode
+
+Do not make correctness depend on AI-rendered words or AI-selected visual style.
 
 ## 16. Target Reference UI
 
@@ -405,7 +478,7 @@ Preferred step UI:
 STEP 4 OF 8
 BLUSH
 
-[ LARGE PERSONALIZED GUIDELINE IMAGE ]
+[ ORIGINAL SELFIE + PERSONALIZED FLUTTER GUIDELINE OVERLAY ]
 
 TARGET LOOK
 [ exact canonical final preview thumbnail / expandable reference ]
@@ -438,45 +511,212 @@ There is no Guidelines ↔ Result slider because there are no intermediate Resul
 Desirable later, not required for MVP.
 
 Examples:
-- blush → cheek-focused target
-- eyeshadow → eye-focused target
-- lips → lip-focused target
+- blush → cheek-focused canonical view
+- eyeshadow → eye-focused canonical view
+- lips → lip-focused canonical view
 
 Strict rule:
 - never ask AI to redraw the target crop
 - derive any crop from the actual canonical final preview
 - use full canonical preview until a reliable non-generative crop method exists
-- do not recreate V1 geometry complexity merely for thumbnails
+- target crops affect UI/reference only, not geometry-mapper image inputs
 
-## 18. Hybrid Generation Strategy
+## 18. Geometry Contract
+
+Geometry uses normalized original-image coordinates:
+
+```text
+x ∈ [0.0, 1.0]
+y ∈ [0.0, 1.0]
+origin = top-left
+```
+
+Required top-level contract conceptually:
+
+```json
+{
+  "version": 1,
+  "category": "blush",
+  "coordinateSpace": "normalized_original_image",
+  "primitives": []
+}
+```
+
+Approved primitive families:
+- `region`
+- `ellipse`
+- `polyline`
+- `arrow`
+- `marker`
+
+Approved semantic roles include:
+- `coverage_zone`
+- `placement_zone`
+- `application_path`
+- `blend_direction`
+- `boundary`
+- `exclusion`
+- `focus_marker`
+
+Exact names may differ if the implemented domain uses safer conventions, but the architecture must remain strict and discriminated.
+
+## 19. Geometry Validation
+
+Treat Gemini output as untrusted input.
+
+Reject geometry when:
+- version unsupported
+- category mismatches current Step Spec
+- coordinate space incorrect
+- primitive kind unknown
+- semantic role unknown
+- coordinate is NaN/infinite
+- coordinate outside `[0,1]`
+- primitive count exceeds strict bound
+- total point count exceeds strict bound
+- region malformed
+- polygon too small
+- ellipse radius invalid
+- arrow zero-length
+- path absurdly long or malformed
+- unsupported category/primitive combination
+- unknown styling/text/code fields appear
+
+Do not silently clamp invalid AI coordinates.
+
+Invalid model output must fail validation and use bounded retry/failure behavior.
+
+## 20. Category-to-Primitive Rules
+
+Define explicit allowed primitive families by canonical category.
+
+Examples:
+
+Foundation:
+- region
+- arrow
+- marker/exclusion where justified
+
+Concealer:
+- region or ellipse
+- arrow
+- marker for targeted spots where Step Spec requires them
+
+Blush:
+- ellipse or region
+- arrow
+
+Highlighter:
+- region or polyline
+- marker where justified
+
+Eyeshadow:
+- region
+- polyline
+- arrow
+
+Lip Color:
+- polyline
+- region
+- arrow
+
+Lip Gloss:
+- region
+- polyline
+- marker/arrow where justified
+
+Contour/Bronzer:
+- region
+- polyline
+- arrow
+
+Eyebrow:
+- polyline
+- arrow
+- marker
+
+Eyeliner:
+- polyline
+- arrow
+- marker
+
+Inspect actual category requirements before locking exact combinations.
+
+## 21. Flutter Deterministic Renderer
+
+Render overlays using native Flutter, preferably `CustomPainter` or an equally deterministic mechanism.
+
+Conceptually:
+
+```text
+Stack
+├── Image(originalSelfie)
+└── CustomPaint(validatedGuidelineGeometry)
+```
+
+The renderer must never:
+- rewrite selfie bytes
+- save over the selfie
+- ask Gemini for a replacement selfie
+- flatten into the original source file
+- depend on SVG/HTML generated by Gemini
+
+For temporary QA evidence, a composite screenshot/export may be produced separately, but the source image bytes remain unchanged.
+
+## 22. Image-Space Transform
+
+Normalized geometry refers to the ORIGINAL IMAGE coordinate space.
+
+Flutter must correctly map it into the actual displayed image rectangle under:
+- `BoxFit.contain`
+- `BoxFit.cover` if used
+- alignment
+- letterboxing
+- cropping
+- device-size differences
+
+Use tested Flutter image-fit math such as `applyBoxFit` and `Alignment.inscribe` or an equivalent proven transform.
+
+Do not assume the image fills the widget.
+
+Inspect actual selfie orientation/mirroring behavior. Do not invent transforms.
+
+## 23. Hybrid Geometry Strategy
 
 At tutorial start:
 
 1. validate source/ownership
-2. generate complete plan
+2. generate/load complete plan
 3. validate + persist all Step Specs
 4. show text/tutorial shell
-5. generate current guideline
-6. pre-generate NEXT guideline only
-7. persist/cache completed guidelines
-8. revisiting uses cache
-9. final step requires no generation
+5. map/generate geometry for current step
+6. validate/persist/cache geometry
+7. prefetch NEXT step geometry only
+8. revisiting uses cached validated geometry
+9. final step requires no geometry-mapping call
 
 Default prefetch depth = 1.
 
-## 19. Persistence Isolation
+No image generation occurs for non-final tutorial guidelines.
+
+## 24. Persistence Isolation
 
 Do not silently reuse V1/V2 tutorial schema.
 
-Inspect remote state first.
+Inspect current remote state first.
 
-Prefer V3-specific objects such as:
+Existing V3 objects may include:
 
 ```text
 tutorial_v3_sessions
 tutorial_v3_steps
-tutorial_v3_assets
 ```
+
+Production geometry persistence should store a validated geometry snapshot/reference associated with the analysis/session/step.
+
+Do not assume the old `guideline asset path` representation remains sufficient.
+
+Before schema changes, inspect current V3 migration/state and design the smallest backward-safe V3-specific evolution.
 
 V3 session persists:
 - owner
@@ -494,192 +734,231 @@ V3 step persists:
 - category
 - validated Step Spec
 - product snapshot if applicable
-- guideline status
-- guideline asset reference
+- geometry status
+- validated geometry payload/version or safe reference
 - retry/error metadata
 
 RLS and server ownership checks are mandatory.
 
-## 20. Versioning
+## 25. Versioning
 
-V3 plans must be versioned, e.g. `plan_version = 3`.
+V3 plans must be versioned, e.g. `plan_version = 3` unless current implementation already uses a specific compatible value.
+
+Geometry must also have its own explicit schema/version.
 
 V3 must not silently interpret V1/V2 rows as V3.
 
 Do not rewrite historical V1/V2 data.
 
-## 21. Requested Guideline Model
+## 26. Model Responsibilities
 
-Requested model:
+### Planner model
 
-`gemini-3.6-flash`
+Server-configurable, currently:
 
-This is the desired V3 guideline model, but implementation MUST pass a capability gate.
+`TUTORIAL_V3_PLANNER_MODEL = gemini-3.6-flash`
 
-Before hardcoding, verify the current project/API can actually do:
-
-```text
-source image(s) IN
-+ instruction IN
-→ image bytes OUT
-```
-
-Do not confuse this with:
+Responsibility:
 
 ```text
-image IN
-→ text/JSON OUT
+face analysis + selected look + recommendation + canonical final preview
+→ validated personalized structured plan
 ```
 
-If `gemini-3.6-flash` cannot return image output for this workflow:
+### Geometry model
 
-**STOP AND REPORT THE EXACT INCOMPATIBILITY.**
+Server-configurable:
 
-Do not silently substitute another model.
+`TUTORIAL_V3_GEOMETRY_MODEL = gemini-3.6-flash`
 
-Expose the model server-side:
-
-`TUTORIAL_V3_GUIDELINE_MODEL`
-
-A future model change must not require rewriting Flutter/domain/repository/persistence/planner/Kit logic.
-
-## 22. Planner vs Guideline Model
-
-Planner responsibility:
+Responsibility:
 
 ```text
-face analysis + look + recommendation + canonical target
-→ validated structured plan
+original selfie + persisted Step Spec + scoped face attributes
+→ strict normalized geometry JSON
 ```
 
-Guideline responsibility:
+The geometry model returns **text/JSON structured output, not image bytes**.
+
+### Premium final preview model
+
+Remains separate and unchanged.
+
+Do not use tutorial geometry work to modify `GEMINI_IMAGE_MODEL` or the premium preview pipeline.
+
+## 27. Historical Renderer Decisions
+
+The following experiments are authoritative evidence and must not be casually resurrected:
+
+### V3-6A.1 — Two-image generative guideline renderer
 
 ```text
-original selfie + canonical target + persisted Step Spec
-→ guideline image
+Original Selfie
++ Canonical Final Preview
++ Step Spec
+→ AI-generated guideline image
 ```
 
-Keep them architecturally separate.
+Result: **REJECTED**.
 
-## 23. Validation
+Observed repeated cross-category makeup/style transfer from the canonical target despite three prompt variants.
 
-Planner output must be validated for:
-- category vocabulary
-- step order
-- dynamic count
-- selected look
-- product ownership
-- required fields
-- final step
-- plan version
-- category-specific attribute relevance
+### V3-6A.2 — Single-image generative guideline renderer
 
-Guideline responses must validate:
-- response shape
-- image bytes
-- MIME type
-- decodability
-- size
-- correct session/step
-- safe storage destination
+```text
+Original Selfie
++ Step Spec
+→ AI-generated guideline image
+```
 
-Use bounded retries only.
+Result: **REJECTED**.
 
-## 24. Failure Behavior
+Cross-category transfer disappeared, but region-fill annotation altered the facial surface: foundation lightened/repainted skin and lip guidance recolored/desaturated lips despite explicit prohibitions.
 
-If guideline generation fails:
-- keep Step Spec
-- mark failure
+Blush geometry improved when Step Spec wording became spatially explicit, and eyeliner path behavior was strong. These findings support geometry mapping, not full-image regeneration.
+
+### Current decision
+
+```text
+AI decides/returns WHERE as validated geometry.
+Flutter draws HOW it looks.
+Original selfie remains untouched.
+```
+
+Do not create V3-6A.3 or continue generative-image prompt tuning without explicit architectural approval.
+
+## 28. Failure Behavior
+
+If geometry mapping fails:
+- keep the persisted Step Spec
+- mark geometry failure
 - allow bounded retry
-- do not fake static arrows
-- do not show original selfie as “successful guideline”
-- do not use another step/user's asset
+- do not substitute a universal static overlay
+- do not display the original selfie alone as a “successful guideline”
+- do not use another step/user's geometry
+- do not fall back to AI-generated replacement images
 
 A missing guideline is better than a confidently wrong one.
 
-## 25. Storage
+Dynamic deterministic Flutter overlays are **not** “fake static arrows.”
+
+Forbidden static behavior means reusing universal coordinates disconnected from the current user/Step Spec.
+
+Required behavior means personalized geometry is generated from the current selfie + authoritative Step Spec and then rendered deterministically.
+
+## 29. Storage and Data Lifecycle
 
 Never overwrite original selfie or canonical preview.
 
-Prefer:
+Geometry is small structured data and should not require one generated JPG per tutorial step.
 
-```text
-{userId}/analyses/{analysisId}/tutorial-v3/{sessionId}/
-  step_0001_guideline.png
-```
+Production may persist validated geometry in database JSON or another V3-specific safe structure after schema review.
 
-Use actual repository conventions found during audit.
+If QA composite screenshots are created, treat them as disposable/non-authoritative evidence unless explicitly designed as a product cache.
 
-Storage remains private.
+History deletion must still remove any analysis-owned tutorial data/assets under the existing deletion lifecycle.
 
-## 26. Idempotency
+Private storage remains private.
 
-Persist states such as:
+## 30. Idempotency
+
+Persist/derive states such as:
 
 ```text
 pending
-generating
+mapping
 ready
 failed
 ```
 
-Reuse ready assets.
+Reuse ready geometry when compatible.
 
-Prevent duplicate concurrent generation for the same `(sessionId, stepIndex)`.
+Prevent duplicate concurrent mapping for the same `(sessionId, stepIndex, geometryVersion)`.
 
-## 27. Device QA
+A ready geometry payload must be deterministic input to Flutter rendering.
+
+## 31. Full Category Coverage
+
+The canonical makeup catalog must remain aligned with the actual project codes.
+
+Current product categories include:
+- Foundation
+- Concealer
+- Blush
+- Highlighter
+- Eyeshadow
+- Lipstick / Lip Color
+- Lip Gloss
+- Contour / Bronzer
+- Eyebrow
+- Eyeliner
+
+Do not permanently rename or fork category codes inside V3.
+
+The geometry architecture must represent all canonical categories before final acceptance.
+
+## 32. Device QA
 
 Automated tests do not prove visual usefulness.
 
-Test:
-- Foundation
-- Concealer
-- Contour/Bronzer
-- Blush
-- Eyeshadow
-- Eyeliner
-- Lip Color
+Test all canonical categories.
 
 For each guideline verify:
-1. identity remains recognizable
-2. no finished makeup appearance is added
-3. only current category is taught
-4. placement makes cosmetic sense
-5. image matches persisted Step Spec
-6. face personalization makes sense
-7. selected-look personalization makes sense
-8. connection to canonical target is clear
-9. arrows/zones are understandable
-10. no AI typography is required
+1. original selfie underneath is unchanged
+2. only current category is taught
+3. placement matches persisted Step Spec
+4. face personalization makes sense
+5. selected-look personalization remains encoded by the Step Spec
+6. connection to canonical target is clear in tutorial context
+7. zones/arrows/paths are understandable
+8. no AI typography is required
+9. overlay is visually instructional, not cosmetic-looking
+10. no clipping/coordinate drift/BoxFit misalignment occurs
 
-## 28. Acceptance Criteria
+Also test personalization differentials:
+- same look + different face attributes → appropriately different Step Specs/geometry
+- same user + different selected look → appropriately different Step Specs/geometry
+
+Do not fake differential behavior with random coordinate offsets.
+
+## 33. Acceptance Criteria
 
 V3 is successful when:
 - one full dynamic plan is persisted
 - selected look + recommendation drive every step
 - face attributes alter instructions appropriately
 - Kit mode uses only owned selected products
-- every guideline starts from original selfie
+- every non-final guideline uses the original selfie unchanged
 - no intermediate makeup Results exist
 - no previous guideline becomes an AI input
-- guideline image matches Step Spec
-- canonical target remains visible
+- geometry matches the persisted Step Spec
+- geometry is personalized rather than universal/static
+- Flutter renders the overlay deterministically
+- canonical target remains visible in the tutorial UI
 - Flutter text is deterministic from Step Spec
 - final screen reuses exact premium final preview
-- RLS/storage/security remain intact
+- RLS/security remain intact
+- original image hash/pixels remain unchanged
 - automated + physical-device QA pass
+- all canonical categories are representable
 - stable FaceTune/My Makeup Kit do not regress
+- exposed legacy `service_role` remediation is complete before production/release
 
-## 29. Forbidden Fixes
+## 34. Forbidden Fixes
 
 Never:
 - reintroduce cumulative makeup generation
 - feed previous guidelines into later steps
-- hardcode universal placement
+- reintroduce AI-generated replacement guideline selfies without explicit architecture approval
+- send canonical final preview to geometry mapper
+- hardcode universal placement coordinates
 - generate generic instructions disconnected from target
-- let each guideline call invent different instructions
+- let geometry mapping invent different makeup instructions
 - generate a new final look
 - depend on AI typography
+- allow AI to control overlay styling
+- accept free-form SVG/HTML/code from Gemini
+- silently clamp invalid geometry
 - fake personalization
 - disable validation/RLS
 - make storage public
@@ -688,8 +967,9 @@ Never:
 - modify premium preview without evidence
 - introduce MediaPipe/OpenCV/TFLite/AR without explicit approval
 - update unrelated packages during feature phases
+- automatically continue to the next phase
 
-## 30. Execution Rule
+## 35. Execution Rule
 
 A complete V3 phase prompt authorizes THAT phase only.
 
@@ -704,6 +984,6 @@ Claude Code must:
 
 Do not automatically proceed to the next phase.
 
-## 31. Definition of Success
+## 36. Definition of Success
 
-> A user selects a FaceTune makeup look and receives a dynamic, face-personalized tutorial where every step shows a clear guideline visualization on the original selfie, explains exactly what to apply and how, keeps the exact canonical final look visible as the destination, and never generates intermediate makeup appearances that can drift away from the selected result.
+> A user selects a FaceTune makeup look and receives a dynamic, face-personalized tutorial where every step uses the unchanged original selfie with a precise personalized guideline overlay derived from the authoritative Step Spec, explains exactly what to apply and how, keeps the exact canonical final look visible as the destination, and never generates intermediate makeup appearances that can drift away from the selected result.

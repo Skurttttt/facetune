@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:facetune/features/tutorial_v3/domain/services/tutorial_v3_storage_paths.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Pins the V3 persistence security posture.
@@ -18,6 +17,9 @@ void main() {
 
   final migration = source(
     'supabase/migrations/20260827000100_tutorial_v3_sessions_steps.sql',
+  );
+  final geometryMigration = source(
+    'supabase/migrations/20260828000100_tutorial_v3_geometry.sql',
   );
 
   const tables = ['tutorial_v3_sessions', 'tutorial_v3_steps'];
@@ -124,25 +126,7 @@ void main() {
     });
   });
 
-  group('storage path safety', () {
-    test('a guideline must live in the owner folder', () {
-      expect(
-        migration,
-        contains("guideline_image_path like (user_id::text || '/analyses/%')"),
-      );
-    });
-
-    test('a guideline can never overwrite protected assets', () {
-      for (final forbidden in ['/original/', '/generated/', '/kit-generated/']) {
-        expect(
-          migration,
-          contains("guideline_image_path not like '%$forbidden%'"),
-          reason: 'guideline must be excluded from $forbidden',
-        );
-      }
-      expect(migration, contains("guideline_image_path not like '%..%'"));
-    });
-
+  group('stored payload safety', () {
     test('the canonical preview can never be an original selfie', () {
       expect(
         migration,
@@ -151,33 +135,159 @@ void main() {
       expect(migration, contains("canonical_image_path not like '%..%'"));
     });
 
-    test('the SQL folder matches the Dart storage path builder', () {
+    test('V3-6B removes the per-step image path entirely', () {
+      // With no path column there is no path to validate, no object to
+      // overwrite, and no way for a step to reference another user's asset.
+      for (final constraint in [
+        'tutorial_v3_steps_guideline_path_unique',
+        'tutorial_v3_steps_guideline_path_owned',
+        'tutorial_v3_steps_guideline_ready_has_path',
+        'tutorial_v3_steps_guideline_unready_has_no_path',
+      ]) {
+        expect(
+          geometryMigration,
+          contains(constraint),
+          reason: '$constraint must be dropped, not left behind',
+        );
+      }
       expect(
-        migration,
-        contains("guideline_image_path like '%/${TutorialV3StoragePaths.folder}/%'"),
+        geometryMigration,
+        contains('drop column if exists guideline_image_path'),
+      );
+      expect(geometryMigration.contains('storage.objects'), isFalse);
+      expect(geometryMigration.contains('face-images'), isFalse);
+    });
+
+    test('geometry is a JSON object, never arbitrary scalar or text', () {
+      expect(
+        geometryMigration,
+        contains("check (geometry_json is null or jsonb_typeof(geometry_json) = 'object')"),
       );
     });
 
-    test('one stored path can never be claimed by two steps', () {
+    test('a stored document always declares a usable schema version', () {
+      // A payload with no version could not be checked for staleness, so it
+      // would be rendered under whatever vocabulary the reader happened to
+      // have.
       expect(
-        migration,
-        contains('tutorial_v3_steps_guideline_path_unique'),
+        geometryMigration,
+        contains('tutorial_v3_steps_geometry_schema_version_positive'),
+      );
+      expect(
+        geometryMigration,
+        contains('tutorial_v3_steps_geometry_ready_has_payload'),
+      );
+      expect(
+        geometryMigration,
+        contains('tutorial_v3_steps_geometry_unready_has_no_payload'),
       );
     });
 
-    test('an unready step never keeps a stale asset', () {
+    test('an unready step never keeps a stale document', () {
+      final collapsed = geometryMigration.replaceAll(RegExp(r'\s+'), ' ');
       expect(
-        migration,
+        collapsed,
         contains(
-          "check (guideline_status = 'ready' or guideline_image_path is null)",
+          "check ( geometry_status <> 'ready' or (geometry_json is not null "
+          'and geometry_schema_version is not null) )',
         ),
       );
       expect(
-        migration,
+        collapsed,
         contains(
-          "check (guideline_status <> 'ready' or guideline_image_path is not null)",
+          "check ( geometry_status = 'ready' or (geometry_json is null "
+          'and geometry_schema_version is null) )',
         ),
       );
+    });
+  });
+
+  /// The body of `claim_tutorial_v3_geometry` alone, bounded at its own `$$;`
+  /// terminator so a later function in the same migration is never read as
+  /// part of it.
+  final claimBody = (() {
+    final start = geometryMigration.indexOf(
+      'function public.claim_tutorial_v3_geometry',
+    );
+    return geometryMigration.substring(
+      start,
+      geometryMigration.indexOf(r"$$;", start),
+    );
+  })();
+
+  group('atomic geometry claim', () {
+    test('the claim runs as the caller, not as definer', () {
+      // SECURITY INVOKER keeps RLS in force, so a caller can only ever claim
+      // a step inside a session they own.
+      expect(claimBody, contains('security invoker'));
+      expect(claimBody.contains('security definer'), isFalse);
+      expect(claimBody, contains("set search_path = ''"));
+    });
+
+    test('the claim rejects anonymous execution', () {
+      expect(
+        geometryMigration,
+        contains(
+          'revoke all on function public.claim_tutorial_v3_geometry'
+          '(uuid, integer, integer, integer)\n  from anon',
+        ),
+      );
+      expect(
+        geometryMigration,
+        contains(
+          'grant execute on function public.claim_tutorial_v3_geometry'
+          '(uuid, integer, integer, integer)\n  to authenticated',
+        ),
+      );
+      expect(
+        geometryMigration,
+        contains("raise exception 'authentication required'"),
+      );
+    });
+
+    test('the claim decides in one statement, not read-then-write', () {
+      // Two concurrent callers must not both win. The UPDATE itself carries
+      // the state guard, so exactly one can move a step to `generating`.
+      expect(
+        geometryMigration,
+        contains('and geometry_status = any(v_claimable)'),
+      );
+      expect(geometryMigration, contains('if not found then'));
+      expect(geometryMigration, contains("'outcome', 'in_flight'"));
+    });
+
+    test('a claim always starts from an empty payload', () {
+      expect(claimBody, contains('geometry_json = null'));
+      expect(claimBody, contains('geometry_schema_version = null'));
+    });
+
+    test('reuse is version-scoped, so a stale document is never rendered', () {
+      expect(
+        claimBody,
+        contains(
+          'if v_row.geometry_schema_version is not distinct from '
+          'p_schema_version then',
+        ),
+      );
+      expect(claimBody, contains("'outcome', 'reused'"));
+      expect(claimBody, contains("'replaced_schema_version'"));
+    });
+
+    test('the final look and a foreign step are refused before any write', () {
+      expect(claimBody.indexOf("'outcome', 'not_found'"), greaterThan(-1));
+      expect(claimBody.indexOf("'outcome', 'final_look'"), greaterThan(-1));
+      expect(
+        claimBody.indexOf("'outcome', 'final_look'"),
+        lessThan(claimBody.indexOf('update public.tutorial_v3_steps')),
+      );
+    });
+
+    test('retries are bounded inside the database', () {
+      expect(
+        geometryMigration,
+        contains('if v_row.attempt_count >= p_max_attempts then'),
+      );
+      expect(geometryMigration, contains("'outcome', 'exhausted'"));
     });
   });
 

@@ -20,3 +20,6 @@ verify_jwt = true
 
 [functions.plan-tutorial-v3]
 verify_jwt = true
+
+[functions.map-tutorial-v3-guideline-geometry]
+verify_jwt = true

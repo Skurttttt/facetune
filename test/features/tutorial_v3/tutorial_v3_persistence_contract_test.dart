@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_category.dart';
-import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_guideline_status.dart';
+import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_geometry_status.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_session_status.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_source_mode.dart';
 import 'package:facetune/features/tutorial_v3/domain/value_objects/tutorial_v3_plan_version.dart';
@@ -36,13 +36,22 @@ void main() {
       })
       .join('\n');
 
+  /// The V3-6B migration, which supersedes the guideline-image model with
+  /// stored geometry. Invariants that describe the schema AS IT STANDS TODAY
+  /// are asserted against it; the base migration above is applied and frozen,
+  /// so it is only read for what it established.
+  final geometryMigration = source(
+    'supabase/migrations/20260828000100_tutorial_v3_geometry.sql',
+  );
+
   /// The contents of a `check (... in ('a', 'b'))` list following [anchor].
-  Set<String> vocabularyAfter(String anchor) {
-    final start = migration.indexOf(anchor);
+  Set<String> vocabularyAfter(String anchor, [String? text]) {
+    final sql = text ?? migration;
+    final start = sql.indexOf(anchor);
     expect(start, greaterThan(-1), reason: 'missing constraint $anchor');
-    final open = migration.indexOf('in (', start);
-    final close = migration.indexOf(')', open);
-    final body = migration.substring(open + 4, close);
+    final open = sql.indexOf('in (', start);
+    final close = sql.indexOf(')', open);
+    final body = sql.substring(open + 4, close);
     return RegExp(
       "'([a-z_]+)'",
     ).allMatches(body).map((match) => match.group(1)!).toSet();
@@ -176,10 +185,15 @@ void main() {
       );
     });
 
-    test('guideline statuses match TutorialV3GuidelineStatus exactly', () {
+    test('geometry statuses match TutorialV3GeometryStatus exactly', () {
+      // The base migration's `guideline_status` is dropped by V3-6B, so the
+      // live vocabulary is the geometry migration's.
       expect(
-        vocabularyAfter('tutorial_v3_steps_guideline_status_valid'),
-        TutorialV3GuidelineStatus.values.map((status) => status.code).toSet(),
+        vocabularyAfter(
+          'tutorial_v3_steps_geometry_status_valid',
+          geometryMigration,
+        ),
+        TutorialV3GeometryStatus.values.map((status) => status.code).toSet(),
       );
     });
 
@@ -215,21 +229,35 @@ void main() {
       expect(ddl.contains('result_image_path'), isFalse);
     });
 
-    test('the final look must never carry a guideline', () {
+    test('V3-6B leaves no per-step image column behind', () {
+      // V3 stores coordinates, not pixels. Any surviving image-path column
+      // would let a later phase quietly reintroduce a generated surface.
+      expect(geometryMigration, contains('drop column if exists guideline_image_path'));
       expect(
-        migration,
-        contains('tutorial_v3_steps_final_look_needs_no_guideline'),
+        RegExp(r'add column[^;]*image_path').hasMatch(geometryMigration),
+        isFalse,
       );
       expect(
-        migration,
+        RegExp(r'add column[^;]*result_').hasMatch(geometryMigration),
+        isFalse,
+      );
+    });
+
+    test('the final look must never carry geometry', () {
+      expect(
+        geometryMigration,
+        contains('tutorial_v3_steps_final_look_needs_no_geometry'),
+      );
+      expect(
+        geometryMigration,
         contains(
-          "(category = 'final_look' and guideline_status = 'not_required')",
+          "(category = 'final_look' and geometry_status = 'not_required')",
         ),
       );
       expect(
-        migration,
+        geometryMigration,
         contains(
-          "(category <> 'final_look' and guideline_status <> 'not_required')",
+          "(category <> 'final_look' and geometry_status <> 'not_required')",
         ),
       );
     });
@@ -270,12 +298,19 @@ void main() {
         'category',
         'step_spec_json',
         'product_snapshot_json',
-        'guideline_status',
-        'guideline_image_path',
-        'guideline_error',
         'attempt_count',
       ]) {
         expect(migration, contains(column), reason: 'missing $column');
+      }
+      // The guideline-image columns the base migration created are dropped by
+      // V3-6B, so today's step shape is the union of the two migrations.
+      for (final column in [
+        'geometry_status',
+        'geometry_json',
+        'geometry_schema_version',
+        'geometry_error',
+      ]) {
+        expect(geometryMigration, contains(column), reason: 'missing $column');
       }
     });
 

@@ -2,7 +2,8 @@ import 'package:facetune/features/tutorial_v3/data/data_sources/tutorial_v3_remo
 import 'package:facetune/features/tutorial_v3/data/repositories/supabase_tutorial_v3_repository.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_canonical_preview.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_category.dart';
-import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_guideline_status.dart';
+import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_geometry.dart';
+import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_geometry_status.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_session_readiness.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_session_snapshot.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_session_status.dart';
@@ -10,7 +11,6 @@ import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_source
 import 'package:facetune/features/tutorial_v3/domain/errors/tutorial_v3_failure.dart';
 import 'package:facetune/features/tutorial_v3/domain/repositories/tutorial_v3_repository.dart';
 import 'package:facetune/features/tutorial_v3/domain/services/tutorial_v3_retry_policy.dart';
-import 'package:facetune/features/tutorial_v3/domain/services/tutorial_v3_storage_paths.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'tutorial_v3_fixtures.dart';
@@ -31,6 +31,7 @@ class _FakeRemote implements TutorialV3RemoteDataSource {
   int insertCount = 0;
   final List<String> signedPaths = [];
   int planWrites = 0;
+  int claimCalls = 0;
 
   /// Seeds a session written by a different build of the tutorial feature.
   String seedSessionAtPlanVersion(int planVersion) {
@@ -59,7 +60,7 @@ class _FakeRemote implements TutorialV3RemoteDataSource {
         'step_index': 1,
         'category': 'foundation_result',
         'step_spec_json': <String, Object?>{'unknown_shape': true},
-        'guideline_status': 'pending',
+        'geometry_status': 'pending',
       },
     ];
     return id;
@@ -140,6 +141,57 @@ class _FakeRemote implements TutorialV3RemoteDataSource {
     return steps.length;
   }
 
+  /// Mirrors `claim_tutorial_v3_geometry`: one decision, no read-then-write
+  /// the caller could interleave.
+  @override
+  Future<Map<String, Object?>> claimGeometry({
+    required String sessionId,
+    required int stepIndex,
+    required int maxAttempts,
+    required int schemaVersion,
+  }) async {
+    claimCalls++;
+    for (final row in steps[sessionId] ?? const <Map<String, Object?>>[]) {
+      if (row['step_index'] != stepIndex) continue;
+      if (row['category'] == TutorialV3Category.finalLook.code) {
+        return <String, Object?>{'outcome': 'final_look'};
+      }
+      var stale = false;
+      if (row['geometry_status'] == TutorialV3GeometryStatus.ready.code &&
+          row['geometry_json'] != null) {
+        if (row['geometry_schema_version'] == schemaVersion) {
+          return <String, Object?>{
+            'outcome': 'reused',
+            'schema_version': row['geometry_schema_version'],
+          };
+        }
+        stale = true;
+      }
+      if (!stale &&
+          row['geometry_status'] ==
+              TutorialV3GeometryStatus.generating.code) {
+        return <String, Object?>{'outcome': 'in_flight'};
+      }
+      final attempts = (row['attempt_count'] as int?) ?? 0;
+      if (attempts >= maxAttempts) {
+        return <String, Object?>{
+          'outcome': 'exhausted',
+          'attempt_count': attempts,
+        };
+      }
+      final replaced = row['geometry_schema_version'];
+      row['geometry_status'] = TutorialV3GeometryStatus.generating.code;
+      row['geometry_error'] = null;
+      row['geometry_json'] = null;
+      row['geometry_schema_version'] = null;
+      return <String, Object?>{
+        'outcome': 'claimed',
+        'replaced_schema_version': stale ? replaced : null,
+      };
+    }
+    return <String, Object?>{'outcome': 'not_found'};
+  }
+
   @override
   Future<Map<String, Object?>?> updateStep({
     required String sessionId,
@@ -150,7 +202,7 @@ class _FakeRemote implements TutorialV3RemoteDataSource {
     for (final row in steps[sessionId] ?? const <Map<String, Object?>>[]) {
       if (row['step_index'] != stepIndex) continue;
       if (expectedStatuses != null &&
-          !expectedStatuses.contains(row['guideline_status'])) {
+          !expectedStatuses.contains(row['geometry_status'])) {
         return null;
       }
       row.addAll(values);
@@ -215,23 +267,22 @@ void main() {
     return sessionId;
   }
 
-  String guidelinePath(String sessionId, int stepIndex) =>
-      TutorialV3StoragePaths.guideline(
-        userId: _user,
-        analysisId: _analysis,
-        sessionId: sessionId,
-        stepIndex: stepIndex,
-      );
+  /// The category the seeded plan teaches at [stepIndex], so geometry written
+  /// in a test always agrees with the persisted Step Spec.
+  Future<TutorialV3Category> categoryAt(String sessionId, int stepIndex) async {
+    final loaded = (await repository.findSessionById(sessionId))!.requireLoaded;
+    return loaded.stepAt(stepIndex)!.spec.category;
+  }
 
   Future<void> completeGuideline(String sessionId, int stepIndex) async {
-    await repository.prepareGuideline(
+    await repository.prepareGeometry(
       sessionId: sessionId,
       stepIndex: stepIndex,
     );
-    await repository.persistGuideline(
+    await repository.persistGeometry(
       sessionId: sessionId,
       stepIndex: stepIndex,
-      storagePath: guidelinePath(sessionId, stepIndex),
+      geometry: testGeometry(category: await categoryAt(sessionId, stepIndex)),
     );
   }
 
@@ -333,7 +384,7 @@ void main() {
 
     test('operating on an unknown session fails as not found', () async {
       await expectLater(
-        repository.prepareGuideline(sessionId: 'nope', stepIndex: 1),
+        repository.prepareGeometry(sessionId: 'nope', stepIndex: 1),
         throwsFailure(TutorialV3FailureKind.notFound, 'could not be found'),
       );
     });
@@ -405,16 +456,16 @@ void main() {
           plan: planTeaching([TutorialV3Category.blush]),
         ),
         () => repository.markPlanFailed(sessionId: id, error: 'x'),
-        () => repository.prepareGuideline(sessionId: id, stepIndex: 1),
-        () => repository.markGuidelineFailed(
+        () => repository.prepareGeometry(sessionId: id, stepIndex: 1),
+        () => repository.markGeometryFailed(
           sessionId: id,
           stepIndex: 1,
           error: 'x',
         ),
-        () => repository.persistGuideline(
+        () => repository.persistGeometry(
           sessionId: id,
           stepIndex: 1,
-          storagePath: guidelinePath(id, 1),
+          geometry: testGeometry(),
         ),
       ]) {
         await expectLater(
@@ -459,12 +510,12 @@ void main() {
       ))!.requireLoaded;
 
       expect(
-        snapshot.finalStep!.guidelineStatus,
-        TutorialV3GuidelineStatus.notRequired,
+        snapshot.finalStep!.geometryStatus,
+        TutorialV3GeometryStatus.notRequired,
       );
       expect(
-        snapshot.stepAt(1)!.guidelineStatus,
-        TutorialV3GuidelineStatus.pending,
+        snapshot.stepAt(1)!.geometryStatus,
+        TutorialV3GeometryStatus.pending,
       );
     });
 
@@ -561,33 +612,33 @@ void main() {
       expect(snapshot.readiness.needsPlan, isTrue);
     });
   });
-
-  group('guideline lifecycle', () {
-    test('preparing a pending step claims it for generation', () async {
+  group('geometry lifecycle', () {
+    test('preparing a pending step claims it for mapping', () async {
       final sessionId = await readySession();
-      final prepared = await repository.prepareGuideline(
+      final prepared = await repository.prepareGeometry(
         sessionId: sessionId,
         stepIndex: 1,
       );
 
-      expect(prepared.outcome, TutorialV3GuidelineOutcome.claimedForGeneration);
-      expect(prepared.requiresGeneration, isTrue);
+      expect(prepared.outcome, TutorialV3GeometryOutcome.claimedForGeneration);
+      expect(prepared.requiresMapping, isTrue);
+      expect(prepared.replacedStaleGeometry, isFalse);
       expect(
-        prepared.step.guidelineStatus,
-        TutorialV3GuidelineStatus.generating,
+        prepared.step.geometryStatus,
+        TutorialV3GeometryStatus.generating,
       );
       expect(prepared.session.readiness, TutorialV3SessionReadiness.generating);
     });
 
     test('a second concurrent claim is refused', () async {
       final sessionId = await readySession();
-      await repository.prepareGuideline(sessionId: sessionId, stepIndex: 1);
+      await repository.prepareGeometry(sessionId: sessionId, stepIndex: 1);
 
       await expectLater(
-        repository.prepareGuideline(sessionId: sessionId, stepIndex: 1),
+        repository.prepareGeometry(sessionId: sessionId, stepIndex: 1),
         throwsFailure(
           TutorialV3FailureKind.validation,
-          'already generating',
+          'already being mapped',
         ),
       );
     });
@@ -596,7 +647,7 @@ void main() {
       final sessionId = await readySession();
 
       await expectLater(
-        repository.prepareGuideline(sessionId: sessionId, stepIndex: 2),
+        repository.prepareGeometry(sessionId: sessionId, stepIndex: 2),
         throwsFailure(
           TutorialV3FailureKind.validation,
           'reuses the canonical preview',
@@ -604,87 +655,118 @@ void main() {
       );
     });
 
-    test('a claimed step accepts its own guideline', () async {
+    test('a claimed step accepts its own geometry', () async {
       final sessionId = await readySession();
-      await repository.prepareGuideline(sessionId: sessionId, stepIndex: 1);
+      await repository.prepareGeometry(sessionId: sessionId, stepIndex: 1);
 
-      final path = guidelinePath(sessionId, 1);
-      final snapshot = await repository.persistGuideline(
+      final geometry = testGeometry();
+      final snapshot = await repository.persistGeometry(
         sessionId: sessionId,
         stepIndex: 1,
-        storagePath: path,
-        modelName: 'guideline-model',
-        promptVersion: 'v1',
+        geometry: geometry,
+        modelName: 'geometry-model',
+        promptVersion: 'v3-geometry-mapper-1',
       );
 
       final step = snapshot.stepAt(1)!;
-      expect(step.guidelineStatus, TutorialV3GuidelineStatus.ready);
-      expect(step.guidelineStoragePath, path);
-      expect(step.hasGuideline, isTrue);
+      expect(step.geometryStatus, TutorialV3GeometryStatus.ready);
+      expect(step.hasGeometry, isTrue);
+      expect(step.hasStaleGeometry, isFalse);
+      expect(step.geometrySchemaVersion, tutorialV3GeometrySchemaVersion);
+      expect(step.geometry!.primitives, hasLength(1));
       expect(snapshot.readiness, TutorialV3SessionReadiness.ready);
     });
 
-    test('an unclaimed step cannot be given a guideline', () async {
+    test('an unclaimed step cannot be given geometry', () async {
       final sessionId = await readySession();
 
       await expectLater(
-        repository.persistGuideline(
+        repository.persistGeometry(
           sessionId: sessionId,
           stepIndex: 1,
-          storagePath: guidelinePath(sessionId, 1),
+          geometry: testGeometry(),
         ),
         throwsFailure(TutorialV3FailureKind.validation, 'was not claimed'),
       );
     });
 
-    test('another step, session or user asset is refused', () async {
+    test('geometry for another category is refused', () async {
+      // The step's persisted Step Spec is the authority on what it teaches.
+      // A document for a different category would render a confidently wrong
+      // overlay, so it is rejected rather than stored.
       final sessionId = await readySession(
-        categories: [TutorialV3Category.foundation, TutorialV3Category.blush],
+        categories: [TutorialV3Category.blush],
       );
-      await repository.prepareGuideline(sessionId: sessionId, stepIndex: 1);
+      await repository.prepareGeometry(sessionId: sessionId, stepIndex: 1);
 
-      final foreign = <String>[
-        guidelinePath(sessionId, 2),
-        TutorialV3StoragePaths.guideline(
-          userId: 'user-2',
-          analysisId: _analysis,
+      await expectLater(
+        repository.persistGeometry(
           sessionId: sessionId,
           stepIndex: 1,
+          geometry: testGeometry(category: TutorialV3Category.eyeliner),
         ),
-        TutorialV3StoragePaths.guideline(
-          userId: _user,
-          analysisId: _analysis,
-          sessionId: 'session-999',
-          stepIndex: 1,
+        throwsFailure(
+          TutorialV3FailureKind.validation,
+          'teaches "blush" but this geometry describes "eyeliner"',
         ),
-        '$_user/analyses/$_analysis/original/abc.jpg',
-        '$_user/analyses/$_analysis/generated/r/preview_0001.png',
-      ];
+      );
 
-      for (final path in foreign) {
-        await expectLater(
-          repository.persistGuideline(
-            sessionId: sessionId,
-            stepIndex: 1,
-            storagePath: path,
-          ),
-          throwsFailure(
-            TutorialV3FailureKind.ownership,
-            'does not belong to this step',
-          ),
-          reason: 'accepted $path',
-        );
-      }
+      final step = (await repository.findSessionById(
+        sessionId,
+      ))!.requireLoaded.stepAt(1)!;
+      expect(step.geometry, isNull, reason: 'a refused document was stored');
     });
 
-    test('the final look never accepts a generated asset', () async {
+    test('geometry from another schema version cannot be stored', () async {
+      final sessionId = await readySession();
+      await repository.prepareGeometry(sessionId: sessionId, stepIndex: 1);
+
+      await expectLater(
+        repository.persistGeometry(
+          sessionId: sessionId,
+          stepIndex: 1,
+          geometry: testGeometry(
+            schemaVersion: tutorialV3GeometrySchemaVersion + 1,
+          ),
+        ),
+        throwsFailure(
+          TutorialV3FailureKind.validation,
+          'cannot be stored by this build',
+        ),
+      );
+    });
+
+    test('a step is only reachable through its own session', () async {
+      // updateStep matches on the session AND the index, so the same index in
+      // a second tutorial is a different row.
+      final first = await readySession();
+      final second = await repository.getOrCreateSession(
+        _request(canonicalImageId: 'generated-2'),
+      );
+      await repository.persistPlan(
+        sessionId: second.sessionId,
+        plan: planTeaching([TutorialV3Category.blush]),
+      );
+      await repository.prepareGeometry(sessionId: first, stepIndex: 1);
+
+      await expectLater(
+        repository.persistGeometry(
+          sessionId: second.sessionId,
+          stepIndex: 1,
+          geometry: testGeometry(),
+        ),
+        throwsFailure(TutorialV3FailureKind.validation, 'was not claimed'),
+      );
+    });
+
+    test('the final look never accepts geometry', () async {
       final sessionId = await readySession();
 
       await expectLater(
-        repository.persistGuideline(
+        repository.persistGeometry(
           sessionId: sessionId,
           stepIndex: 2,
-          storagePath: guidelinePath(sessionId, 2),
+          geometry: testGeometry(),
         ),
         throwsFailure(
           TutorialV3FailureKind.validation,
@@ -697,7 +779,7 @@ void main() {
       final sessionId = await readySession();
 
       await expectLater(
-        repository.markGuidelineFailed(
+        repository.markGeometryFailed(
           sessionId: sessionId,
           stepIndex: 99,
           error: 'x',
@@ -707,35 +789,63 @@ void main() {
     });
   });
 
-  group('ready-asset reuse', () {
+  group('geometry reuse', () {
     test('a completed step is reused, never regenerated', () async {
       final sessionId = await readySession();
       await completeGuideline(sessionId, 1);
 
-      final prepared = await repository.prepareGuideline(
+      final prepared = await repository.prepareGeometry(
         sessionId: sessionId,
         stepIndex: 1,
       );
 
-      expect(prepared.outcome, TutorialV3GuidelineOutcome.reusedExisting);
-      expect(prepared.requiresGeneration, isFalse);
-      expect(prepared.step.guidelineStatus, TutorialV3GuidelineStatus.ready);
-      expect(prepared.step.guidelineStoragePath, guidelinePath(sessionId, 1));
+      expect(prepared.outcome, TutorialV3GeometryOutcome.reusedExisting);
+      expect(prepared.requiresMapping, isFalse);
+      expect(prepared.step.geometryStatus, TutorialV3GeometryStatus.ready);
+      expect(prepared.step.hasGeometry, isTrue);
+      expect(remote.claimCalls, 2, reason: 'reuse must still go through the claim');
     });
 
-    test('reuse does not disturb the stored asset or its status', () async {
+    test('geometry from an older schema is replaced, never reused', () async {
+      // A document this build cannot interpret is discarded and re-mapped.
+      // Reusing it would render a vocabulary the painter does not know.
+      final sessionId = await readySession();
+      await completeGuideline(sessionId, 1);
+      remote.steps[sessionId]!.firstWhere(
+        (row) => row['step_index'] == 1,
+      )['geometry_schema_version'] = tutorialV3GeometrySchemaVersion - 1;
+
+      final prepared = await repository.prepareGeometry(
+        sessionId: sessionId,
+        stepIndex: 1,
+      );
+
+      expect(
+        prepared.outcome,
+        TutorialV3GeometryOutcome.claimedAfterStaleGeometry,
+      );
+      expect(prepared.requiresMapping, isTrue);
+      expect(prepared.replacedStaleGeometry, isTrue);
+      expect(
+        prepared.step.geometryStatus,
+        TutorialV3GeometryStatus.generating,
+      );
+      expect(prepared.step.geometry, isNull);
+    });
+
+    test('reuse does not disturb the stored geometry or its status', () async {
       final sessionId = await readySession();
       await completeGuideline(sessionId, 1);
 
-      await repository.prepareGuideline(sessionId: sessionId, stepIndex: 1);
-      await repository.prepareGuideline(sessionId: sessionId, stepIndex: 1);
+      await repository.prepareGeometry(sessionId: sessionId, stepIndex: 1);
+      await repository.prepareGeometry(sessionId: sessionId, stepIndex: 1);
 
       final reopened = (await repository.findSessionById(
         sessionId,
       ))!.requireLoaded;
       expect(
-        reopened.stepAt(1)!.guidelineStatus,
-        TutorialV3GuidelineStatus.ready,
+        reopened.stepAt(1)!.geometryStatus,
+        TutorialV3GeometryStatus.ready,
       );
       expect(reopened.stepAt(1)!.attemptCount, 0);
       expect(reopened.readiness, TutorialV3SessionReadiness.ready);
@@ -750,17 +860,18 @@ void main() {
         sessionId,
       ))!.requireLoaded.stepAt(1)!;
 
-      await repository.prepareGuideline(sessionId: sessionId, stepIndex: 1);
-      final snapshot = await repository.markGuidelineFailed(
+      await repository.prepareGeometry(sessionId: sessionId, stepIndex: 1);
+      final snapshot = await repository.markGeometryFailed(
         sessionId: sessionId,
         stepIndex: 1,
         error: 'gemini_no_image_output',
       );
 
       final step = snapshot.stepAt(1)!;
-      expect(step.guidelineStatus, TutorialV3GuidelineStatus.failed);
-      expect(step.guidelineStoragePath, isNull);
-      expect(step.hasGuideline, isFalse);
+      expect(step.geometryStatus, TutorialV3GeometryStatus.failed);
+      expect(step.geometry, isNull);
+      expect(step.geometrySchemaVersion, isNull);
+      expect(step.hasGeometry, isFalse);
       expect(step.attemptCount, before.attemptCount + 1);
       expect(step.lastErrorCode, 'gemini_no_image_output');
       expect(
@@ -772,24 +883,24 @@ void main() {
 
     test('a failed step can be retried', () async {
       final sessionId = await readySession();
-      await repository.prepareGuideline(sessionId: sessionId, stepIndex: 1);
-      await repository.markGuidelineFailed(
+      await repository.prepareGeometry(sessionId: sessionId, stepIndex: 1);
+      await repository.markGeometryFailed(
         sessionId: sessionId,
         stepIndex: 1,
         error: 'timeout',
       );
 
-      final retried = await repository.prepareGuideline(
+      final retried = await repository.prepareGeometry(
         sessionId: sessionId,
         stepIndex: 1,
       );
       expect(
         retried.outcome,
-        TutorialV3GuidelineOutcome.claimedForGeneration,
+        TutorialV3GeometryOutcome.claimedForGeneration,
       );
       expect(
-        retried.step.guidelineStatus,
-        TutorialV3GuidelineStatus.generating,
+        retried.step.geometryStatus,
+        TutorialV3GeometryStatus.generating,
       );
     });
 
@@ -799,8 +910,8 @@ void main() {
       for (var attempt = 0;
           attempt < TutorialV3RetryPolicy.maxGuidelineAttempts;
           attempt++) {
-        await repository.prepareGuideline(sessionId: sessionId, stepIndex: 1);
-        await repository.markGuidelineFailed(
+        await repository.prepareGeometry(sessionId: sessionId, stepIndex: 1);
+        await repository.markGeometryFailed(
           sessionId: sessionId,
           stepIndex: 1,
           error: 'timeout',
@@ -808,10 +919,10 @@ void main() {
       }
 
       await expectLater(
-        repository.prepareGuideline(sessionId: sessionId, stepIndex: 1),
+        repository.prepareGeometry(sessionId: sessionId, stepIndex: 1),
         throwsFailure(
           TutorialV3FailureKind.generation,
-          'all ${TutorialV3RetryPolicy.maxGuidelineAttempts} generation '
+          'all ${TutorialV3RetryPolicy.maxGuidelineAttempts} mapping '
               'attempts',
         ),
       );
@@ -826,8 +937,8 @@ void main() {
       for (var attempt = 0;
           attempt < TutorialV3RetryPolicy.maxGuidelineAttempts;
           attempt++) {
-        await repository.prepareGuideline(sessionId: sessionId, stepIndex: 1);
-        await repository.markGuidelineFailed(
+        await repository.prepareGeometry(sessionId: sessionId, stepIndex: 1);
+        await repository.markGeometryFailed(
           sessionId: sessionId,
           stepIndex: 1,
           error: 'timeout',
@@ -864,7 +975,7 @@ void main() {
         sessionId,
       ))!.requireLoaded;
 
-      expect(snapshot.stepAt(1)!.hasGuideline, isTrue);
+      expect(snapshot.stepAt(1)!.hasGeometry, isTrue);
       expect(snapshot.readiness, TutorialV3SessionReadiness.planReady);
       expect(
         snapshot
@@ -910,7 +1021,7 @@ void main() {
         sessionId,
       ))!.requireLoaded;
 
-      expect(snapshot.guidelineSteps, hasLength(1));
+      expect(snapshot.geometrySteps, hasLength(1));
       expect(snapshot.finalStep!.isFinalLook, isTrue);
       expect(snapshot.readiness, TutorialV3SessionReadiness.ready);
     });

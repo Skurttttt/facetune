@@ -1,7 +1,7 @@
 import '../../../makeup_styles/domain/catalog/makeup_style_catalog.dart';
 import '../catalog/tutorial_v3_category_catalog.dart';
 import '../entities/tutorial_v3_category.dart';
-import '../entities/tutorial_v3_guideline_status.dart';
+import '../entities/tutorial_v3_geometry_status.dart';
 import '../entities/tutorial_v3_plan.dart';
 import '../entities/tutorial_v3_step.dart';
 import '../entities/tutorial_v3_step_spec.dart';
@@ -57,32 +57,39 @@ abstract final class TutorialV3PlanValidator {
   /// Validates the runtime state of one persisted step against its spec.
   static void validateStep(TutorialV3Step step) {
     final errors = <String>[];
-    final status = step.guidelineStatus;
+    final status = step.geometryStatus;
 
     if (step.isFinalLook) {
-      if (status != TutorialV3GuidelineStatus.notRequired) {
+      if (status != TutorialV3GeometryStatus.notRequired) {
         errors.add(
           'The final look reuses the canonical preview and must not have '
-          'guideline status "${status.code}".',
+          'geometry status "${status.code}".',
         );
       }
-      if (step.guidelineStoragePath != null) {
-        errors.add('The final look must not own a generated guideline asset.');
+      if (step.geometry != null) {
+        errors.add('The final look must not carry mapped geometry.');
       }
     } else {
-      if (status == TutorialV3GuidelineStatus.notRequired) {
-        errors.add('Step ${step.stepIndex} requires a guideline image.');
+      if (status == TutorialV3GeometryStatus.notRequired) {
+        errors.add('Step ${step.stepIndex} requires mapped geometry.');
       }
-      if (status.expectsAsset) {
-        if (_isBlank(step.guidelineStoragePath)) {
-          errors.add(
-            'Step ${step.stepIndex} is ready but has no guideline asset.',
-          );
+      if (status.expectsGeometry) {
+        if (step.geometry == null) {
+          errors.add('Step ${step.stepIndex} is ready but has no geometry.');
         }
-      } else if (step.guidelineStoragePath != null) {
+      } else if (step.geometry != null) {
         errors.add(
-          'Step ${step.stepIndex} has a guideline asset while its status is '
+          'Step ${step.stepIndex} carries geometry while its status is '
           '"${status.code}".',
+        );
+      }
+      // Geometry must describe the category the step actually teaches; a
+      // document for another category cannot be rendered as this one.
+      final geometry = step.geometry;
+      if (geometry != null && geometry.category != step.spec.category) {
+        errors.add(
+          'Step ${step.stepIndex} teaches "${step.spec.category.code}" but '
+          'carries "${geometry.category.code}" geometry.',
         );
       }
     }

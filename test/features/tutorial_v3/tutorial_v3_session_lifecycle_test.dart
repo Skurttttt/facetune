@@ -1,7 +1,8 @@
 import 'package:facetune/features/tutorial_v3/data/models/tutorial_v3_session_dto.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_canonical_preview.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_category.dart';
-import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_guideline_status.dart';
+import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_geometry.dart';
+import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_geometry_status.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_session.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_session_readiness.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_session_snapshot.dart';
@@ -42,19 +43,28 @@ TutorialV3Session _session({
 
 TutorialV3Step _step(
   TutorialV3StepSpec spec, {
-  TutorialV3GuidelineStatus? status,
-  String? path,
+  TutorialV3GeometryStatus? status,
   int attemptCount = 0,
-}) => TutorialV3Step(
-  spec: spec,
-  guidelineStatus:
+}) {
+  final resolved =
       status ??
       (spec.isFinalLook
-          ? TutorialV3GuidelineStatus.notRequired
-          : TutorialV3GuidelineStatus.pending),
-  guidelineStoragePath: path,
-  attemptCount: attemptCount,
-);
+          ? TutorialV3GeometryStatus.notRequired
+          : TutorialV3GeometryStatus.pending);
+  return TutorialV3Step(
+    spec: spec,
+    geometryStatus: resolved,
+    // A ready step must carry a document: `hasGeometry` is the conjunction of
+    // the two, so a ready-but-empty step would silently read as not ready.
+    geometry: resolved == TutorialV3GeometryStatus.ready
+        ? testGeometry(category: spec.category)
+        : null,
+    geometrySchemaVersion: resolved == TutorialV3GeometryStatus.ready
+        ? tutorialV3GeometrySchemaVersion
+        : null,
+    attemptCount: attemptCount,
+  );
+}
 
 TutorialV3LoadedSession _loaded({
   TutorialV3SessionStatus status = TutorialV3SessionStatus.ready,
@@ -64,9 +74,6 @@ TutorialV3LoadedSession _loaded({
   session: _session(status: status, totalSteps: totalSteps ?? steps.length),
   steps: steps,
 );
-
-const _readyPath =
-    '$_user/analyses/$_analysis/tutorial-v3/session-1/step_0001_guideline.png';
 
 void main() {
   group('readiness derivation', () {
@@ -111,7 +118,7 @@ void main() {
         steps: [
           _step(
             guidelineStep(stepIndex: 1),
-            status: TutorialV3GuidelineStatus.generating,
+            status: TutorialV3GeometryStatus.generating,
           ),
           _step(finalLookStep()),
         ],
@@ -124,8 +131,7 @@ void main() {
         steps: [
           _step(
             guidelineStep(stepIndex: 1),
-            status: TutorialV3GuidelineStatus.ready,
-            path: _readyPath,
+            status: TutorialV3GeometryStatus.ready,
           ),
           _step(finalLookStep()),
         ],
@@ -136,7 +142,7 @@ void main() {
     test('the final look is never outstanding work', () {
       // A final-look-only plan is complete the moment it is persisted.
       final loaded = _loaded(steps: [_step(finalLookStep(stepIndex: 1))]);
-      expect(loaded.guidelineSteps, isEmpty);
+      expect(loaded.geometrySteps, isEmpty);
       expect(loaded.readiness, TutorialV3SessionReadiness.ready);
     });
 
@@ -146,7 +152,7 @@ void main() {
         steps: [
           _step(
             guidelineStep(stepIndex: 1),
-            status: TutorialV3GuidelineStatus.failed,
+            status: TutorialV3GeometryStatus.failed,
             attemptCount: 1,
           ),
           _step(finalLookStep()),
@@ -158,15 +164,13 @@ void main() {
 
   group('resume ordering', () {
     TutorialV3LoadedSession threeStep({
-      TutorialV3GuidelineStatus? first,
-      String? firstPath,
+      TutorialV3GeometryStatus? first,
       int firstAttempts = 0,
     }) => _loaded(
       steps: [
         _step(
           guidelineStep(stepIndex: 1, category: TutorialV3Category.foundation),
           status: first,
-          path: firstPath,
           attemptCount: firstAttempts,
         ),
         _step(guidelineStep(stepIndex: 2, category: TutorialV3Category.blush)),
@@ -184,8 +188,7 @@ void main() {
     test('skips a completed step', () {
       expect(
         threeStep(
-          first: TutorialV3GuidelineStatus.ready,
-          firstPath: _readyPath,
+          first: TutorialV3GeometryStatus.ready,
         ).nextGeneratableStep(maxAttempts: 3)!.stepIndex,
         2,
       );
@@ -194,7 +197,7 @@ void main() {
     test('skips a step already in flight', () {
       expect(
         threeStep(
-          first: TutorialV3GuidelineStatus.generating,
+          first: TutorialV3GeometryStatus.generating,
         ).nextGeneratableStep(maxAttempts: 3)!.stepIndex,
         2,
       );
@@ -203,7 +206,7 @@ void main() {
     test('skips a step that has exhausted its retries', () {
       expect(
         threeStep(
-          first: TutorialV3GuidelineStatus.failed,
+          first: TutorialV3GeometryStatus.failed,
           firstAttempts: 3,
         ).nextGeneratableStep(maxAttempts: 3)!.stepIndex,
         2,
@@ -213,7 +216,7 @@ void main() {
     test('retries a failed step that has attempts left', () {
       expect(
         threeStep(
-          first: TutorialV3GuidelineStatus.failed,
+          first: TutorialV3GeometryStatus.failed,
           firstAttempts: 1,
         ).nextGeneratableStep(maxAttempts: 3)!.stepIndex,
         1,
@@ -225,8 +228,7 @@ void main() {
         steps: [
           _step(
             guidelineStep(stepIndex: 1),
-            status: TutorialV3GuidelineStatus.ready,
-            path: _readyPath,
+            status: TutorialV3GeometryStatus.ready,
           ),
           _step(finalLookStep()),
         ],
@@ -362,10 +364,10 @@ void main() {
 
       // V2 tracked a guideline AND a result per step, with the result of one
       // step feeding the next. V3 has one asset and no chain.
-      expect(step.guidelineStatus, isNotNull);
-      expect(step.hasGuideline, isFalse);
+      expect(step.geometryStatus, isNotNull);
+      expect(step.hasGeometry, isFalse);
       expect(
-        TutorialV3GuidelineStatus.values.map((status) => status.code),
+        TutorialV3GeometryStatus.values.map((status) => status.code),
         isNot(contains('result')),
       );
     });
@@ -378,9 +380,7 @@ void main() {
           _step(guidelineStep(stepIndex: 1)),
           _step(
             guidelineStep(stepIndex: 2, category: TutorialV3Category.blush),
-            status: TutorialV3GuidelineStatus.ready,
-            path:
-                '$_user/analyses/$_analysis/tutorial-v3/session-1/step_0002_guideline.png',
+            status: TutorialV3GeometryStatus.ready,
           ),
           _step(finalLookStep(stepIndex: 3)),
         ],

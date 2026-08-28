@@ -1,5 +1,5 @@
 import '../errors/tutorial_v3_failure.dart';
-import 'tutorial_v3_guideline_status.dart';
+import 'tutorial_v3_geometry_status.dart';
 import 'tutorial_v3_session.dart';
 import 'tutorial_v3_session_readiness.dart';
 import 'tutorial_v3_session_status.dart';
@@ -62,11 +62,11 @@ final class TutorialV3LoadedSession extends TutorialV3SessionSnapshot {
     }
     if (!hasPlan) return TutorialV3SessionReadiness.planning;
     if (steps.any(
-      (step) => step.guidelineStatus == TutorialV3GuidelineStatus.generating,
+      (step) => step.geometryStatus == TutorialV3GeometryStatus.generating,
     )) {
       return TutorialV3SessionReadiness.generating;
     }
-    if (guidelineSteps.every((step) => step.hasGuideline)) {
+    if (geometrySteps.every((step) => step.hasGeometry)) {
       return TutorialV3SessionReadiness.ready;
     }
     return TutorialV3SessionReadiness.planReady;
@@ -74,7 +74,7 @@ final class TutorialV3LoadedSession extends TutorialV3SessionSnapshot {
 
   /// The steps that need a generated guideline, i.e. everything but the final
   /// look.
-  Iterable<TutorialV3Step> get guidelineSteps =>
+  Iterable<TutorialV3Step> get geometrySteps =>
       steps.where((step) => !step.isFinalLook);
 
   TutorialV3Step? stepAt(int stepIndex) {
@@ -98,9 +98,9 @@ final class TutorialV3LoadedSession extends TutorialV3SessionSnapshot {
   /// has exhausted its retries is skipped so a permanently failing step does
   /// not block the rest of the tutorial.
   TutorialV3Step? nextGeneratableStep({required int maxAttempts}) {
-    for (final step in guidelineSteps) {
-      if (step.hasGuideline) continue;
-      if (step.guidelineStatus == TutorialV3GuidelineStatus.generating) {
+    for (final step in geometrySteps) {
+      if (step.hasGeometry) continue;
+      if (step.geometryStatus == TutorialV3GeometryStatus.generating) {
         continue;
       }
       if (step.attemptCount >= maxAttempts) continue;

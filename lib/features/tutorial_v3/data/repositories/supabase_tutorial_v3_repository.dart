@@ -1,4 +1,5 @@
-import '../../domain/entities/tutorial_v3_guideline_status.dart';
+import '../../domain/entities/tutorial_v3_geometry.dart';
+import '../../domain/entities/tutorial_v3_geometry_status.dart';
 import '../../domain/entities/tutorial_v3_plan.dart';
 import '../../domain/entities/tutorial_v3_session_snapshot.dart';
 import '../../domain/entities/tutorial_v3_session_status.dart';
@@ -6,23 +7,21 @@ import '../../domain/entities/tutorial_v3_step.dart';
 import '../../domain/errors/tutorial_v3_failure.dart';
 import '../../domain/repositories/tutorial_v3_repository.dart';
 import '../../domain/services/tutorial_v3_retry_policy.dart';
-import '../../domain/services/tutorial_v3_storage_paths.dart';
 import '../../domain/validation/tutorial_v3_plan_validator.dart';
 import '../../domain/value_objects/tutorial_v3_plan_version.dart';
 import '../data_sources/tutorial_v3_remote_data_source.dart';
+import '../models/tutorial_v3_geometry_codec.dart';
 import '../models/tutorial_v3_session_dto.dart';
 import '../models/tutorial_v3_step_spec_codec.dart';
 
-/// Supabase-backed V3 tutorial persistence and session lifecycle.
+/// Supabase-backed V3 tutorial persistence and geometry lifecycle.
 ///
-/// Every write is owner-scoped twice over: RLS makes another user's rows
-/// invisible, and this layer additionally refuses to attach a storage path
-/// that is not this session's and this step's. Server-side checks are the
-/// authority; these client checks exist so a bad path is never even sent.
+/// Ownership is enforced twice over: RLS makes another user's rows invisible,
+/// and every mutation loads the session first and requires it to be readable,
+/// so a session written by another plan version can be reported but never
+/// modified.
 ///
-/// Every mutation loads the session first and requires it to be readable, so
-/// a session written by another plan version can be reported but never
-/// modified, repaired or overwritten.
+/// V3 stores coordinates, not pixels. Nothing here writes to storage.
 class SupabaseTutorialV3Repository implements TutorialV3Repository {
   const SupabaseTutorialV3Repository(this._remote);
 
@@ -38,9 +37,6 @@ class SupabaseTutorialV3Repository implements TutorialV3Repository {
     final kit = request.sourceMode.isKit;
     final canonicalImageId = request.canonicalPreview.generatedImageId;
 
-    // Look the tutorial up by its canonical target rather than by plan
-    // version, so a session stored under a version this build cannot read is
-    // still found and reported as incompatible instead of being duplicated.
     final existing = await _remote.findSessionByCanonicalImage(
       kit: kit,
       canonicalImageId: canonicalImageId,
@@ -120,9 +116,9 @@ class SupabaseTutorialV3Repository implements TutorialV3Repository {
               'step_spec_json': TutorialV3StepSpecCodec.encodeSpec(spec),
               'product_snapshot_json':
                   TutorialV3StepSpecCodec.encodeProductSnapshot(spec),
-              'guideline_status': spec.isFinalLook
-                  ? TutorialV3GuidelineStatus.notRequired.code
-                  : TutorialV3GuidelineStatus.pending.code,
+              'geometry_status': spec.isFinalLook
+                  ? TutorialV3GeometryStatus.notRequired.code
+                  : TutorialV3GeometryStatus.pending.code,
             },
           )
           .toList(growable: false),
@@ -147,80 +143,77 @@ class SupabaseTutorialV3Repository implements TutorialV3Repository {
   }
 
   @override
-  Future<TutorialV3GuidelinePreparation> prepareGuideline({
+  Future<TutorialV3GeometryPreparation> prepareGeometry({
     required String sessionId,
     required int stepIndex,
   }) async {
     _requireUser();
-    final loaded = await _requireLoaded(sessionId);
-    final step = _requireStep(loaded, stepIndex);
+    await _requireLoaded(sessionId);
 
-    if (step.isFinalLook) {
-      throw const TutorialV3Failure(
-        'The final look reuses the canonical preview and generates nothing.',
-        kind: TutorialV3FailureKind.validation,
-        retryable: false,
-      );
-    }
-
-    // Reuse before claim. A revisited step that already has a validated
-    // guideline is returned as-is, so reopening a tutorial never re-spends
-    // image quota on work that is already done.
-    if (step.hasGuideline) {
-      return TutorialV3GuidelinePreparation(
-        session: loaded,
-        stepIndex: stepIndex,
-        outcome: TutorialV3GuidelineOutcome.reusedExisting,
-      );
-    }
-
-    if (step.guidelineStatus == TutorialV3GuidelineStatus.generating) {
-      throw TutorialV3Failure(
-        'Step $stepIndex is already generating.',
-        kind: TutorialV3FailureKind.validation,
-        retryable: true,
-      );
-    }
-    if (!TutorialV3RetryPolicy.canAttemptAgain(step.attemptCount)) {
-      throw TutorialV3Failure(
-        'Step $stepIndex has used all '
-        '${TutorialV3RetryPolicy.maxGuidelineAttempts} generation attempts.',
-        kind: TutorialV3FailureKind.generation,
-        retryable: false,
-      );
-    }
-
-    // Filtering on the current status inside the update is what makes two
-    // concurrent callers unable to both start generating the same step.
-    final claimed = await _remote.updateStep(
+    // One statement decides reuse / in-flight / exhausted / claim, so two
+    // concurrent callers cannot both start mapping the same step.
+    final result = await _remote.claimGeometry(
       sessionId: sessionId,
       stepIndex: stepIndex,
-      values: <String, Object?>{
-        'guideline_status': TutorialV3GuidelineStatus.generating.code,
-        'guideline_error': null,
-      },
-      expectedStatuses: <String>[
-        TutorialV3GuidelineStatus.pending.code,
-        TutorialV3GuidelineStatus.failed.code,
-      ],
+      maxAttempts: TutorialV3RetryPolicy.maxGuidelineAttempts,
+      // The build declares what it can read; the RPC reuses a stored document
+      // only at this exact version.
+      schemaVersion: tutorialV3GeometrySchemaVersion,
     );
-    if (claimed == null) {
-      throw TutorialV3Failure(
-        'Step $stepIndex is not ready to generate a guideline.',
-        kind: TutorialV3FailureKind.validation,
-        retryable: true,
-      );
-    }
 
-    return TutorialV3GuidelinePreparation(
-      session: await _reload(sessionId),
-      stepIndex: stepIndex,
-      outcome: TutorialV3GuidelineOutcome.claimedForGeneration,
-    );
+    switch (result['outcome']) {
+      case 'reused':
+        return TutorialV3GeometryPreparation(
+          session: await _reload(sessionId),
+          stepIndex: stepIndex,
+          outcome: TutorialV3GeometryOutcome.reusedExisting,
+        );
+      case 'claimed':
+        return TutorialV3GeometryPreparation(
+          session: await _reload(sessionId),
+          stepIndex: stepIndex,
+          // The RPC reports the version it discarded, which is the only
+          // signal that a step which looked complete had to be re-mapped.
+          outcome: result['replaced_schema_version'] == null
+              ? TutorialV3GeometryOutcome.claimedForGeneration
+              : TutorialV3GeometryOutcome.claimedAfterStaleGeometry,
+        );
+      case 'not_found':
+        throw TutorialV3Failure(
+          'Step $stepIndex does not belong to this tutorial.',
+          kind: TutorialV3FailureKind.notFound,
+          retryable: false,
+        );
+      case 'final_look':
+        throw const TutorialV3Failure(
+          'The final look reuses the canonical preview and maps no geometry.',
+          kind: TutorialV3FailureKind.validation,
+          retryable: false,
+        );
+      case 'in_flight':
+        throw TutorialV3Failure(
+          'Step $stepIndex is already being mapped.',
+          kind: TutorialV3FailureKind.validation,
+          retryable: true,
+        );
+      case 'exhausted':
+        throw TutorialV3Failure(
+          'Step $stepIndex has used all '
+          '${TutorialV3RetryPolicy.maxGuidelineAttempts} mapping attempts.',
+          kind: TutorialV3FailureKind.generation,
+          retryable: false,
+        );
+      default:
+        throw TutorialV3Failure(
+          'Step $stepIndex could not be prepared.',
+          kind: TutorialV3FailureKind.unknown,
+          retryable: true,
+        );
+    }
   }
 
   @override
-  Future<TutorialV3LoadedSession> markGuidelineFailed({
+  Future<TutorialV3LoadedSession> markGeometryFailed({
     required String sessionId,
     required int stepIndex,
     required String error,
@@ -230,14 +223,15 @@ class SupabaseTutorialV3Repository implements TutorialV3Repository {
     final step = _requireStep(loaded, stepIndex);
 
     // The Step Spec is untouched, so a retry reuses the same instruction and
-    // never re-plans. No asset is attached: a missing guideline stays missing.
+    // never re-plans. No geometry is stored: missing stays missing.
     await _remote.updateStep(
       sessionId: sessionId,
       stepIndex: stepIndex,
       values: <String, Object?>{
-        'guideline_status': TutorialV3GuidelineStatus.failed.code,
-        'guideline_error': error,
-        'guideline_image_path': null,
+        'geometry_status': TutorialV3GeometryStatus.failed.code,
+        'geometry_error': error,
+        'geometry_json': null,
+        'geometry_schema_version': null,
         'attempt_count': step.attemptCount + 1,
       },
     );
@@ -245,10 +239,10 @@ class SupabaseTutorialV3Repository implements TutorialV3Repository {
   }
 
   @override
-  Future<TutorialV3LoadedSession> persistGuideline({
+  Future<TutorialV3LoadedSession> persistGeometry({
     required String sessionId,
     required int stepIndex,
-    required String storagePath,
+    required TutorialV3Geometry geometry,
     String? modelName,
     String? promptVersion,
   }) async {
@@ -258,21 +252,24 @@ class SupabaseTutorialV3Repository implements TutorialV3Repository {
 
     if (step.isFinalLook) {
       throw const TutorialV3Failure(
-        'The final look reuses the canonical preview and generates nothing.',
+        'The final look reuses the canonical preview and maps no geometry.',
         kind: TutorialV3FailureKind.validation,
         retryable: false,
       );
     }
-    if (!TutorialV3StoragePaths.isOwnedAssetPath(
-      storagePath,
-      userId: loaded.session.userId,
-      analysisId: loaded.session.analysisId,
-      sessionId: sessionId,
-      stepIndex: stepIndex,
-    )) {
-      throw const TutorialV3Failure(
-        'That guideline path does not belong to this step.',
-        kind: TutorialV3FailureKind.ownership,
+    if (geometry.category != step.spec.category) {
+      throw TutorialV3Failure(
+        'Step $stepIndex teaches "${step.spec.category.code}" but this '
+        'geometry describes "${geometry.category.code}".',
+        kind: TutorialV3FailureKind.validation,
+        retryable: false,
+      );
+    }
+    if (!geometry.isCurrentSchema) {
+      throw TutorialV3Failure(
+        'Geometry schema version ${geometry.schemaVersion} cannot be stored '
+        'by this build.',
+        kind: TutorialV3FailureKind.validation,
         retryable: false,
       );
     }
@@ -281,19 +278,20 @@ class SupabaseTutorialV3Repository implements TutorialV3Repository {
       sessionId: sessionId,
       stepIndex: stepIndex,
       values: <String, Object?>{
-        'guideline_status': TutorialV3GuidelineStatus.ready.code,
-        'guideline_image_path': storagePath,
-        'guideline_error': null,
+        'geometry_status': TutorialV3GeometryStatus.ready.code,
+        'geometry_json': TutorialV3GeometryCodec.encode(geometry),
+        'geometry_schema_version': geometry.schemaVersion,
+        'geometry_error': null,
         'model_name': modelName,
         'prompt_version': promptVersion,
       },
-      // A guideline is attached only to a step this caller claimed, which
-      // keeps the claim meaningful.
-      expectedStatuses: <String>[TutorialV3GuidelineStatus.generating.code],
+      // Geometry attaches only to a step this caller claimed, which keeps the
+      // claim meaningful.
+      expectedStatuses: <String>[TutorialV3GeometryStatus.generating.code],
     );
     if (persisted == null) {
       throw TutorialV3Failure(
-        'Step $stepIndex was not claimed for generation.',
+        'Step $stepIndex was not claimed for mapping.',
         kind: TutorialV3FailureKind.validation,
         retryable: false,
       );
