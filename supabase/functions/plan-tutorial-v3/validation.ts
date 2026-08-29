@@ -8,6 +8,7 @@ import {
   FINAL_LOOK,
   FunctionFailure,
   type GuidelineVisualIntent,
+  MAXIMUM_PLAN_STEPS,
   type OwnedProduct,
   type PlannedStep,
   type PlannedTutorial,
@@ -73,6 +74,14 @@ export function parseAndValidatePlan(
   const rawSteps = (payload as Record<string, unknown>).steps;
   if (!Array.isArray(rawSteps) || rawSteps.length === 0) {
     throw new PlanRejected(["The plan must contain a non-empty steps array."]);
+  }
+  // The upper bound is enforced here rather than by the response schema:
+  // `properties.steps.maxItems` is the construct Gemini rejects (V3-10F4.4).
+  // Checked before the per-step walk so a runaway response is refused cheaply.
+  if (rawSteps.length > MAXIMUM_PLAN_STEPS) {
+    throw new PlanRejected([
+      `The plan has ${rawSteps.length} steps; at most ${MAXIMUM_PLAN_STEPS} are allowed.`,
+    ]);
   }
 
   const reasons: string[] = [];
@@ -409,29 +418,78 @@ export function stripCodeFence(raw: string): string {
     .trim();
 }
 
-/** The rows `persist_tutorial_v3_plan` expects. */
+/**
+ * The rows `persist_tutorial_v3_plan` expects.
+ *
+ * In Kit mode [context.ownedProducts] is REQUIRED, because the persisted
+ * product snapshot is built from the owned record rather than from anything the
+ * model wrote. Validation has already established that every Kit step names an
+ * owned product of the right category; this makes the description of that
+ * product authoritative too, so a model that paraphrased a shade name or
+ * mistyped a hex cannot have that stored and taught back to the user.
+ */
 export function planRows(
   plan: PlannedTutorial,
-  context: { style: string; sourceMode: SourceMode },
+  context: {
+    style: string;
+    sourceMode: SourceMode;
+    ownedProducts?: OwnedProduct[];
+  },
 ): Record<string, unknown>[] {
+  const owned = new Map(
+    (context.ownedProducts ?? []).map((product) => [product.productId, product]),
+  );
   return plan.steps.map((step) => {
     const isFinal = step.category === FINAL_LOOK;
     return {
       step_index: step.stepIndex,
       category: step.category,
       step_spec_json: stepSpecOf(step, context),
-      product_snapshot_json: isFinal ? null : productSnapshotOf(step),
+      product_snapshot_json: isFinal
+        ? null
+        : productSnapshotOf(step, context.sourceMode, owned),
       geometry_status: isFinal ? "not_required" : "pending",
     };
   });
 }
 
-function productSnapshotOf(step: PlannedStep): Record<string, unknown> | null {
-  const hasProduct = step.productId !== null || step.productName !== null ||
-    step.shadeName !== null || step.colorHex !== null;
+function productSnapshotOf(
+  step: PlannedStep,
+  sourceMode: SourceMode,
+  owned: Map<string, OwnedProduct>,
+): Record<string, unknown> | null {
+  if (sourceMode === "makeup_kit") {
+    if (step.productId === null) return null;
+    const product = owned.get(step.productId);
+    if (product === undefined) {
+      // Unreachable after validation, and deliberately a throw rather than a
+      // fallback: silently persisting the model's own description of a product
+      // it may not own is the exact failure this function exists to prevent.
+      throw new PlanRejected([
+        `Step ${step.stepIndex} references unowned product "${step.productId}".`,
+      ]);
+    }
+    // Every field comes from the user's own inventory row.
+    const snapshot: Record<string, unknown> = {
+      category: product.category,
+      product_id: product.productId,
+      color_hex: normalizeHex(product.colorHex) ?? product.colorHex,
+      finish: product.finish,
+    };
+    if (product.productName !== null) {
+      snapshot.product_name = product.productName;
+    }
+    if (product.colorLabel !== null) snapshot.shade_name = product.colorLabel;
+    return snapshot;
+  }
+
+  // Standard mode describes a shade the user does not own, so there is no
+  // inventory row to copy. The description comes from the persisted makeup
+  // plan by way of the prompt, and carries no product id.
+  const hasProduct = step.productName !== null || step.shadeName !== null ||
+    step.colorHex !== null;
   if (!hasProduct) return null;
   const snapshot: Record<string, unknown> = { category: step.category };
-  if (step.productId !== null) snapshot.product_id = step.productId;
   if (step.productName !== null) snapshot.product_name = step.productName;
   if (step.shadeName !== null) snapshot.shade_name = step.shadeName;
   if (step.colorHex !== null) snapshot.color_hex = step.colorHex;

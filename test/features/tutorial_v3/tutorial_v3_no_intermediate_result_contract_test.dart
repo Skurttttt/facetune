@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_canonical_preview.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_category.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_guideline_base_image.dart';
@@ -170,5 +172,98 @@ void main() {
 
     expect(session.activeRecommendationId, 'kit-recommendation-1');
     expect(session.recommendationId, isNull);
+  });
+
+  group('the tutorial UI writes nothing', () {
+    final root = Directory.current;
+    final presentation = Directory(
+      '${root.path}${Platform.pathSeparator}lib'
+      '${Platform.pathSeparator}features'
+      '${Platform.pathSeparator}tutorial_v3'
+      '${Platform.pathSeparator}presentation',
+    );
+    final sources = presentation
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((file) => file.path.endsWith('.dart'))
+        .map((file) => MapEntry(file.path, file.readAsStringSync()))
+        .toList();
+
+    test('there are presentation sources to check', () {
+      expect(sources, isNotEmpty);
+    });
+
+    test('nothing in the UI writes an image anywhere', () {
+      // The original selfie is displayed and never rewritten, re-uploaded,
+      // flattened into, or saved over. Compositing the overlay into the
+      // photograph is exactly the thing V3 exists to avoid.
+      for (final source in sources) {
+        for (final banned in [
+          '.upload(',
+          '.uploadBinary(',
+          'writeAsBytes',
+          'toByteData',
+          'ui.PictureRecorder',
+          'File(',
+        ]) {
+          expect(
+            source.value.contains(banned),
+            isFalse,
+            reason: '${source.key} contains "$banned"',
+          );
+        }
+      }
+    });
+
+    test('the UI never asks a model for anything', () {
+      for (final source in sources) {
+        for (final banned in [
+          'gemini',
+          'Gemini',
+          'generateContent',
+          'prompt',
+        ]) {
+          expect(
+            source.value.contains(banned),
+            isFalse,
+            reason: '${source.key} contains "$banned"',
+          );
+        }
+      }
+    });
+
+    test('overlay style is declared centrally, not per widget', () {
+      // Every colour and stroke width lives in TutorialV3RoleStyle, so a
+      // model can never influence the app's visual language and no screen can
+      // quietly diverge from it.
+      final painter = sources.firstWhere(
+        (source) => source.key.endsWith('tutorial_v3_guideline_painter.dart'),
+      );
+      expect(
+        painter.value,
+        contains('static const Map<TutorialV3GeometryRole'),
+      );
+
+      for (final source in sources) {
+        if (source.key.endsWith('tutorial_v3_guideline_painter.dart')) continue;
+        expect(
+          source.value.contains('TutorialV3RoleStyle('),
+          isFalse,
+          reason: '${source.key} defines its own overlay style',
+        );
+      }
+    });
+
+    test('no screen offers a guidelines-to-result comparison', () {
+      for (final source in sources) {
+        for (final banned in ['Slider(', 'BeforeAfter', 'beforeAfter']) {
+          expect(
+            source.value.contains(banned),
+            isFalse,
+            reason: '${source.key} contains "$banned"',
+          );
+        }
+      }
+    });
   });
 }

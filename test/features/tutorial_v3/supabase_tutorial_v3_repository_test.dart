@@ -1,6 +1,5 @@
 import 'package:facetune/features/tutorial_v3/data/data_sources/tutorial_v3_remote_data_source.dart';
 import 'package:facetune/features/tutorial_v3/data/repositories/supabase_tutorial_v3_repository.dart';
-import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_canonical_preview.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_category.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_geometry.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_geometry_status.dart';
@@ -11,6 +10,7 @@ import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_source
 import 'package:facetune/features/tutorial_v3/domain/errors/tutorial_v3_failure.dart';
 import 'package:facetune/features/tutorial_v3/domain/repositories/tutorial_v3_repository.dart';
 import 'package:facetune/features/tutorial_v3/domain/services/tutorial_v3_retry_policy.dart';
+import 'package:facetune/features/tutorial_v3/domain/value_objects/tutorial_v3_plan_version.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'tutorial_v3_fixtures.dart';
@@ -32,6 +32,14 @@ class _FakeRemote implements TutorialV3RemoteDataSource {
   final List<String> signedPaths = [];
   int planWrites = 0;
   int claimCalls = 0;
+  int openCalls = 0;
+
+  /// Stands in for `generated_images` and `kit_generated_images`.
+  final Map<String, _Preview> previews = <String, _Preview>{
+    'generated-1': const _Preview(kit: false),
+    'generated-2': const _Preview(kit: false),
+    'kit-generated-1': const _Preview(kit: true),
+  };
 
   /// Seeds a session written by a different build of the tutorial feature.
   String seedSessionAtPlanVersion(int planVersion) {
@@ -68,6 +76,45 @@ class _FakeRemote implements TutorialV3RemoteDataSource {
 
   @override
   String? get currentUserId => userId;
+
+  /// Stands in for `open_tutorial_v3_session`: resolve the preview, then reuse
+  /// or create, all from rows the caller owns.
+  @override
+  Future<String> openSession({
+    required String canonicalImageId,
+    required bool kit,
+  }) async {
+    openCalls++;
+    final preview = previews[canonicalImageId];
+    if (preview == null || preview.kit != kit) {
+      throw const TutorialV3Failure(
+        'The final look for this tutorial is no longer available.',
+        kind: TutorialV3FailureKind.notFound,
+        retryable: false,
+      );
+    }
+    final existing = await findSessionByCanonicalImage(
+      kit: kit,
+      canonicalImageId: canonicalImageId,
+    );
+    if (existing != null) return existing['id']! as String;
+
+    final row = await insertSession(<String, Object?>{
+      'user_id': userId,
+      'analysis_id': preview.analysisId,
+      'source_mode': kit ? 'makeup_kit' : 'standard',
+      'recommendation_id': kit ? null : preview.recommendationId,
+      'kit_recommendation_id': kit ? preview.recommendationId : null,
+      'makeup_style': testStyleCode,
+      'canonical_generated_image_id': kit ? null : canonicalImageId,
+      'canonical_kit_generated_image_id': kit ? canonicalImageId : null,
+      'canonical_image_path': preview.path,
+      'total_steps': 0,
+      'plan_version': TutorialV3PlanVersion.currentValue,
+      'status': TutorialV3SessionStatus.planning.code,
+    });
+    return row['id']! as String;
+  }
 
   @override
   Future<Map<String, Object?>?> findSessionByCanonicalImage({
@@ -168,8 +215,7 @@ class _FakeRemote implements TutorialV3RemoteDataSource {
         stale = true;
       }
       if (!stale &&
-          row['geometry_status'] ==
-              TutorialV3GeometryStatus.generating.code) {
+          row['geometry_status'] == TutorialV3GeometryStatus.generating.code) {
         return <String, Object?>{'outcome': 'in_flight'};
       }
       final attempts = (row['attempt_count'] as int?) ?? 0;
@@ -212,28 +258,28 @@ class _FakeRemote implements TutorialV3RemoteDataSource {
   }
 
   @override
+  Future<String?> findOriginalImagePath(String analysisId) async =>
+      analysisId == _analysis
+      ? '$_user/analyses/$_analysis/original/a.jpg'
+      : null;
+
+  @override
   Future<String> createSignedUrl(String storagePath) async {
     signedPaths.add(storagePath);
     return 'https://signed.example/$storagePath';
   }
 }
 
-TutorialV3SessionRequest _request({
+/// A tutorial entry. The preview id defaults to one that exists in the mode
+/// being asked for, since a mismatch is now simply "not found".
+TutorialV3EntryPoint _entry({
   TutorialV3SourceMode sourceMode = TutorialV3SourceMode.standard,
-  String canonicalImageId = 'generated-1',
-}) => TutorialV3SessionRequest(
-  analysisId: _analysis,
+  String? canonicalImageId,
+}) => TutorialV3EntryPoint(
+  canonicalImageId:
+      canonicalImageId ??
+      (sourceMode.isKit ? 'kit-generated-1' : 'generated-1'),
   sourceMode: sourceMode,
-  selectedStyleCode: testStyleCode,
-  canonicalPreview: TutorialV3CanonicalPreview(
-    generatedImageId: canonicalImageId,
-    storagePath: sourceMode.isKit
-        ? '$_user/analyses/$_analysis/kit-generated/k/preview_0001.png'
-        : '$_user/analyses/$_analysis/generated/r/preview_0001.png',
-    sourceMode: sourceMode,
-  ),
-  recommendationId: sourceMode.isKit ? null : 'recommendation-1',
-  kitRecommendationId: sourceMode.isKit ? 'kit-recommendation-1' : null,
 );
 
 Matcher throwsFailure(TutorialV3FailureKind kind, String messagePart) =>
@@ -256,8 +302,8 @@ void main() {
     TutorialV3SourceMode sourceMode = TutorialV3SourceMode.standard,
     List<TutorialV3Category> categories = const [TutorialV3Category.blush],
   }) async {
-    final created = await repository.getOrCreateSession(
-      _request(sourceMode: sourceMode),
+    final created = await repository.openSession(
+      _entry(sourceMode: sourceMode),
     );
     final sessionId = created.sessionId;
     await repository.persistPlan(
@@ -288,9 +334,7 @@ void main() {
 
   group('create and load', () {
     test('creates a planning session with no steps', () async {
-      final snapshot = (await repository.getOrCreateSession(
-        _request(),
-      )).requireLoaded;
+      final snapshot = (await repository.openSession(_entry())).requireLoaded;
 
       expect(snapshot.session.userId, _user);
       expect(snapshot.session.analysisId, _analysis);
@@ -304,68 +348,116 @@ void main() {
     });
 
     test('is idempotent for the same canonical preview', () async {
-      final first = await repository.getOrCreateSession(_request());
-      final second = await repository.getOrCreateSession(_request());
+      final first = await repository.openSession(_entry());
+      final second = await repository.openSession(_entry());
 
       expect(second.sessionId, first.sessionId);
       expect(remote.insertCount, 1);
     });
 
     test('a different canonical preview starts a different tutorial', () async {
-      final first = await repository.getOrCreateSession(_request());
-      final second = await repository.getOrCreateSession(
-        _request(canonicalImageId: 'generated-2'),
+      final first = await repository.openSession(_entry());
+      final second = await repository.openSession(
+        _entry(canonicalImageId: 'generated-2'),
       );
 
       expect(second.sessionId, isNot(first.sessionId));
       expect(remote.insertCount, 2);
     });
 
-    test('a Kit session carries only the Kit recommendation', () async {
-      final snapshot = (await repository.getOrCreateSession(
-        _request(sourceMode: TutorialV3SourceMode.makeupKit),
-      )).requireLoaded;
+    test('a Kit session is keyed on the Kit preview column', () async {
+      await repository.openSession(
+        _entry(sourceMode: TutorialV3SourceMode.makeupKit),
+      );
+      final row = remote.sessions.values.single;
 
-      expect(snapshot.session.sourceMode, TutorialV3SourceMode.makeupKit);
-      expect(snapshot.session.kitRecommendationId, 'kit-recommendation-1');
-      expect(snapshot.session.recommendationId, isNull);
-      expect(snapshot.session.activeRecommendationId, 'kit-recommendation-1');
+      // The two chains are separate tables and separate columns. A Kit
+      // tutorial keyed on the standard column would collide with the standard
+      // tutorial for the same analysis.
+      expect(row['canonical_kit_generated_image_id'], 'kit-generated-1');
+      expect(row['canonical_generated_image_id'], isNull);
     });
 
-    test('rejects a recommendation that does not match the mode', () async {
+    test('the same analysis can have one tutorial per mode', () async {
+      final standard = await repository.openSession(_entry());
+      final kit = await repository.openSession(
+        _entry(sourceMode: TutorialV3SourceMode.makeupKit),
+      );
+
+      expect(kit.sessionId, isNot(standard.sessionId));
+      expect(remote.insertCount, 2);
+    });
+    test('the client names a preview and nothing else', () async {
+      // The analysis, the recommendation, the selected look and the canonical
+      // path are all derived server-side. There is no parameter through which
+      // a caller could supply any of them.
+      await repository.openSession(_entry());
+      final row = remote.sessions.values.single;
+
+      expect(remote.openCalls, 1);
+      expect(row['analysis_id'], _analysis);
+      expect(row['recommendation_id'], 'recommendation-1');
+      expect(row['makeup_style'], testStyleCode);
+      expect(
+        row['canonical_image_path'],
+        '$_user/analyses/$_analysis/generated/r/preview_0001.png',
+      );
+    });
+
+    test('a Kit entry resolves the Kit chain', () async {
+      await repository.openSession(
+        _entry(
+          sourceMode: TutorialV3SourceMode.makeupKit,
+          canonicalImageId: 'kit-generated-1',
+        ),
+      );
+      final row = remote.sessions.values.single;
+
+      expect(row['source_mode'], 'makeup_kit');
+      expect(row['kit_recommendation_id'], 'kit-recommendation-1');
+      expect(row['recommendation_id'], isNull);
+      expect(
+        row['canonical_image_path'],
+        '$_user/analyses/$_analysis/kit-generated/k/preview_0001.png',
+      );
+    });
+
+    test('a preview from the other chain is not found', () async {
+      // Asking for a standard preview in Kit mode reads the Kit table, where
+      // that id does not exist. The mode cannot be mismatched because it
+      // selects which table is read.
       await expectLater(
-        repository.getOrCreateSession(
-          TutorialV3SessionRequest(
-            analysisId: _analysis,
+        repository.openSession(
+          _entry(
             sourceMode: TutorialV3SourceMode.makeupKit,
-            selectedStyleCode: testStyleCode,
-            canonicalPreview: _request(
-              sourceMode: TutorialV3SourceMode.makeupKit,
-            ).canonicalPreview,
-            recommendationId: 'recommendation-1',
+            canonicalImageId: 'generated-1',
           ),
         ),
-        throwsFailure(TutorialV3FailureKind.validation, 'Kit recommendation'),
+        throwsFailure(TutorialV3FailureKind.notFound, 'no longer available'),
       );
       expect(remote.insertCount, 0);
     });
 
-    test('rejects a canonical preview from the other mode', () async {
+    test('a preview that does not exist is not found', () async {
       await expectLater(
-        repository.getOrCreateSession(
-          TutorialV3SessionRequest(
-            analysisId: _analysis,
-            sourceMode: TutorialV3SourceMode.standard,
-            selectedStyleCode: testStyleCode,
-            canonicalPreview: _request(
-              sourceMode: TutorialV3SourceMode.makeupKit,
-            ).canonicalPreview,
-            recommendationId: 'recommendation-1',
-          ),
-        ),
+        repository.openSession(_entry(canonicalImageId: 'generated-missing')),
+        throwsFailure(TutorialV3FailureKind.notFound, 'no longer available'),
+      );
+      expect(remote.insertCount, 0);
+    });
+
+    test('a stored session pointing at the other chain is refused', () async {
+      // A row written before the entry resolver existed. Opening it would
+      // teach toward the wrong look for the same face.
+      await repository.openSession(_entry());
+      remote.sessions.values.single['canonical_image_path'] =
+          '$_user/analyses/$_analysis/kit-generated/k/preview_0001.png';
+
+      await expectLater(
+        repository.openSession(_entry()),
         throwsFailure(
           TutorialV3FailureKind.validation,
-          'different source mode',
+          'points at the wrong final look',
         ),
       );
     });
@@ -373,7 +465,7 @@ void main() {
     test('requires an authenticated caller', () async {
       remote.userId = null;
       await expectLater(
-        repository.getOrCreateSession(_request()),
+        repository.openSession(_entry()),
         throwsFailure(TutorialV3FailureKind.sessionExpired, 'Sign in'),
       );
     });
@@ -424,15 +516,21 @@ void main() {
       expect(await repository.findSessionById(id), isNotNull);
     });
 
-    test('get-or-create returns it instead of duplicating the tutorial',
-        () async {
-      remote.seedSessionAtPlanVersion(4);
+    test(
+      'get-or-create returns it instead of duplicating the tutorial',
+      () async {
+        remote.seedSessionAtPlanVersion(4);
 
-      final snapshot = await repository.getOrCreateSession(_request());
+        final snapshot = await repository.openSession(_entry());
 
-      expect(snapshot, isA<TutorialV3IncompatibleSession>());
-      expect(remote.insertCount, 0, reason: 'must not start a second tutorial');
-    });
+        expect(snapshot, isA<TutorialV3IncompatibleSession>());
+        expect(
+          remote.insertCount,
+          0,
+          reason: 'must not start a second tutorial',
+        );
+      },
+    );
 
     test('requireLoaded explains why it cannot be opened', () async {
       final id = remote.seedSessionAtPlanVersion(9);
@@ -440,10 +538,7 @@ void main() {
 
       expect(
         () => snapshot.requireLoaded,
-        throwsFailure(
-          TutorialV3FailureKind.validation,
-          'plan version 9',
-        ),
+        throwsFailure(TutorialV3FailureKind.validation, 'plan version 9'),
       );
     });
 
@@ -479,7 +574,7 @@ void main() {
 
   group('persistPlan', () {
     test('stores the plan and marks the session ready', () async {
-      final created = await repository.getOrCreateSession(_request());
+      final created = await repository.openSession(_entry());
       final snapshot = await repository.persistPlan(
         sessionId: created.sessionId,
         plan: planTeaching([
@@ -520,7 +615,7 @@ void main() {
     });
 
     test('rejects an invalid plan before writing anything', () async {
-      final created = await repository.getOrCreateSession(_request());
+      final created = await repository.openSession(_entry());
 
       await expectLater(
         repository.persistPlan(
@@ -542,7 +637,7 @@ void main() {
     });
 
     test('rejects a plan built for a different look', () async {
-      final created = await repository.getOrCreateSession(_request());
+      final created = await repository.openSession(_entry());
 
       await expectLater(
         repository.persistPlan(
@@ -564,15 +659,14 @@ void main() {
     });
 
     test('rejects a plan built for a different source mode', () async {
-      final created = await repository.getOrCreateSession(_request());
+      final created = await repository.openSession(_entry());
 
       await expectLater(
         repository.persistPlan(
           sessionId: created.sessionId,
-          plan: planTeaching(
-            [TutorialV3Category.blush],
-            sourceMode: TutorialV3SourceMode.makeupKit,
-          ),
+          plan: planTeaching([
+            TutorialV3Category.blush,
+          ], sourceMode: TutorialV3SourceMode.makeupKit),
         ),
         throwsFailure(
           TutorialV3FailureKind.validation,
@@ -600,7 +694,7 @@ void main() {
 
   group('markPlanFailed', () {
     test('leaves the session resumable with no steps', () async {
-      final created = await repository.getOrCreateSession(_request());
+      final created = await repository.openSession(_entry());
       final snapshot = await repository.markPlanFailed(
         sessionId: created.sessionId,
         error: 'planner_unavailable',
@@ -623,10 +717,7 @@ void main() {
       expect(prepared.outcome, TutorialV3GeometryOutcome.claimedForGeneration);
       expect(prepared.requiresMapping, isTrue);
       expect(prepared.replacedStaleGeometry, isFalse);
-      expect(
-        prepared.step.geometryStatus,
-        TutorialV3GeometryStatus.generating,
-      );
+      expect(prepared.step.geometryStatus, TutorialV3GeometryStatus.generating);
       expect(prepared.session.readiness, TutorialV3SessionReadiness.generating);
     });
 
@@ -636,10 +727,7 @@ void main() {
 
       await expectLater(
         repository.prepareGeometry(sessionId: sessionId, stepIndex: 1),
-        throwsFailure(
-          TutorialV3FailureKind.validation,
-          'already being mapped',
-        ),
+        throwsFailure(TutorialV3FailureKind.validation, 'already being mapped'),
       );
     });
 
@@ -740,8 +828,8 @@ void main() {
       // updateStep matches on the session AND the index, so the same index in
       // a second tutorial is a different row.
       final first = await readySession();
-      final second = await repository.getOrCreateSession(
-        _request(canonicalImageId: 'generated-2'),
+      final second = await repository.openSession(
+        _entry(canonicalImageId: 'generated-2'),
       );
       await repository.persistPlan(
         sessionId: second.sessionId,
@@ -803,7 +891,11 @@ void main() {
       expect(prepared.requiresMapping, isFalse);
       expect(prepared.step.geometryStatus, TutorialV3GeometryStatus.ready);
       expect(prepared.step.hasGeometry, isTrue);
-      expect(remote.claimCalls, 2, reason: 'reuse must still go through the claim');
+      expect(
+        remote.claimCalls,
+        2,
+        reason: 'reuse must still go through the claim',
+      );
     });
 
     test('geometry from an older schema is replaced, never reused', () async {
@@ -826,10 +918,7 @@ void main() {
       );
       expect(prepared.requiresMapping, isTrue);
       expect(prepared.replacedStaleGeometry, isTrue);
-      expect(
-        prepared.step.geometryStatus,
-        TutorialV3GeometryStatus.generating,
-      );
+      expect(prepared.step.geometryStatus, TutorialV3GeometryStatus.generating);
       expect(prepared.step.geometry, isNull);
     });
 
@@ -853,33 +942,35 @@ void main() {
   });
 
   group('failed state and bounded retry', () {
-    test('a failure keeps the spec, counts the attempt and stores no asset',
-        () async {
-      final sessionId = await readySession();
-      final before = (await repository.findSessionById(
-        sessionId,
-      ))!.requireLoaded.stepAt(1)!;
+    test(
+      'a failure keeps the spec, counts the attempt and stores no asset',
+      () async {
+        final sessionId = await readySession();
+        final before = (await repository.findSessionById(
+          sessionId,
+        ))!.requireLoaded.stepAt(1)!;
 
-      await repository.prepareGeometry(sessionId: sessionId, stepIndex: 1);
-      final snapshot = await repository.markGeometryFailed(
-        sessionId: sessionId,
-        stepIndex: 1,
-        error: 'gemini_no_image_output',
-      );
+        await repository.prepareGeometry(sessionId: sessionId, stepIndex: 1);
+        final snapshot = await repository.markGeometryFailed(
+          sessionId: sessionId,
+          stepIndex: 1,
+          error: 'gemini_no_image_output',
+        );
 
-      final step = snapshot.stepAt(1)!;
-      expect(step.geometryStatus, TutorialV3GeometryStatus.failed);
-      expect(step.geometry, isNull);
-      expect(step.geometrySchemaVersion, isNull);
-      expect(step.hasGeometry, isFalse);
-      expect(step.attemptCount, before.attemptCount + 1);
-      expect(step.lastErrorCode, 'gemini_no_image_output');
-      expect(
-        (step.spec as dynamic).whereToApply,
-        (before.spec as dynamic).whereToApply,
-      );
-      expect(snapshot.readiness, TutorialV3SessionReadiness.planReady);
-    });
+        final step = snapshot.stepAt(1)!;
+        expect(step.geometryStatus, TutorialV3GeometryStatus.failed);
+        expect(step.geometry, isNull);
+        expect(step.geometrySchemaVersion, isNull);
+        expect(step.hasGeometry, isFalse);
+        expect(step.attemptCount, before.attemptCount + 1);
+        expect(step.lastErrorCode, 'gemini_no_image_output');
+        expect(
+          (step.spec as dynamic).whereToApply,
+          (before.spec as dynamic).whereToApply,
+        );
+        expect(snapshot.readiness, TutorialV3SessionReadiness.planReady);
+      },
+    );
 
     test('a failed step can be retried', () async {
       final sessionId = await readySession();
@@ -894,22 +985,18 @@ void main() {
         sessionId: sessionId,
         stepIndex: 1,
       );
-      expect(
-        retried.outcome,
-        TutorialV3GeometryOutcome.claimedForGeneration,
-      );
-      expect(
-        retried.step.geometryStatus,
-        TutorialV3GeometryStatus.generating,
-      );
+      expect(retried.outcome, TutorialV3GeometryOutcome.claimedForGeneration);
+      expect(retried.step.geometryStatus, TutorialV3GeometryStatus.generating);
     });
 
     test('retries are bounded', () async {
       final sessionId = await readySession();
 
-      for (var attempt = 0;
-          attempt < TutorialV3RetryPolicy.maxGuidelineAttempts;
-          attempt++) {
+      for (
+        var attempt = 0;
+        attempt < TutorialV3RetryPolicy.maxGuidelineAttempts;
+        attempt++
+      ) {
         await repository.prepareGeometry(sessionId: sessionId, stepIndex: 1);
         await repository.markGeometryFailed(
           sessionId: sessionId,
@@ -923,20 +1010,21 @@ void main() {
         throwsFailure(
           TutorialV3FailureKind.generation,
           'all ${TutorialV3RetryPolicy.maxGuidelineAttempts} mapping '
-              'attempts',
+          'attempts',
         ),
       );
     });
 
-    test('an exhausted step does not block the rest of the tutorial',
-        () async {
+    test('an exhausted step does not block the rest of the tutorial', () async {
       final sessionId = await readySession(
         categories: [TutorialV3Category.foundation, TutorialV3Category.blush],
       );
 
-      for (var attempt = 0;
-          attempt < TutorialV3RetryPolicy.maxGuidelineAttempts;
-          attempt++) {
+      for (
+        var attempt = 0;
+        attempt < TutorialV3RetryPolicy.maxGuidelineAttempts;
+        attempt++
+      ) {
         await repository.prepareGeometry(sessionId: sessionId, stepIndex: 1);
         await repository.markGeometryFailed(
           sessionId: sessionId,
@@ -958,34 +1046,36 @@ void main() {
   });
 
   group('resume and reopen', () {
-    test('reopening keeps completed work and resumes at the first gap',
-        () async {
-      final sessionId = await readySession(
-        categories: [
-          TutorialV3Category.foundation,
-          TutorialV3Category.blush,
-          TutorialV3Category.lipstick,
-        ],
-      );
-      await completeGuideline(sessionId, 1);
+    test(
+      'reopening keeps completed work and resumes at the first gap',
+      () async {
+        final sessionId = await readySession(
+          categories: [
+            TutorialV3Category.foundation,
+            TutorialV3Category.blush,
+            TutorialV3Category.lipstick,
+          ],
+        );
+        await completeGuideline(sessionId, 1);
 
-      // A fresh repository over the same store, as if the app were reopened.
-      final reopened = SupabaseTutorialV3Repository(remote);
-      final snapshot = (await reopened.findSessionById(
-        sessionId,
-      ))!.requireLoaded;
+        // A fresh repository over the same store, as if the app were reopened.
+        final reopened = SupabaseTutorialV3Repository(remote);
+        final snapshot = (await reopened.findSessionById(
+          sessionId,
+        ))!.requireLoaded;
 
-      expect(snapshot.stepAt(1)!.hasGeometry, isTrue);
-      expect(snapshot.readiness, TutorialV3SessionReadiness.planReady);
-      expect(
-        snapshot
-            .nextGeneratableStep(
-              maxAttempts: TutorialV3RetryPolicy.maxGuidelineAttempts,
-            )!
-            .stepIndex,
-        2,
-      );
-    });
+        expect(snapshot.stepAt(1)!.hasGeometry, isTrue);
+        expect(snapshot.readiness, TutorialV3SessionReadiness.planReady);
+        expect(
+          snapshot
+              .nextGeneratableStep(
+                maxAttempts: TutorialV3RetryPolicy.maxGuidelineAttempts,
+              )!
+              .stepIndex,
+          2,
+        );
+      },
+    );
 
     test('readiness becomes ready once every guideline exists', () async {
       final sessionId = await readySession(
@@ -1035,4 +1125,20 @@ void main() {
       expect(remote.signedPaths, ['some/path.png']);
     });
   });
+}
+
+/// A row from `generated_images` or `kit_generated_images`, reduced to what
+/// the entry resolver reads.
+class _Preview {
+  const _Preview({required this.kit});
+
+  final bool kit;
+
+  String get analysisId => _analysis;
+  String get recommendationId =>
+      kit ? 'kit-recommendation-1' : 'recommendation-1';
+
+  String get path => kit
+      ? '$_user/analyses/$_analysis/kit-generated/k/preview_0001.png'
+      : '$_user/analyses/$_analysis/generated/r/preview_0001.png';
 }

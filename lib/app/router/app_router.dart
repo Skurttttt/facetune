@@ -26,6 +26,8 @@ import '../../features/profile/presentation/pages/profile_page.dart';
 import '../../features/saved_looks/presentation/pages/saved_looks_page.dart';
 import '../../features/scan/presentation/pages/scan_page.dart';
 import '../../features/settings/presentation/pages/settings_page.dart';
+import '../../features/tutorial_v3/domain/entities/tutorial_v3_source_mode.dart';
+import '../../features/tutorial_v3/presentation/pages/tutorial_v3_entry_page.dart';
 import '../../shared/widgets/app_ui.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -156,6 +158,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: 'makeupKitProduct',
         builder: (context, state) =>
             MakeupKitProductPage(productId: state.pathParameters['productId']!),
+      ),
+      GoRoute(
+        path: AppConstants.tutorialRoute,
+        name: 'tutorial',
+        builder: (context, state) => TutorialV3EntryPage(
+          canonicalImageId: state.pathParameters['canonicalImageId']!,
+          sourceMode: state.uri.queryParameters['kit'] == 'true'
+              ? TutorialV3SourceMode.makeupKit
+              : TutorialV3SourceMode.standard,
+        ),
       ),
       GoRoute(
         path: AppConstants.makeupKitRecommendationEntryRoute,

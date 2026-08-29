@@ -3,14 +3,20 @@ import 'package:facetune/features/makeup_kit/domain/entities/makeup_kit_finish.d
 import 'package:facetune/features/makeup_kit/domain/value_objects/normalized_hex_color.dart';
 import 'package:facetune/features/tutorial_v3/data/models/tutorial_v3_geometry_codec.dart';
 import 'package:facetune/features/tutorial_v3/domain/catalog/tutorial_v3_geometry_catalog.dart';
+import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_canonical_preview.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_category.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_geometry.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_guideline_graphic.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_guideline_visual_intent.dart';
+import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_geometry_status.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_plan.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_product_snapshot.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_scoped_face_attributes.dart';
+import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_session.dart';
+import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_session_snapshot.dart';
+import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_session_status.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_source_mode.dart';
+import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_step.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_step_spec.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_target_reference_mode.dart';
 import 'package:facetune/features/tutorial_v3/domain/value_objects/tutorial_v3_plan_version.dart';
@@ -206,7 +212,10 @@ TutorialV3Primitive _primitiveFor(TutorialV3Category category) {
     if (kinds.contains(TutorialV3PrimitiveKind.polyline)) {
       return TutorialV3Polyline(
         role: role,
-        vertices: const [NormalizedPoint(0.3, 0.45), NormalizedPoint(0.4, 0.43)],
+        vertices: const [
+          NormalizedPoint(0.3, 0.45),
+          NormalizedPoint(0.4, 0.43),
+        ],
       );
     }
     if (kinds.contains(TutorialV3PrimitiveKind.arrow)) {
@@ -234,3 +243,101 @@ TutorialV3Primitive _primitiveFor(TutorialV3Category category) {
 Map<String, dynamic> testGeometryJson({
   TutorialV3Category category = TutorialV3Category.blush,
 }) => TutorialV3GeometryCodec.encode(testGeometry(category: category));
+
+/// A ready session, for tests that need a whole tutorial rather than a plan.
+TutorialV3Session testSession({
+  String id = 'session-1',
+  String userId = 'user-1',
+  String analysisId = 'analysis-1',
+  TutorialV3SourceMode sourceMode = TutorialV3SourceMode.standard,
+  int totalSteps = 3,
+  TutorialV3SessionStatus status = TutorialV3SessionStatus.ready,
+}) => TutorialV3Session(
+  id: id,
+  userId: userId,
+  analysisId: analysisId,
+  sourceMode: sourceMode,
+  recommendationId: sourceMode.isKit ? null : 'recommendation-1',
+  kitRecommendationId: sourceMode.isKit ? 'kit-recommendation-1' : null,
+  selectedStyleCode: testStyleCode,
+  canonicalPreview: TutorialV3CanonicalPreview(
+    generatedImageId: 'generated-1',
+    storagePath: sourceMode.isKit
+        ? '$userId/analyses/$analysisId/kit-generated/k/preview_0001.png'
+        : '$userId/analyses/$analysisId/generated/r/preview_0001.png',
+    sourceMode: sourceMode,
+  ),
+  totalSteps: totalSteps,
+  planVersion: TutorialV3PlanVersion.current,
+  status: status,
+  createdAt: DateTime.utc(2026, 8, 28),
+  updatedAt: DateTime.utc(2026, 8, 28),
+);
+
+/// A step carrying whatever runtime state the test needs.
+///
+/// Ready steps are given a category-appropriate document automatically, so a
+/// caller only has to say "ready" rather than build one by hand.
+TutorialV3Step testStep(
+  TutorialV3StepSpec spec, {
+  TutorialV3GeometryStatus? geometryStatus,
+  TutorialV3Geometry? geometry,
+  int? geometrySchemaVersion,
+  int attemptCount = 0,
+}) {
+  final status =
+      geometryStatus ??
+      (spec.isFinalLook
+          ? TutorialV3GeometryStatus.notRequired
+          : TutorialV3GeometryStatus.pending);
+  final ready = status == TutorialV3GeometryStatus.ready;
+  return TutorialV3Step(
+    spec: spec,
+    geometryStatus: status,
+    geometry:
+        geometry ?? (ready ? testGeometry(category: spec.category) : null),
+    geometrySchemaVersion:
+        geometrySchemaVersion ??
+        (ready || geometry != null ? tutorialV3GeometrySchemaVersion : null),
+    attemptCount: attemptCount,
+  );
+}
+
+/// A loaded session teaching [categories], ending with the final look.
+///
+/// [readyUpTo] marks how many leading guideline steps already hold geometry,
+/// which is how a resumed or partially prefetched tutorial is expressed.
+TutorialV3LoadedSession loadedSession({
+  List<TutorialV3Category> categories = const [
+    TutorialV3Category.foundation,
+    TutorialV3Category.blush,
+  ],
+  TutorialV3SourceMode sourceMode = TutorialV3SourceMode.standard,
+  int readyUpTo = 0,
+  String sessionId = 'session-1',
+}) {
+  final steps = <TutorialV3Step>[
+    for (var index = 0; index < categories.length; index++)
+      testStep(
+        guidelineStep(
+          stepIndex: index + 1,
+          category: categories[index],
+          sourceMode: sourceMode,
+        ),
+        geometryStatus: index < readyUpTo
+            ? TutorialV3GeometryStatus.ready
+            : TutorialV3GeometryStatus.pending,
+      ),
+    testStep(
+      finalLookStep(stepIndex: categories.length + 1, sourceMode: sourceMode),
+    ),
+  ];
+  return TutorialV3LoadedSession(
+    session: testSession(
+      id: sessionId,
+      sourceMode: sourceMode,
+      totalSteps: steps.length,
+    ),
+    steps: steps,
+  );
+}

@@ -1,5 +1,11 @@
 import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 
+import {
+  describeGeminiError,
+  geminiErrorLogLine,
+  geminiFailureFor,
+} from "../_shared/gemini_error.ts";
+
 import { TUTORIAL_V3_GEOMETRY_SCHEMA } from "./schema.ts";
 import { FunctionFailure } from "./types.ts";
 
@@ -110,29 +116,36 @@ export async function requestGeometry(
         signal: AbortSignal.timeout(timeoutMs),
       });
       if (response.ok) return responseText(await response.json());
-      if (response.status === 404) {
-        console.error(`[map-tutorial-v3-geometry] model not found model=${model}`);
-        throw new FunctionFailure(
-          500,
-          "GEMINI_MODEL_NOT_FOUND",
-          "The tutorial service is not configured correctly.",
+
+      // Gemini answers 400 for an invalid schema, an unusable API key and a
+      // billing precondition alike, so the envelope — not the status — is the
+      // discriminator. Logging only the status made the V3 planner's
+      // production 400 undiagnosable; the mapper had the same blind spot.
+      const detail = await describeGeminiError(response);
+      console.error(
+        geminiErrorLogLine("map-tutorial-v3-geometry", attempt, detail),
+      );
+      if (detail.kind === "model_not_found") {
+        console.error(
+          `[map-tutorial-v3-geometry] model not found model=${model}`,
         );
       }
-      const transient = response.status === 429 || response.status >= 500;
-      console.error(
-        `[map-tutorial-v3-geometry] upstream status=${response.status} attempt=${attempt}`,
-      );
-      if (transient && attempt < maximumAttempts) {
+      // An invalid request is deterministic: the identical body would be
+      // rejected identically, so only a transient condition earns a retry.
+      if (detail.retryable && attempt < maximumAttempts) {
         // V3-6R saw a transient 503 "high demand"; one backed-off retry
         // absorbs it without turning a blip into a failed step.
         await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
         continue;
       }
+      const mapping = geminiFailureFor(detail);
       throw new FunctionFailure(
-        response.status === 429 ? 503 : 502,
-        response.status === 429 ? "gemini_rate_limited" : "gemini_upstream_error",
-        "The tutorial service is temporarily unavailable.",
-        transient,
+        mapping.status,
+        mapping.code,
+        mapping.configuration
+          ? "The tutorial service is not configured correctly."
+          : "The tutorial service is temporarily unavailable.",
+        mapping.retryable,
       );
     } catch (error) {
       if (error instanceof FunctionFailure) throw error;

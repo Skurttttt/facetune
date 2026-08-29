@@ -12,6 +12,25 @@ export class FunctionFailure extends Error {
 export const FINAL_LOOK = "final_look";
 
 /**
+ * The most steps a V3 plan may contain.
+ *
+ * This is the authoritative home of the rule. It used to live only as
+ * `maxItems: 12` in the Gemini response schema, until V3-10F4.4 proved that
+ * `properties.steps.maxItems` is exactly what made `gemini-3.6-flash` reject
+ * the request with `400 INVALID_ARGUMENT`. Removing it from the wire without
+ * enforcing it here would have quietly turned a product invariant into
+ * nothing, so `parseAndValidatePlan` now rejects an over-long plan before any
+ * of it is persisted.
+ *
+ * Twelve, not eleven, deliberately: it is the bound the previous contract
+ * declared, and a bug fix is the wrong moment to change a product limit.
+ * `CATEGORY_RANKS` has eleven entries and categories may not repeat, so
+ * ordering and uniqueness already bind a valid plan below this — the ceiling
+ * is the outer guard against a runaway response, not the working limit.
+ */
+export const MAXIMUM_PLAN_STEPS = 12;
+
+/**
  * The categories a V3 tutorial may teach, in the only order they may appear.
  *
  * Mirrors `TutorialV3CategoryCatalog.canonicalOrder` in

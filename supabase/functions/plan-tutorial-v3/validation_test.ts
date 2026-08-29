@@ -397,6 +397,66 @@ Deno.test("kit mode may omit categories the user cannot cover", () => {
   assertEquals(plan.steps.map((s) => s.category), ["blush", "final_look"]);
 });
 
+Deno.test("a one-product kit is a complete tutorial", () => {
+  // An incomplete kit is normal, not an error state. One owned product plus
+  // the final look is the shortest legitimate plan there is.
+  const plan = validate(
+    planOf([
+      step("blush", { product_id: "product-blush" }),
+      step("final_look"),
+    ]),
+    { sourceMode: "makeup_kit", ownedProducts: [ownedBlush] },
+  );
+  const rows = planRows(plan, {
+    style: "soft_glam",
+    sourceMode: "makeup_kit",
+    ownedProducts: [ownedBlush],
+  });
+
+  assertEquals(rows.length, 2);
+  assertEquals(rows[1].category, "final_look");
+});
+
+Deno.test("a kit step may not teach a category the product is not", () => {
+  // The model chose a real owned id but attached it to the wrong step. Its
+  // own category claim is not what decides.
+  const reasons = rejectionReasons(
+    planOf([
+      step("lipstick", { product_id: "product-blush" }),
+      step("final_look"),
+    ]),
+    { sourceMode: "makeup_kit", ownedProducts: [ownedBlush] },
+  );
+
+  assertEquals(
+    reasons.some((reason) => reason.includes("references a blush product")),
+    true,
+    reasons.join(" "),
+  );
+});
+
+Deno.test("a product owned by another account is simply not owned here", () => {
+  // The server hands the validator only what came back from an RLS-scoped
+  // read, so another account's product is indistinguishable from one that
+  // does not exist. There is no branch that could treat it differently.
+  const reasons = rejectionReasons(
+    planOf([
+      step("blush", { product_id: "product-belonging-to-someone-else" }),
+      step("final_look"),
+    ]),
+    { sourceMode: "makeup_kit", ownedProducts: [ownedBlush] },
+  );
+
+  assertEquals(
+    reasons.some((reason) =>
+      reason.includes("references a product the user does not own")
+    ),
+    true,
+    reasons.join(" "),
+  );
+});
+
+
 Deno.test("every violation is collected for one repair round", () => {
   const reasons = rejectionReasons(
     planOf([
@@ -441,15 +501,19 @@ Deno.test("planRows shapes the atomic plan write", () => {
   assertEquals("guideline_visual_intent" in finalSpec, false);
 });
 
-Deno.test("planRows snapshots a kit product in its own column", () => {
+Deno.test("a kit snapshot is copied from the user's inventory, not the model", () => {
+  // The model is shown the real product and told to echo its id. Everything
+  // else it writes about that product is discarded: the persisted snapshot is
+  // what the user actually owns, so a paraphrased shade or a mistyped hex can
+  // never be stored and taught back to them.
   const plan = validate(
     planOf([
       step("blush", {
         product_id: "product-blush",
-        product_name: "My blush",
-        shade_name: "Soft Rose",
-        color_hex: "#b86f72",
-        finish: "satin",
+        product_name: "Something else entirely",
+        shade_name: "Invented Shade",
+        color_hex: "#FF0000",
+        finish: "matte",
       }),
       step("final_look"),
     ]),
@@ -458,13 +522,83 @@ Deno.test("planRows snapshots a kit product in its own column", () => {
   const rows = planRows(plan, {
     style: "soft_glam",
     sourceMode: "makeup_kit",
+    ownedProducts: [ownedBlush],
   });
   const snapshot = rows[0].product_snapshot_json as Record<string, unknown>;
 
-  assertEquals(snapshot.product_id, "product-blush");
-  assertEquals(snapshot.category, "blush");
+  assertEquals(snapshot.product_id, ownedBlush.productId);
+  assertEquals(snapshot.category, ownedBlush.category);
+  assertEquals(snapshot.color_hex, ownedBlush.colorHex);
+  assertEquals(snapshot.finish, ownedBlush.finish);
+  assertEquals(snapshot.product_name, ownedBlush.productName);
+  assertEquals(snapshot.shade_name, ownedBlush.colorLabel);
+});
+
+Deno.test("a kit product with no name or shade snapshots neither", () => {
+  // An inventory row may legitimately carry only a colour and a finish.
+  // Nothing is invented to fill the gap.
+  const sparse: OwnedProduct = {
+    ...ownedBlush,
+    productName: null,
+    colorLabel: null,
+  };
+  const plan = validate(
+    planOf([
+      step("blush", { product_id: "product-blush", product_name: "Guessed" }),
+      step("final_look"),
+    ]),
+    { sourceMode: "makeup_kit", ownedProducts: [sparse] },
+  );
+  const rows = planRows(plan, {
+    style: "soft_glam",
+    sourceMode: "makeup_kit",
+    ownedProducts: [sparse],
+  });
+  const snapshot = rows[0].product_snapshot_json as Record<string, unknown>;
+
+  assertEquals("product_name" in snapshot, false);
+  assertEquals("shade_name" in snapshot, false);
+  assertEquals(snapshot.color_hex, sparse.colorHex);
+});
+
+Deno.test("kit rows are refused rather than written from model text", () => {
+  // Belt and braces for the one path that must never fall back: if the owned
+  // inventory is not supplied, the rows are rejected instead of being built
+  // from whatever the model claimed.
+  const plan = validate(
+    planOf([
+      step("blush", { product_id: "product-blush" }),
+      step("final_look"),
+    ]),
+    { sourceMode: "makeup_kit", ownedProducts: [ownedBlush] },
+  );
+
+  assertThrows(
+    () => planRows(plan, { style: "soft_glam", sourceMode: "makeup_kit" }),
+    PlanRejected,
+  );
+});
+
+Deno.test("a standard snapshot still describes the recommended shade", () => {
+  // Standard mode has no inventory row to copy, so the description comes from
+  // the persisted makeup plan by way of the prompt — and carries no id.
+  const plan = validate(
+    planOf([
+      step("blush", {
+        product_name: "Recommended shade",
+        shade_name: "Soft Rose",
+        color_hex: "#b86f72",
+        finish: "satin",
+      }),
+      step("final_look"),
+    ]),
+  );
+  const rows = planRows(plan, { style: "soft_glam", sourceMode: "standard" });
+  const snapshot = rows[0].product_snapshot_json as Record<string, unknown>;
+
+  assertEquals(snapshot.shade_name, "Soft Rose");
   assertEquals(snapshot.color_hex, "#B86F72");
-  assertEquals(snapshot.finish, "satin");
+  assertEquals("product_id" in snapshot, false);
 });
 
 Deno.test("no row carries any result state", () => {
@@ -479,4 +613,86 @@ Deno.test("no row carries any result state", () => {
       assertEquals(key.includes("result"), false, `unexpected key ${key}`);
     }
   }
+});
+
+// --- V3-10F4.4: the step ceiling moved from the wire schema to here ---------
+
+Deno.test("a plan at the twelve-step ceiling is not rejected for its length", () => {
+  // `properties.steps.maxItems` had to leave the Gemini schema — it is the
+  // construct that made the model reject the whole request. The rule itself
+  // did not leave: it moved to `parseAndValidatePlan`. Twelve must therefore
+  // still be allowed through the length gate.
+  const twelve = [
+    ...Array.from({ length: 11 }, (_, index) => step(`filler_${index}`)),
+    step("final_look"),
+  ];
+  const rejected = assertThrows(
+    () => validate(planOf(twelve)),
+    PlanRejected,
+  ) as PlanRejected;
+
+  // It fails on the invented categories, never on the count.
+  for (const reason of rejected.reasons) {
+    assertEquals(
+      reason.includes("at most"),
+      false,
+      `length must not be the complaint: ${reason}`,
+    );
+  }
+});
+
+Deno.test("a thirteen-step plan is rejected for its length", () => {
+  const thirteen = [
+    ...Array.from({ length: 12 }, () => step("blush")),
+    step("final_look"),
+  ];
+  const rejected = assertThrows(
+    () => validate(planOf(thirteen)),
+    PlanRejected,
+  ) as PlanRejected;
+
+  assertEquals(rejected.reasons.length, 1, "the count is refused on its own");
+  assertEquals(
+    rejected.reasons[0],
+    "The plan has 13 steps; at most 12 are allowed.",
+  );
+});
+
+Deno.test("an absurd plan is refused before any step is examined", () => {
+  // The point of an outer ceiling: a runaway response costs one comparison,
+  // not a thousand validations, and nothing reaches persistence.
+  const runaway = Array.from({ length: 500 }, () => step("blush"));
+  const rejected = assertThrows(
+    () => validate(planOf(runaway)),
+    PlanRejected,
+  ) as PlanRejected;
+
+  assertEquals(rejected.reasons.length, 1);
+  assertEquals(
+    rejected.reasons[0],
+    "The plan has 500 steps; at most 12 are allowed.",
+  );
+});
+
+Deno.test("a real dynamic plan well under the ceiling still validates", () => {
+  // The ceiling must not have narrowed ordinary behaviour: §10 requires a
+  // dynamic count, and a short Natural-style plan is the common case.
+  const plan = validate(
+    planOf([step("foundation"), step("blush"), step("final_look")]),
+  );
+
+  assertEquals(plan.steps.length, 3);
+  assertEquals(plan.steps[2].category, "final_look");
+});
+
+Deno.test("an empty plan is still refused", () => {
+  const rejected = assertThrows(
+    () => validate(planOf([])),
+    PlanRejected,
+  ) as PlanRejected;
+
+  assertEquals(
+    rejected.reasons[0],
+    "The plan must contain a non-empty steps array.",
+  );
 });

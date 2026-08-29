@@ -8,8 +8,9 @@ import 'dart:ui' as ui;
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_category.dart';
 import 'package:facetune/features/tutorial_v3/domain/entities/tutorial_v3_geometry.dart';
 import 'package:facetune/features/tutorial_v3/domain/validation/tutorial_v3_geometry_validator.dart';
-import 'package:facetune/features/tutorial_v3/presentation/painters/tutorial_v3_guideline_painter.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'tutorial_v3_overlay_compositor.dart';
 
 /// V3-6R evidence renderer.
 ///
@@ -98,9 +99,9 @@ void main() {
       };
     }
 
-    await File('$gateDir/render_report.json').writeAsString(
-      const JsonEncoder.withIndent('  ').convert(report),
-    );
+    await File(
+      '$gateDir/render_report.json',
+    ).writeAsString(const JsonEncoder.withIndent('  ').convert(report));
 
     // The original must be byte-identical after rendering: the harness reads
     // it and never writes to that path.

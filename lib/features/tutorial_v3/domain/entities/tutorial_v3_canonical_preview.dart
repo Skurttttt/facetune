@@ -26,4 +26,13 @@ class TutorialV3CanonicalPreview {
   final String storagePath;
 
   final TutorialV3SourceMode sourceMode;
+
+  /// Whether [storagePath] sits in the folder [sourceMode]'s previews are
+  /// written to.
+  ///
+  /// Both chains write under the same analysis, so a Kit session pointed at a
+  /// `generated/` path would target the standard look for the same face — the
+  /// wrong destination, with nothing else on the row to reveal the mix-up.
+  bool get matchesSourceModeFolder =>
+      storagePath.contains('/${sourceMode.canonicalPreviewFolder}/');
 }

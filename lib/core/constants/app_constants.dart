@@ -29,12 +29,22 @@ class AppConstants {
   static const String makeupKitProductRoute = '/makeup-kit/product/:productId';
   static const String makeupKitRecommendationEntryRoute =
       '/makeup-kit/recommendation-entry';
+
+  /// The V3 step-by-step tutorial. The path parameter is the premium final
+  /// preview's row id; a `kit=true` query selects the My Makeup Kit chain.
+  /// Nothing else is carried, because the rest is resolved server-side.
+  static const String tutorialRoute = '/tutorial/:canonicalImageId';
+
   static const String profileRoute = '/profile';
   static const String settingsRoute = '/settings';
 
   static const String authCallbackUrl = 'io.facetune.app://login-callback/';
   static const String passwordResetCallbackUrl =
       'io.facetune.app://reset-callback/';
+
+  /// Builds a link to the tutorial for one premium preview.
+  static String tutorialPathFor(String canonicalImageId, {bool kit = false}) =>
+      '/tutorial/$canonicalImageId${kit ? '?kit=true' : ''}';
 
   static const double spacingSmall = 8;
   static const double spacingMedium = 16;

@@ -14,6 +14,7 @@ class ResultActions extends StatelessWidget {
     required this.onShare,
     required this.onGenerateAnother,
     required this.onReturnHome,
+    this.onOpenTutorial,
     super.key,
   });
 
@@ -26,6 +27,11 @@ class ResultActions extends StatelessWidget {
   final VoidCallback onShare;
   final VoidCallback onGenerateAnother;
   final VoidCallback onReturnHome;
+
+  /// Opens the step-by-step tutorial for this look. Absent when the preview
+  /// this result came from is not known, since the tutorial is identified by
+  /// that preview and nothing else.
+  final VoidCallback? onOpenTutorial;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -64,6 +70,14 @@ class ResultActions extends StatelessWidget {
           ),
         ],
       ),
+      if (onOpenTutorial != null) ...[
+        const SizedBox(height: AppSpacing.sm),
+        SecondaryButton(
+          label: 'Step-by-step tutorial',
+          icon: Icons.school_outlined,
+          onPressed: onOpenTutorial,
+        ),
+      ],
       const SizedBox(height: AppSpacing.sm),
       SecondaryButton(
         label: 'Generate another variation',

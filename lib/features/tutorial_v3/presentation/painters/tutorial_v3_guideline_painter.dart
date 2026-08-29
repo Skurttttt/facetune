@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
@@ -35,10 +34,7 @@ class TutorialV3GeometryTransform {
   /// The rect the image actually occupies inside [canvasSize].
   Rect get destinationRect {
     final fitted = applyBoxFit(fit, imageSize, canvasSize);
-    return alignment.inscribe(
-      fitted.destination,
-      Offset.zero & canvasSize,
-    );
+    return alignment.inscribe(fitted.destination, Offset.zero & canvasSize);
   }
 
   /// Maps one normalized point to a canvas offset.
@@ -203,7 +199,9 @@ class TutorialV3GuidelinePainter extends CustomPainter {
           canvas.restore();
 
         case TutorialV3Polyline(:final vertices):
-          final points = vertices.map(transform.toCanvas).toList(growable: false);
+          final points = vertices
+              .map(transform.toCanvas)
+              .toList(growable: false);
           final path = Path()..moveTo(points.first.dx, points.first.dy);
           for (final point in points.skip(1)) {
             path.lineTo(point.dx, point.dy);
@@ -280,25 +278,4 @@ class TutorialV3GuidelinePainter extends CustomPainter {
       oldDelegate.imageSize != imageSize ||
       oldDelegate.fit != fit ||
       oldDelegate.alignment != alignment;
-}
-
-/// Renders geometry over an image to PNG bytes, off-screen.
-///
-/// Used by the V3-6R gate to produce visual evidence without a device. It is
-/// the same painter the app would use, so what the gate inspects is what a
-/// user would see.
-Future<ui.Image> renderGuidelineOverlay({
-  required ui.Image original,
-  required TutorialV3Geometry geometry,
-}) async {
-  final size = Size(original.width.toDouble(), original.height.toDouble());
-  final recorder = ui.PictureRecorder();
-  final canvas = Canvas(recorder, Offset.zero & size);
-  canvas.drawImage(original, Offset.zero, Paint());
-  TutorialV3GuidelinePainter(
-    geometry: geometry,
-    imageSize: size,
-    fit: BoxFit.fill,
-  ).paint(canvas, size);
-  return recorder.endRecording().toImage(original.width, original.height);
 }

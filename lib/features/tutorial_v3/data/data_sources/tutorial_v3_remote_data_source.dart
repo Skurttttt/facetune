@@ -1,4 +1,8 @@
+import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../../../core/data/supabase_remote_data_source.dart';
+import '../../domain/errors/tutorial_v3_failure.dart';
 import '../../domain/services/tutorial_v3_storage_paths.dart';
 
 /// The raw persistence surface for Tutorial V3.
@@ -8,6 +12,19 @@ import '../../domain/services/tutorial_v3_storage_paths.dart';
 /// caller's is invisible rather than forbidden.
 abstract interface class TutorialV3RemoteDataSource {
   String? get currentUserId;
+
+  /// Resolves the tutorial for a premium preview, creating it if needed.
+  ///
+  /// Delegates to `open_tutorial_v3_session`, which derives the analysis, the
+  /// recommendation, the selected style and the canonical path from rows RLS
+  /// has already scoped to the caller. Returns the session id.
+  ///
+  /// Doing this in one SECURITY INVOKER statement is what keeps the client
+  /// from choosing any of those: it names the preview and nothing else.
+  Future<String> openSession({
+    required String canonicalImageId,
+    required bool kit,
+  });
 
   /// Finds the session for a canonical preview, which is the natural key for
   /// a tutorial.
@@ -71,6 +88,12 @@ abstract interface class TutorialV3RemoteDataSource {
     List<String>? expectedStatuses,
   });
 
+  /// The original selfie path recorded on an analysis.
+  ///
+  /// Read through RLS, so an analysis that is not the caller's is invisible
+  /// rather than forbidden — the tutorial simply has no image to show.
+  Future<String?> findOriginalImagePath(String analysisId);
+
   Future<String> createSignedUrl(String storagePath);
 }
 
@@ -83,6 +106,52 @@ class SupabaseTutorialV3RemoteDataSource extends SupabaseRemoteDataSource
 
   @override
   String? get currentUserId => client.auth.currentUser?.id;
+
+  @override
+  Future<String> openSession({
+    required String canonicalImageId,
+    required bool kit,
+  }) async {
+    try {
+      final id = await client.rpc(
+        'open_tutorial_v3_session',
+        params: {'p_generated_image_id': canonicalImageId, 'p_kit': kit},
+      );
+      return '$id';
+    } on PostgrestException catch (error) {
+      // Debug only, and only the SQLSTATE. `PGRST202` means the function is
+      // missing from the schema cache; `42501` means RLS refused; `P0002`,
+      // `28000` and `22023` are the resolver's own. The message can carry the
+      // statement and its arguments, so it is not recorded.
+      if (kDebugMode) {
+        debugPrint(
+          '[tutorial_v3] open_tutorial_v3_session rejected: '
+          'code=${error.code ?? 'none'}',
+        );
+      }
+      // The RPC raises rather than returning a status, so its codes are
+      // translated here. Anything else propagates unchanged: a failure this
+      // layer does not recognise must not be reported as a tidy domain error.
+      throw switch (error.code) {
+        'P0002' => const TutorialV3Failure(
+          'The final look for this tutorial is no longer available.',
+          kind: TutorialV3FailureKind.notFound,
+          retryable: false,
+        ),
+        '28000' => const TutorialV3Failure(
+          'Sign in again to open your tutorial.',
+          kind: TutorialV3FailureKind.sessionExpired,
+          retryable: false,
+        ),
+        '22023' => const TutorialV3Failure(
+          'This final look cannot be used for a tutorial.',
+          kind: TutorialV3FailureKind.validation,
+          retryable: false,
+        ),
+        _ => error,
+      };
+    }
+  }
 
   @override
   Future<Map<String, Object?>?> findSessionByCanonicalImage({
@@ -202,6 +271,17 @@ class SupabaseTutorialV3RemoteDataSource extends SupabaseRemoteDataSource
     }
     final row = await query.select().maybeSingle();
     return row?.cast<String, Object?>();
+  }
+
+  @override
+  Future<String?> findOriginalImagePath(String analysisId) async {
+    final row = await client
+        .from('analyses')
+        .select('original_image_path')
+        .eq('id', analysisId)
+        .maybeSingle();
+    final path = row?['original_image_path'];
+    return path is String ? path : null;
   }
 
   @override

@@ -59,14 +59,15 @@ void main() {
     test('the schema version matches the Dart constant', () {
       expect(
         types,
-        contains(
-          'GEOMETRY_SCHEMA_VERSION = $tutorialV3GeometrySchemaVersion',
-        ),
+        contains('GEOMETRY_SCHEMA_VERSION = $tutorialV3GeometrySchemaVersion'),
       );
     });
 
     test('the coordinate space matches the Dart constant', () {
-      expect(types, contains('COORDINATE_SPACE = "$tutorialV3CoordinateSpace"'));
+      expect(
+        types,
+        contains('COORDINATE_SPACE = "$tutorialV3CoordinateSpace"'),
+      );
     });
 
     test('primitive kinds match TutorialV3PrimitiveKind exactly', () {
@@ -105,30 +106,34 @@ void main() {
       for (final role in TutorialV3GeometryRole.values) {
         expect(
           literalsAfter(types, '  ${role.code}: [', '[').toSet(),
-          TutorialV3GeometryCatalog.kindsFor(role)
-              .map((kind) => kind.code)
-              .toSet(),
+          TutorialV3GeometryCatalog.kindsFor(
+            role,
+          ).map((kind) => kind.code).toSet(),
           reason: 'role ${role.code} drifted',
         );
       }
     });
 
     test('category to role agrees with the Dart catalog', () {
-      final block = types.substring(types.indexOf('export const CATEGORY_ROLES'));
+      final block = types.substring(
+        types.indexOf('export const CATEGORY_ROLES'),
+      );
       for (final category in TutorialV3Category.values) {
         expect(
           literalsAfter(block, '  ${category.code}: [', '[').toSet(),
-          TutorialV3GeometryCatalog.rolesFor(category)
-              .map((role) => role.code)
-              .toSet(),
+          TutorialV3GeometryCatalog.rolesFor(
+            category,
+          ).map((role) => role.code).toSet(),
           reason: 'category ${category.code} drifted',
         );
       }
     });
 
     test('the final look is offered no geometry vocabulary at all', () {
-      expect(TutorialV3GeometryCatalog.rolesFor(TutorialV3Category.finalLook),
-          isEmpty);
+      expect(
+        TutorialV3GeometryCatalog.rolesFor(TutorialV3Category.finalLook),
+        isEmpty,
+      );
       expect(types, contains('final_look: [],'));
     });
 
@@ -354,10 +359,76 @@ void main() {
       expect(index, contains('.eq("geometry_status", "generating")'));
     });
 
-    test('the schema version the build understands is sent with the claim',
-        () {
+    test('the schema version the build understands is sent with the claim', () {
       expect(index, contains('p_schema_version'));
       expect(index, contains('GEOMETRY_SCHEMA_VERSION'));
+    });
+  });
+
+  group('the Flutter client matches the function it calls', () {
+    final dataSource = source(
+      'lib/features/tutorial_v3/data/data_sources/'
+      'tutorial_v3_function_data_source.dart',
+    );
+
+    test('it invokes the function directories that actually exist', () {
+      expect(
+        dataSource,
+        contains("geometryFunction = 'map-tutorial-v3-guideline-geometry'"),
+      );
+      expect(dataSource, contains("planFunction = 'plan-tutorial-v3'"));
+      expect(
+        Directory(
+          '${root.path}${Platform.pathSeparator}'
+          '${functionDir.replaceAll('/', Platform.pathSeparator)}',
+        ).existsSync(),
+        isTrue,
+      );
+    });
+
+    test('the geometry request body is exactly two identifiers', () {
+      // The server refuses sixteen other fields outright. This is the other
+      // half of that contract: the client has no code path that could send
+      // one, so the refusal is a backstop rather than the only defence.
+      final body = RegExp(
+        r"<String, Object\?>\{'sessionId': sessionId, 'stepIndex': stepIndex\}",
+      );
+      expect(body.hasMatch(dataSource), isTrue);
+    });
+
+    test('the plan request body is exactly the session id', () {
+      expect(dataSource, contains("<String, Object?>{'sessionId': sessionId}"));
+    });
+
+    test('no request may ever carry a spec, a prompt, a path or geometry', () {
+      final code = dataSource
+          .split('\n')
+          .map((line) {
+            final comment = line.indexOf('//');
+            return comment == -1 ? line : line.substring(0, comment);
+          })
+          .join('\n');
+      for (final banned in [
+        "'prompt'",
+        "'stepSpec'",
+        "'category'",
+        "'geometry'",
+        "'storagePath'",
+        "'analysisId'",
+        "'faceAttributes'",
+      ]) {
+        expect(
+          code.contains(banned),
+          isFalse,
+          reason: '$banned must never appear in a request body',
+        );
+      }
+    });
+
+    test('the server keeps its own retry verdict', () {
+      // A client that decided retryability itself could retry a validation
+      // failure into the step's bounded attempt budget.
+      expect(dataSource, contains("payload['retryable'] == true"));
     });
   });
 }

@@ -106,7 +106,11 @@ void main() {
     });
 
     test('the schema constrains graphics to the same set', () {
-      final start = schema.indexOf('graphics');
+      // Anchored on the property declaration, not on the first occurrence of
+      // the word: prose above it mentions `graphics`, and a scan that starts
+      // in a comment silently reads the wrong enum.
+      final start = schema.indexOf('graphics: {');
+      expect(start, greaterThan(-1), reason: 'graphics property not found');
       final enumStart = schema.indexOf('enum: [', start);
       final close = schema.indexOf(']', enumStart);
       final enumerated = RegExp('"([a-z0-9_]+)"')
@@ -238,8 +242,21 @@ void main() {
     });
 
     test('a missing model surfaces as configuration, not an outage', () {
+      // V3-10F4 moved the HTTP classification into the shared classifier so
+      // one 400 could no longer stand for an invalid schema, a rejected key
+      // and a billing precondition at once. A missing model must still land on
+      // a permanent configuration code rather than a retryable outage.
       final client = source('$functionDir/gemini_client.ts');
-      expect(client, contains('GEMINI_MODEL_NOT_FOUND'));
+      expect(client, contains('describeGeminiError(response)'));
+      expect(client, contains('geminiFailureFor(detail)'));
+
+      final classifier = source('supabase/functions/_shared/gemini_error.ts');
+      expect(classifier, contains('"gemini_credential_rejected"'));
+      expect(
+        classifier,
+        contains('code: "GEMINI_MODEL_NOT_FOUND",\n'
+            '        retryable: false,'),
+      );
     });
 
     test('the API key is only ever read server-side', () {

@@ -1,39 +1,36 @@
-import '../entities/tutorial_v3_canonical_preview.dart';
 import '../entities/tutorial_v3_geometry.dart';
 import '../entities/tutorial_v3_plan.dart';
+import '../entities/tutorial_v3_session.dart';
+import '../entities/tutorial_v3_session_images.dart';
 import '../entities/tutorial_v3_session_snapshot.dart';
 import '../entities/tutorial_v3_source_mode.dart';
 import '../entities/tutorial_v3_step.dart';
 
-/// Everything needed to identify the tutorial for one selected look.
+/// Where a tutorial is being started from.
 ///
-/// The canonical premium preview is the natural key: it *is* the tutorial's
-/// destination, so two requests for the same preview describe the same
-/// tutorial.
-class TutorialV3SessionRequest {
-  const TutorialV3SessionRequest({
-    required this.analysisId,
+/// **One identifier, and nothing else.** The premium final preview is the
+/// tutorial's destination and its natural key, so naming it is enough: the
+/// analysis, the recommendation, the selected style and the preview's storage
+/// path are all resolved server-side from rows RLS has already scoped to the
+/// caller.
+///
+/// This replaced a client-assembled request that carried all of those. A
+/// caller that can choose a tutorial's analysis or its canonical image path
+/// can point a tutorial at something it was never meant to teach, and no
+/// amount of client-side validation makes that safe.
+class TutorialV3EntryPoint {
+  const TutorialV3EntryPoint({
+    required this.canonicalImageId,
     required this.sourceMode,
-    required this.selectedStyleCode,
-    required this.canonicalPreview,
-    this.recommendationId,
-    this.kitRecommendationId,
   });
 
-  final String analysisId;
+  /// The `generated_images` row id (standard) or `kit_generated_images` row id
+  /// (Kit), chosen by [sourceMode].
+  final String canonicalImageId;
+
   final TutorialV3SourceMode sourceMode;
 
-  /// The persisted `makeup_style` of the recommendation, never client UI
-  /// state.
-  final String selectedStyleCode;
-
-  final TutorialV3CanonicalPreview canonicalPreview;
-
-  /// Set in standard mode only.
-  final String? recommendationId;
-
-  /// Set in Kit mode only.
-  final String? kitRecommendationId;
+  bool get isKit => sourceMode.isKit;
 }
 
 /// What happened when a step was prepared for geometry mapping.
@@ -91,8 +88,12 @@ class TutorialV3GeometryPreparation {
 /// object per step, and no cumulative-result machinery — no per-step makeup
 /// appearance exists to advance, carry forward, or depend on.
 abstract interface class TutorialV3Repository {
-  /// Loads the tutorial for [request]'s canonical preview, creating an empty
+  /// Opens the tutorial for [entry]'s canonical preview, creating an empty
   /// session if none exists yet.
+  ///
+  /// The only supported way to start a V3 tutorial. Resolution happens
+  /// server-side, so the caller cannot choose the analysis, the recommendation,
+  /// the selected style or the preview's storage path.
   ///
   /// Idempotent: the canonical preview is the natural key, so calling this
   /// twice returns the same session rather than starting a second tutorial for
@@ -101,9 +102,7 @@ abstract interface class TutorialV3Repository {
   /// A session this build cannot interpret comes back as
   /// [TutorialV3IncompatibleSession] rather than throwing, so a reopened
   /// tutorial can report that state instead of failing to load.
-  Future<TutorialV3SessionSnapshot> getOrCreateSession(
-    TutorialV3SessionRequest request,
-  );
+  Future<TutorialV3SessionSnapshot> openSession(TutorialV3EntryPoint entry);
 
   /// Loads one session by id, or `null` when the caller does not own a
   /// session with that id.
@@ -165,6 +164,13 @@ abstract interface class TutorialV3Repository {
     String? modelName,
     String? promptVersion,
   });
+
+  /// Signed URLs for the two images the tutorial screen displays.
+  ///
+  /// The original selfie's path is resolved from the session's analysis
+  /// rather than accepted from the caller, so a tutorial can only ever show
+  /// the photograph its own plan was built from.
+  Future<TutorialV3SessionImages> loadImages(TutorialV3Session session);
 
   /// A short-lived signed URL for a private asset.
   ///

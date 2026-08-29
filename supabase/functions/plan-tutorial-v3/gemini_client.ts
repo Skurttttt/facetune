@@ -1,11 +1,28 @@
 import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 
+import {
+  describeGeminiError,
+  geminiErrorLogLine,
+  geminiFailureFor,
+} from "../_shared/gemini_error.ts";
+
 import { type PlannerInput, tutorialV3PlannerPrompt } from "./prompt.ts";
 import { TUTORIAL_V3_PLAN_SCHEMA } from "./schema.ts";
 import { FunctionFailure } from "./types.ts";
 
 const timeoutMs = 60000;
 const maximumAttempts = 2;
+
+/**
+ * The first bytes of the image, as hex, so a declared MIME that disagrees with
+ * the actual file is visible in a log line. Four bytes identify PNG, JPEG and
+ * WEBP without revealing anything about the picture.
+ */
+function magicBytesOf(bytes: Uint8Array): string {
+  return Array.from(bytes.slice(0, 4))
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 /**
  * Planning is a TEXT task, not an image task.
@@ -106,34 +123,50 @@ export async function requestTutorialV3Plan(
         signal: AbortSignal.timeout(timeoutMs),
       });
       if (response.ok) return responseText(await response.json());
-      if (response.status === 404) {
+
+      // The body is the only place the reason lives: Gemini answers 400 for an
+      // invalid schema, an unusable API key and a billing precondition alike.
+      // Discarding it is what made the production failure undiagnosable.
+      const detail = await describeGeminiError(response);
+      console.error(geminiErrorLogLine("plan-tutorial-v3", attempt, detail));
+      if (detail.kind === "model_not_found") {
         // A missing model must surface as a configuration fault rather than a
         // transient upstream error, so a bad TUTORIAL_V3_PLANNER_MODEL is
         // obvious instead of looking like an outage.
         console.error(
-          `[plan-tutorial-v3] Planner model not found model=${model}`,
-        );
-        throw new FunctionFailure(
-          500,
-          "GEMINI_MODEL_NOT_FOUND",
-          "The tutorial service is not configured correctly.",
+          `[plan-tutorial-v3] planner model not found model=${model}`,
         );
       }
-      const transient = response.status === 429 || response.status >= 500;
-      console.error(
-        `[plan-tutorial-v3] Gemini request failed status=${response.status} attempt=${attempt}`,
-      );
-      if (transient && attempt < maximumAttempts) {
+      // Only a genuinely transient condition earns a second attempt. An
+      // invalid request is deterministic: the identical body would be rejected
+      // identically, so retrying it is latency theatre.
+      if (detail.retryable && attempt < maximumAttempts) {
         await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
         continue;
       }
+      if (detail.kind === "invalid_request") {
+        // Gemini says only "Request contains an invalid argument", so the shape
+        // of the request is recorded alongside it. Sizes, MIME and a four-byte
+        // signature — never content. This is what made the V3-10F4.4 bisection
+        // possible and what would make the next one cheap; it costs one line
+        // on a failure that has already ended the request.
+        console.error(
+          `[plan-tutorial-v3] request_metrics model=${model} ` +
+            `body_bytes=${body.length} image_bytes=${canonicalImage.bytes.length} ` +
+            `image_mime=${canonicalImage.mimeType} ` +
+            `image_magic=${magicBytesOf(canonicalImage.bytes)} ` +
+            `schema_bytes=${JSON.stringify(TUTORIAL_V3_PLAN_SCHEMA).length} ` +
+            `parts=2 contents=1`,
+        );
+      }
+      const mapping = geminiFailureFor(detail);
       throw new FunctionFailure(
-        response.status === 429 ? 503 : 502,
-        response.status === 429
-          ? "gemini_rate_limited"
-          : "gemini_upstream_error",
-        "The tutorial service is temporarily unavailable.",
-        transient,
+        mapping.status,
+        mapping.code,
+        mapping.configuration
+          ? "The tutorial service is not configured correctly."
+          : "The tutorial service is temporarily unavailable.",
+        mapping.retryable,
       );
     } catch (error) {
       if (error instanceof FunctionFailure) throw error;

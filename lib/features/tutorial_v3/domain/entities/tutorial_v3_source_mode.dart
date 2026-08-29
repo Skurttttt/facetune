@@ -15,6 +15,13 @@ enum TutorialV3SourceMode {
 
   bool get isKit => this == TutorialV3SourceMode.makeupKit;
 
+  /// The storage folder the mode's premium previews are written into by
+  /// `generate-makeup-preview` and `generate-kit-makeup-preview`.
+  ///
+  /// The two chains produce different looks for the same analysis, so the
+  /// folder is what distinguishes a Kit target from a standard one on disk.
+  String get canonicalPreviewFolder => isKit ? 'kit-generated' : 'generated';
+
   static TutorialV3SourceMode? fromCode(String code) {
     for (final mode in values) {
       if (mode.code == code) return mode;

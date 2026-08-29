@@ -1,6 +1,8 @@
 import '../../domain/entities/tutorial_v3_geometry.dart';
 import '../../domain/entities/tutorial_v3_geometry_status.dart';
 import '../../domain/entities/tutorial_v3_plan.dart';
+import '../../domain/entities/tutorial_v3_session.dart';
+import '../../domain/entities/tutorial_v3_session_images.dart';
 import '../../domain/entities/tutorial_v3_session_snapshot.dart';
 import '../../domain/entities/tutorial_v3_session_status.dart';
 import '../../domain/entities/tutorial_v3_step.dart';
@@ -28,36 +30,28 @@ class SupabaseTutorialV3Repository implements TutorialV3Repository {
   final TutorialV3RemoteDataSource _remote;
 
   @override
-  Future<TutorialV3SessionSnapshot> getOrCreateSession(
-    TutorialV3SessionRequest request,
+  Future<TutorialV3SessionSnapshot> openSession(
+    TutorialV3EntryPoint entry,
   ) async {
-    final userId = _requireUser();
-    _validateRequest(request);
+    _requireUser();
 
-    final kit = request.sourceMode.isKit;
-    final canonicalImageId = request.canonicalPreview.generatedImageId;
-
-    final existing = await _remote.findSessionByCanonicalImage(
-      kit: kit,
-      canonicalImageId: canonicalImageId,
+    // One round trip, one statement. `open_tutorial_v3_session` derives the
+    // analysis, the recommendation, the selected look and the canonical path
+    // from rows RLS has already scoped to this caller, then reuses or creates
+    // the session. Nothing about the tutorial is assembled on this side.
+    final sessionId = await _remote.openSession(
+      canonicalImageId: entry.canonicalImageId,
+      kit: entry.isKit,
     );
-    if (existing != null) return _snapshotOf(existing);
-
-    final inserted = await _remote.insertSession(<String, Object?>{
-      'user_id': userId,
-      'analysis_id': request.analysisId,
-      'source_mode': request.sourceMode.code,
-      'recommendation_id': kit ? null : request.recommendationId,
-      'kit_recommendation_id': kit ? request.kitRecommendationId : null,
-      'makeup_style': request.selectedStyleCode,
-      'canonical_generated_image_id': kit ? null : canonicalImageId,
-      'canonical_kit_generated_image_id': kit ? canonicalImageId : null,
-      'canonical_image_path': request.canonicalPreview.storagePath,
-      'total_steps': 0,
-      'plan_version': TutorialV3PlanVersion.currentValue,
-      'status': TutorialV3SessionStatus.planning.code,
-    });
-    return _snapshotOf(inserted);
+    final row = await _remote.findSessionById(sessionId);
+    if (row == null) {
+      throw const TutorialV3Failure(
+        'This tutorial could not be opened.',
+        kind: TutorialV3FailureKind.notFound,
+        retryable: false,
+      );
+    }
+    return _snapshotOf(row);
   }
 
   @override
@@ -300,6 +294,34 @@ class SupabaseTutorialV3Repository implements TutorialV3Repository {
   }
 
   @override
+  Future<TutorialV3SessionImages> loadImages(TutorialV3Session session) async {
+    _requireUser();
+
+    // The selfie path comes from the session's own analysis, never from the
+    // caller, so a tutorial cannot be pointed at another photograph. RLS makes
+    // an analysis that is not the caller's invisible.
+    final originalPath = await _remote.findOriginalImagePath(
+      session.analysisId,
+    );
+    if (originalPath == null) {
+      throw const TutorialV3Failure(
+        'The original photo for this tutorial is no longer available.',
+        kind: TutorialV3FailureKind.notFound,
+        retryable: false,
+      );
+    }
+
+    final urls = await Future.wait(<Future<String>>[
+      _remote.createSignedUrl(originalPath),
+      _remote.createSignedUrl(session.canonicalPreview.storagePath),
+    ]);
+    return TutorialV3SessionImages(
+      originalSelfieUrl: urls.first,
+      canonicalPreviewUrl: urls.last,
+    );
+  }
+
+  @override
   Future<String> createSignedUrl(String storagePath) =>
       _remote.createSignedUrl(storagePath);
 
@@ -313,35 +335,6 @@ class SupabaseTutorialV3Repository implements TutorialV3Repository {
       );
     }
     return userId;
-  }
-
-  void _validateRequest(TutorialV3SessionRequest request) {
-    final errors = <String>[];
-    if (request.canonicalPreview.sourceMode != request.sourceMode) {
-      errors.add('The canonical preview belongs to a different source mode.');
-    }
-    if (request.sourceMode.isKit) {
-      if (request.kitRecommendationId == null) {
-        errors.add('A Kit tutorial needs a Kit recommendation.');
-      }
-      if (request.recommendationId != null) {
-        errors.add('A Kit tutorial must not carry a standard recommendation.');
-      }
-    } else {
-      if (request.recommendationId == null) {
-        errors.add('A standard tutorial needs a standard recommendation.');
-      }
-      if (request.kitRecommendationId != null) {
-        errors.add('A standard tutorial must not carry a Kit recommendation.');
-      }
-    }
-    if (errors.isNotEmpty) {
-      throw TutorialV3Failure(
-        errors.join(' '),
-        kind: TutorialV3FailureKind.validation,
-        retryable: false,
-      );
-    }
   }
 
   TutorialV3Step _requireStep(TutorialV3LoadedSession loaded, int stepIndex) {
@@ -392,6 +385,22 @@ class SupabaseTutorialV3Repository implements TutorialV3Repository {
     final steps = readable && sessionId is String
         ? await _remote.selectSteps(sessionId)
         : const <Map<String, Object?>>[];
-    return TutorialV3SessionDto.fromRows(session: sessionRow, steps: steps);
+    final snapshot = TutorialV3SessionDto.fromRows(
+      session: sessionRow,
+      steps: steps,
+    );
+    if (snapshot is TutorialV3LoadedSession &&
+        !snapshot.session.canonicalPreview.matchesSourceModeFolder) {
+      // A row written before the entry resolver existed could point a Kit
+      // session at a standard preview, or the reverse. Rendering it would
+      // teach toward the wrong look for the same face, so it is refused
+      // rather than opened.
+      throw const TutorialV3Failure(
+        'This tutorial points at the wrong final look. Start a new one.',
+        kind: TutorialV3FailureKind.validation,
+        retryable: false,
+      );
+    }
+    return snapshot;
   }
 }

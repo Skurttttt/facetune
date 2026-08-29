@@ -277,10 +277,15 @@ Deno.serve(async (request) => {
     const canonicalPath = session.canonical_image_path as string;
     const expectedPrefix =
       `${authData.user.id}/analyses/${session.analysis_id}/`;
+    // The folder also has to agree with the session's mode. Both preview
+    // chains write under the same analysis, so a Kit session pointed at a
+    // standard preview path would decompose the wrong look for the same face.
+    const canonicalFolder = isKit ? "/kit-generated/" : "/generated/";
     if (
       !canonicalPath.startsWith(expectedPrefix) ||
       canonicalPath.includes("..") ||
-      canonicalPath.includes("/original/")
+      canonicalPath.includes("/original/") ||
+      !canonicalPath.includes(canonicalFolder)
     ) {
       throw new FunctionFailure(
         409,
@@ -385,7 +390,7 @@ Deno.serve(async (request) => {
         p_session_id: sessionId,
         p_planner_model: model,
         p_planner_prompt_version: TUTORIAL_V3_PLANNER_PROMPT_VERSION,
-        p_steps: planRows(plan, { style, sourceMode }),
+        p_steps: planRows(plan, { style, sourceMode, ownedProducts }),
       },
     );
     if (persistError) {

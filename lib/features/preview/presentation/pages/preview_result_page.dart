@@ -167,6 +167,14 @@ class PreviewResultPage extends ConsumerWidget {
                       preview: previewState.preview!,
                       styleName: selectedStyle.name,
                     ),
+                // The tutorial is identified by this preview and nothing else.
+                // Everything it is built from — the analysis, the
+                // recommendation, the selected look, the canonical image path
+                // — is resolved server-side under RLS, so the only thing that
+                // travels from here is the row id this screen is already
+                // showing. `push`, not `go`, so back returns to this result.
+                onOpenTutorial: () =>
+                    context.push(AppConstants.tutorialPathFor(preview.id)),
                 onGenerateAnother: () => ref
                     .read(makeupPreviewControllerProvider.notifier)
                     .generateVariation(),
@@ -212,6 +220,7 @@ class _ResultContent extends StatelessWidget {
     required this.onSave,
     required this.onFavorite,
     required this.onShare,
+    required this.onOpenTutorial,
     required this.onGenerateAnother,
     required this.onReturnHome,
   });
@@ -224,6 +233,12 @@ class _ResultContent extends StatelessWidget {
   final VoidCallback onSave;
   final VoidCallback onFavorite;
   final VoidCallback onShare;
+
+  /// Required, not optional: this branch only renders for a preview whose
+  /// links are already verified, so the tutorial always has a valid target.
+  /// Making it required means dropping the wiring is a compile error rather
+  /// than a silently missing button, which is how it went missing before.
+  final VoidCallback onOpenTutorial;
   final VoidCallback onGenerateAnother;
   final VoidCallback onReturnHome;
 
@@ -243,6 +258,7 @@ class _ResultContent extends StatelessWidget {
       onSave: onSave,
       onFavorite: onFavorite,
       onShare: onShare,
+      onOpenTutorial: onOpenTutorial,
       onGenerateAnother: onGenerateAnother,
       onReturnHome: onReturnHome,
     );
@@ -332,6 +348,7 @@ class _ResultDetails extends StatelessWidget {
     required this.onSave,
     required this.onFavorite,
     required this.onShare,
+    required this.onOpenTutorial,
     required this.onGenerateAnother,
     required this.onReturnHome,
   });
@@ -344,6 +361,7 @@ class _ResultDetails extends StatelessWidget {
   final VoidCallback onSave;
   final VoidCallback onFavorite;
   final VoidCallback onShare;
+  final VoidCallback onOpenTutorial;
   final VoidCallback onGenerateAnother;
   final VoidCallback onReturnHome;
 
@@ -375,6 +393,7 @@ class _ResultDetails extends StatelessWidget {
         onSave: onSave,
         onFavorite: onFavorite,
         onShare: onShare,
+        onOpenTutorial: onOpenTutorial,
         onGenerateAnother: onGenerateAnother,
         onReturnHome: onReturnHome,
       ),
