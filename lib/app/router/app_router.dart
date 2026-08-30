@@ -25,6 +25,7 @@ import '../../features/recommendation/presentation/pages/makeup_recommendation_p
 import '../../features/profile/presentation/pages/profile_page.dart';
 import '../../features/saved_looks/presentation/pages/saved_looks_page.dart';
 import '../../features/scan/presentation/pages/scan_page.dart';
+import '../../features/tutorial/presentation/pages/tutorial_page.dart';
 import '../../features/settings/presentation/pages/settings_page.dart';
 import '../../shared/widgets/app_ui.dart';
 
@@ -130,6 +131,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: AppConstants.previewRoute,
         name: 'preview',
         builder: (context, state) => const PreviewResultPage(),
+      ),
+      GoRoute(
+        path: AppConstants.tutorialRoute,
+        name: 'tutorial',
+        builder: (context, state) {
+          // The canonical preview reference is passed as `extra` rather than a
+          // path parameter: it carries both an id and a source mode, and a URL
+          // segment could not express the pair without letting a caller name a
+          // mode the row does not have.
+          final args = state.extra! as TutorialPageArgs;
+          return TutorialPage(
+            preview: args.preview,
+            finalPreviewUrl: args.finalPreviewUrl,
+          );
+        },
       ),
       GoRoute(
         path: AppConstants.savedRoute,

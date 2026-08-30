@@ -293,8 +293,11 @@ Deno.serve(async (request) => {
         ?.generation_number as number | undefined) ?? 0) +
       1;
     const originalBytes = new Uint8Array(await originalBlob.arrayBuffer());
+    // Same canonical model as the Standard Mode preview. Both modes must feed
+    // one final-preview architecture, so a divergence here would make the two
+    // previews incomparable as tutorial authority.
     const model = Deno.env.get("GEMINI_IMAGE_MODEL")?.trim() ||
-      "gemini-3.1-flash-image";
+      "gemini-3-pro-image";
     const generated = await requestGeminiKitPreview(
       requiredEnvironment("GEMINI_API_KEY"),
       model,

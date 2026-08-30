@@ -17,6 +17,9 @@ import '../controllers/makeup_kit_products_state.dart';
 import '../controllers/makeup_kit_result_actions_controller.dart';
 import '../controllers/makeup_kit_result_actions_state.dart';
 import '../widgets/kit_result_product_card.dart';
+import '../../../tutorial/domain/entities/canonical_preview_ref.dart';
+import '../../../tutorial/presentation/pages/tutorial_page.dart';
+import '../../../tutorial/presentation/utils/tutorial_labels.dart';
 
 class MakeupKitRecommendationEntryPage extends ConsumerWidget {
   const MakeupKitRecommendationEntryPage({super.key});
@@ -449,6 +452,21 @@ class _KitPreviewContent extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.sm),
           ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        // The kit-mode tutorial entry. The same screen and the same controller
+        // as Standard Mode — only the preview reference differs, which is what
+        // carries the source mode through.
+        SecondaryButton(
+          label: TutorialLabels.startTutorial,
+          icon: Icons.auto_stories_outlined,
+          onPressed: () => context.push(
+            AppConstants.tutorialRoute,
+            extra: TutorialPageArgs(
+              preview: CanonicalPreviewRef.myMakeupKit(preview.id),
+              finalPreviewUrl: preview.generatedImageUrl,
+            ),
+          ),
         ),
         const SizedBox(height: AppSpacing.sm),
         PrimaryButton(

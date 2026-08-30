@@ -1,3 +1,4 @@
+import { sanitizePromptText } from "../_shared/prompt_safety.ts";
 import type { KitProduct } from "./types.ts";
 
 export const KIT_MAKEUP_RECOMMENDATION_PROMPT_VERSION =
@@ -11,9 +12,11 @@ export function kitMakeupRecommendationPrompt(
   const inventory = products.map((product) => ({
     productId: product.id,
     category: product.category,
-    name: product.product_name,
+    // Free user text: sanitized before it reaches the model. JSON.stringify
+    // escapes quotes but does nothing about instructions in the content.
+    name: sanitizePromptText(product.product_name),
     colorHex: product.color_hex,
-    colorLabel: product.color_label,
+    colorLabel: sanitizePromptText(product.color_label),
     finish: product.finish,
     foundationDepth: product.foundation_depth,
     foundationUndertone: product.foundation_undertone,

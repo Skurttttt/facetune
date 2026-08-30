@@ -75,7 +75,7 @@ export async function requestGeminiPreview(
   recommendation: Record<string, unknown>,
   variationNumber: number,
 ): Promise<GeneratedImage> {
-  const endpoint = `https://generativelanguage.googleapis.com/v1/models/${
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${
     encodeURIComponent(model)
   }:generateContent`;
   const body = JSON.stringify({

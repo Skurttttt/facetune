@@ -22,6 +22,7 @@ class AppConstants {
   static const String recommendationRoute = '/recommendation';
   static const String analysisRoute = '/analysis';
   static const String previewRoute = '/preview';
+  static const String tutorialRoute = '/tutorial';
   static const String savedRoute = '/saved';
   static const String historyRoute = '/history';
   static const String makeupKitRoute = '/makeup-kit';

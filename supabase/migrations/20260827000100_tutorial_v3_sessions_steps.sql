@@ -1,0 +1,552 @@
+-- FaceTune Step-by-Step Tutorial V3 — V3-2: isolated V3 persistence.
+--
+-- Timestamp floor. The highest migration applied remotely is
+-- `20260826000200_tutorial_v2_planner` (V3-0.5 §9). `20260826000300` is
+-- deliberately skipped: it names a recovered-but-unapplied V2 guideline
+-- migration that still exists in the stash, and reusing that slot would make
+-- the two collide. This migration therefore starts a new day.
+--
+-- These are NEW tables. The remote database still contains V1's
+-- `tutorial_sessions` / `tutorial_steps` (6 and 66 live rows) and V2's
+-- `tutorial_v2_sessions` / `tutorial_v2_steps` (empty but live). V3 does not
+-- touch, extend, reuse or reinterpret any of them — a
+-- `create table if not exists tutorial_v2_sessions` here would silently bind
+-- V3 to V2's schema instead of creating anything.
+--
+-- This migration deliberately does NOT redefine `consume_ai_quota` or
+-- `ai_usage_events_operation_valid`. Their live definition comes from
+-- `20260826000200` and currently carries EIGHT operations, three of which
+-- (`tutorial_step`, `tutorial_geometry_plan`, `tutorial_v2_plan`) belong to
+-- Edge Functions that are still deployed and ACTIVE. Rewriting either object
+-- here would strip them and break those functions with
+-- `unsupported_operation`. V3's own quota operation is added by the phase
+-- that deploys V3's Edge Functions, as a strict SUPERSET of whatever is live
+-- at that time.
+--
+-- Storage: V3 assets live under
+-- {userId}/analyses/{analysisId}/tutorial-v3/{sessionId}/... so the existing
+-- `delete-history-item` function — which recursively lists and removes
+-- everything under {userId}/analyses/{analysisId} before deleting the
+-- analyses row — already cleans them up with no change required.
+--
+-- There is no `tutorial_v3_assets` table. V3 has exactly ONE generated asset
+-- per step (the guideline), statically known, and the final-look step has
+-- none at all because it reuses the existing canonical premium preview. The
+-- V3 domain models it as fields on the step. A third table would add a join
+-- and a second ownership surface for no gain, and both V1 and V2 already
+-- store their assets as typed columns on the step row.
+
+-- ---------------------------------------------------------------------------
+-- Sessions
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.tutorial_v3_sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  analysis_id uuid not null,
+
+  -- Matches TutorialV3SourceMode.code.
+  source_mode text not null,
+
+  -- Exactly one of these is set, matching source_mode. Standard and Kit
+  -- recommendations live in separate tables, not behind a discriminator.
+  recommendation_id uuid,
+  kit_recommendation_id uuid,
+
+  -- The persisted style code (MakeupStyle.code), the same snake_case value
+  -- stored in recommendations.makeup_style / kit_makeup_recommendations
+  -- .makeup_style. The tutorial's selected look is never re-derived from
+  -- client UI state.
+  makeup_style text not null,
+
+  -- The canonical premium final preview this tutorial drives toward. Exactly
+  -- one id is set, matching source_mode. It is an EXISTING generated_images /
+  -- kit_generated_images row: V3 references and re-signs it, and never
+  -- regenerates, re-uploads or modifies it.
+  canonical_generated_image_id uuid,
+  canonical_kit_generated_image_id uuid,
+  canonical_image_path text not null,
+
+  -- Equals the persisted step count once the plan exists. 0 while planning:
+  -- the count is dynamic, derived from the selected look and the actual
+  -- recommendation, never hardcoded.
+  total_steps integer not null default 0,
+
+  plan_version integer not null default 3,
+
+  -- Matches TutorialV3SessionStatus.code.
+  status text not null default 'planning',
+
+  planner_model text,
+  planner_prompt_version text,
+  plan_error text,
+
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+
+  constraint tutorial_v3_sessions_owner_identity unique (id, user_id),
+
+  constraint tutorial_v3_sessions_analysis_owner_fk
+    foreign key (analysis_id, user_id)
+    references public.analyses(id, user_id)
+    on delete cascade,
+
+  -- A multi-column foreign key is not enforced when any referencing column
+  -- is NULL, so the unused branch in each mode is inert rather than broken.
+  constraint tutorial_v3_sessions_recommendation_owner_fk
+    foreign key (recommendation_id, analysis_id, user_id)
+    references public.recommendations(id, analysis_id, user_id)
+    on delete cascade,
+
+  constraint tutorial_v3_sessions_kit_recommendation_owner_fk
+    foreign key (kit_recommendation_id, analysis_id, user_id)
+    references public.kit_makeup_recommendations(id, analysis_id, user_id)
+    on delete cascade,
+
+  constraint tutorial_v3_sessions_canonical_image_owner_fk
+    foreign key (canonical_generated_image_id, user_id)
+    references public.generated_images(id, user_id)
+    on delete cascade,
+
+  constraint tutorial_v3_sessions_canonical_kit_image_owner_fk
+    foreign key (canonical_kit_generated_image_id, user_id)
+    references public.kit_generated_images(id, user_id)
+    on delete cascade,
+
+  constraint tutorial_v3_sessions_source_mode_valid
+    check (source_mode in ('standard', 'makeup_kit')),
+
+  -- Exactly one recommendation reference, matching source_mode.
+  constraint tutorial_v3_sessions_recommendation_matches_mode
+    check (
+      (
+        source_mode = 'standard'
+        and recommendation_id is not null
+        and kit_recommendation_id is null
+      )
+      or (
+        source_mode = 'makeup_kit'
+        and kit_recommendation_id is not null
+        and recommendation_id is null
+      )
+    ),
+
+  -- Exactly one canonical final preview reference, matching source_mode.
+  constraint tutorial_v3_sessions_canonical_matches_mode
+    check (
+      (
+        source_mode = 'standard'
+        and canonical_generated_image_id is not null
+        and canonical_kit_generated_image_id is null
+      )
+      or (
+        source_mode = 'makeup_kit'
+        and canonical_kit_generated_image_id is not null
+        and canonical_generated_image_id is null
+      )
+    ),
+
+  constraint tutorial_v3_sessions_makeup_style_not_blank
+    check (char_length(btrim(makeup_style)) > 0),
+
+  -- The canonical preview is an existing premium result. It must live in the
+  -- owner's own folder and must never be an original selfie.
+  constraint tutorial_v3_sessions_canonical_path_owned
+    check (
+      canonical_image_path like (user_id::text || '/analyses/%')
+      and canonical_image_path not like '%/original/%'
+      and canonical_image_path not like '%..%'
+    ),
+
+  constraint tutorial_v3_sessions_total_steps_not_negative
+    check (total_steps >= 0),
+
+  -- V3 is a clean restart: version 3 is the oldest readable plan, so a V1 or
+  -- V2 row can never be written into this table. A row from a newer build is
+  -- rejected by the client at read time rather than reinterpreted as V3.
+  constraint tutorial_v3_sessions_plan_version_supported
+    check (plan_version >= 3),
+
+  constraint tutorial_v3_sessions_status_valid
+    check (status in ('planning', 'ready', 'failed')),
+
+  -- A ready plan has steps; anything else has not produced them yet.
+  constraint tutorial_v3_sessions_ready_has_steps
+    check (
+      (status = 'ready' and total_steps > 0)
+      or (status <> 'ready' and total_steps = 0)
+    ),
+
+  constraint tutorial_v3_sessions_planner_model_not_blank
+    check (planner_model is null or char_length(btrim(planner_model)) > 0),
+
+  constraint tutorial_v3_sessions_planner_prompt_not_blank
+    check (
+      planner_prompt_version is null
+      or char_length(btrim(planner_prompt_version)) > 0
+    )
+);
+
+create index if not exists tutorial_v3_sessions_user_created_idx
+  on public.tutorial_v3_sessions (user_id, created_at desc);
+create index if not exists tutorial_v3_sessions_analysis_idx
+  on public.tutorial_v3_sessions (analysis_id);
+
+-- One tutorial per canonical final target per plan version. The canonical
+-- preview IS the tutorial's target, so this is the natural key: it makes
+-- get-or-create idempotent and race-safe without an advisory lock.
+create unique index if not exists tutorial_v3_sessions_canonical_standard_idx
+  on public.tutorial_v3_sessions (canonical_generated_image_id, plan_version)
+  where canonical_generated_image_id is not null;
+
+create unique index if not exists tutorial_v3_sessions_canonical_kit_idx
+  on public.tutorial_v3_sessions (canonical_kit_generated_image_id, plan_version)
+  where canonical_kit_generated_image_id is not null;
+
+-- ---------------------------------------------------------------------------
+-- Steps
+-- ---------------------------------------------------------------------------
+
+-- `step_spec_json` holds the single validated Step Spec that drives both the
+-- text Flutter renders and the intent the guideline image visualizes, so the
+-- two can never disagree.
+--
+-- There is exactly ONE asset column pair here, not two. V3 generates no
+-- intermediate makeup result, so there is deliberately no `result_status` and
+-- no `result_image_path`: a per-step makeup appearance is not representable
+-- in this schema.
+create table if not exists public.tutorial_v3_steps (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  tutorial_v3_session_id uuid not null,
+
+  -- One-based, matching TutorialV3StepSpec.stepIndex.
+  step_index integer not null,
+  category text not null,
+
+  step_spec_json jsonb not null,
+  product_snapshot_json jsonb,
+
+  -- Matches TutorialV3GuidelineStatus.code.
+  guideline_status text not null default 'pending',
+  guideline_image_path text,
+  guideline_error text,
+  attempt_count integer not null default 0,
+
+  model_name text,
+  prompt_version text,
+
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+
+  constraint tutorial_v3_steps_owner_identity unique (id, user_id),
+
+  constraint tutorial_v3_steps_session_owner_fk
+    foreign key (tutorial_v3_session_id, user_id)
+    references public.tutorial_v3_sessions(id, user_id)
+    on delete cascade,
+
+  constraint tutorial_v3_steps_session_index_unique
+    unique (tutorial_v3_session_id, step_index),
+
+  constraint tutorial_v3_steps_index_positive
+    check (step_index >= 1),
+
+  constraint tutorial_v3_steps_category_valid
+    check (
+      category in (
+        'foundation',
+        'concealer',
+        'contour_bronzer',
+        'blush',
+        'highlighter',
+        'eyebrow',
+        'eyeshadow',
+        'eyeliner',
+        'lipstick',
+        'lip_gloss',
+        'final_look'
+      )
+    ),
+
+  constraint tutorial_v3_steps_spec_is_object
+    check (jsonb_typeof(step_spec_json) = 'object'),
+
+  constraint tutorial_v3_steps_product_snapshot_is_object
+    check (
+      product_snapshot_json is null
+      or jsonb_typeof(product_snapshot_json) = 'object'
+    ),
+
+  -- The terminal step reuses the canonical final preview and teaches no
+  -- product of its own.
+  constraint tutorial_v3_steps_final_look_has_no_product
+    check (category <> 'final_look' or product_snapshot_json is null),
+
+  constraint tutorial_v3_steps_guideline_status_valid
+    check (
+      guideline_status in (
+        'not_required',
+        'pending',
+        'generating',
+        'ready',
+        'failed'
+      )
+    ),
+
+  -- `not_required` belongs to the final look and to nothing else: the final
+  -- step never generates, and every other step must. This makes "no new final
+  -- image is ever generated" a storage-level guarantee rather than a
+  -- convention.
+  constraint tutorial_v3_steps_final_look_needs_no_guideline
+    check (
+      (category = 'final_look' and guideline_status = 'not_required')
+      or (category <> 'final_look' and guideline_status <> 'not_required')
+    ),
+
+  -- A ready asset has a path, and a non-ready one does not claim to. The
+  -- second half matters: a failed step must show as missing rather than
+  -- silently keeping a stale image.
+  constraint tutorial_v3_steps_guideline_ready_has_path
+    check (guideline_status <> 'ready' or guideline_image_path is not null),
+
+  constraint tutorial_v3_steps_guideline_unready_has_no_path
+    check (guideline_status = 'ready' or guideline_image_path is null),
+
+  -- Generated guidelines must land in this feature's own folder inside the
+  -- owner's analysis. Excluding `/original/`, `/generated/` and
+  -- `/kit-generated/` means a guideline can never overwrite the original
+  -- selfie or a canonical premium preview.
+  constraint tutorial_v3_steps_guideline_path_owned
+    check (
+      guideline_image_path is null
+      or (
+        guideline_image_path like (user_id::text || '/analyses/%')
+        and guideline_image_path like '%/tutorial-v3/%'
+        and guideline_image_path not like '%/original/%'
+        and guideline_image_path not like '%/generated/%'
+        and guideline_image_path not like '%/kit-generated/%'
+        and guideline_image_path not like '%..%'
+      )
+    ),
+
+  constraint tutorial_v3_steps_attempt_count_not_negative
+    check (attempt_count >= 0),
+
+  constraint tutorial_v3_steps_model_not_blank
+    check (model_name is null or char_length(btrim(model_name)) > 0),
+
+  constraint tutorial_v3_steps_prompt_not_blank
+    check (prompt_version is null or char_length(btrim(prompt_version)) > 0)
+);
+
+create index if not exists tutorial_v3_steps_session_index_idx
+  on public.tutorial_v3_steps (tutorial_v3_session_id, step_index);
+create index if not exists tutorial_v3_steps_user_created_idx
+  on public.tutorial_v3_steps (user_id, created_at desc);
+
+-- Nullable + unique is safe in PostgreSQL: NULLs never collide, so steps
+-- without an asset do not conflict while a stored path can never be claimed
+-- twice — one step's guideline can never be reused as another's.
+create unique index if not exists tutorial_v3_steps_guideline_path_unique
+  on public.tutorial_v3_steps (guideline_image_path)
+  where guideline_image_path is not null;
+
+-- ---------------------------------------------------------------------------
+-- Triggers
+-- ---------------------------------------------------------------------------
+
+drop trigger if exists tutorial_v3_sessions_set_updated_at
+  on public.tutorial_v3_sessions;
+create trigger tutorial_v3_sessions_set_updated_at
+before update on public.tutorial_v3_sessions
+for each row execute function public.set_updated_at();
+
+drop trigger if exists tutorial_v3_steps_set_updated_at
+  on public.tutorial_v3_steps;
+create trigger tutorial_v3_steps_set_updated_at
+before update on public.tutorial_v3_steps
+for each row execute function public.set_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- Row level security
+-- ---------------------------------------------------------------------------
+
+alter table public.tutorial_v3_sessions enable row level security;
+alter table public.tutorial_v3_steps enable row level security;
+
+revoke all on table public.tutorial_v3_sessions from anon;
+revoke all on table public.tutorial_v3_steps from anon;
+
+grant select, insert, update, delete
+  on table public.tutorial_v3_sessions to authenticated;
+grant select, insert, update, delete
+  on table public.tutorial_v3_steps to authenticated;
+
+drop policy if exists "tutorial_v3_sessions_select_own"
+  on public.tutorial_v3_sessions;
+create policy "tutorial_v3_sessions_select_own"
+on public.tutorial_v3_sessions for select
+to authenticated
+using ((select auth.uid()) = user_id);
+
+drop policy if exists "tutorial_v3_sessions_insert_own"
+  on public.tutorial_v3_sessions;
+create policy "tutorial_v3_sessions_insert_own"
+on public.tutorial_v3_sessions for insert
+to authenticated
+with check ((select auth.uid()) = user_id);
+
+drop policy if exists "tutorial_v3_sessions_update_own"
+  on public.tutorial_v3_sessions;
+create policy "tutorial_v3_sessions_update_own"
+on public.tutorial_v3_sessions for update
+to authenticated
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
+drop policy if exists "tutorial_v3_sessions_delete_own"
+  on public.tutorial_v3_sessions;
+create policy "tutorial_v3_sessions_delete_own"
+on public.tutorial_v3_sessions for delete
+to authenticated
+using ((select auth.uid()) = user_id);
+
+drop policy if exists "tutorial_v3_steps_select_own" on public.tutorial_v3_steps;
+create policy "tutorial_v3_steps_select_own"
+on public.tutorial_v3_steps for select
+to authenticated
+using ((select auth.uid()) = user_id);
+
+drop policy if exists "tutorial_v3_steps_insert_own" on public.tutorial_v3_steps;
+create policy "tutorial_v3_steps_insert_own"
+on public.tutorial_v3_steps for insert
+to authenticated
+with check ((select auth.uid()) = user_id);
+
+drop policy if exists "tutorial_v3_steps_update_own" on public.tutorial_v3_steps;
+create policy "tutorial_v3_steps_update_own"
+on public.tutorial_v3_steps for update
+to authenticated
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
+drop policy if exists "tutorial_v3_steps_delete_own" on public.tutorial_v3_steps;
+create policy "tutorial_v3_steps_delete_own"
+on public.tutorial_v3_steps for delete
+to authenticated
+using ((select auth.uid()) = user_id);
+
+-- ---------------------------------------------------------------------------
+-- Atomic plan persistence
+-- ---------------------------------------------------------------------------
+
+-- An Edge Function or client using PostgREST cannot wrap several statements
+-- in one transaction, so a caller that inserted steps and then updated the
+-- session could leave a session claiming `ready` with a partial step set.
+-- This function does the whole write in one transaction: all-or-nothing.
+--
+-- SECURITY INVOKER on purpose. The function runs as the calling user, so RLS
+-- still governs every row it touches and `auth.uid()` supplies the owner —
+-- the caller cannot write steps into someone else's tutorial, and cannot
+-- claim a different user_id than its own.
+--
+-- This is a NEW function, not a redefinition: V2's
+-- `persist_tutorial_v2_plan` is left exactly as it is.
+create or replace function public.persist_tutorial_v3_plan(
+  p_session_id uuid,
+  p_planner_model text,
+  p_planner_prompt_version text,
+  p_steps jsonb
+)
+returns integer
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_user uuid := (select auth.uid());
+  v_owner uuid;
+  v_total integer;
+  v_final_count integer;
+begin
+  if v_user is null then
+    raise exception 'authentication required' using errcode = '28000';
+  end if;
+  if jsonb_typeof(p_steps) <> 'array' then
+    raise exception 'steps must be a JSON array' using errcode = '22023';
+  end if;
+
+  v_total := jsonb_array_length(p_steps);
+  if v_total < 1 then
+    raise exception 'a plan needs at least a final look step'
+      using errcode = '22023';
+  end if;
+
+  -- The final look is always last and appears exactly once. Enforced here as
+  -- well as in the domain validator, because this function is the only path
+  -- that writes a whole plan.
+  select count(*) into v_final_count
+  from jsonb_array_elements(p_steps) as step(value)
+  where step.value ->> 'category' = 'final_look';
+  if v_final_count <> 1 then
+    raise exception 'a plan must contain exactly one final look step'
+      using errcode = '22023';
+  end if;
+  if (p_steps -> (v_total - 1) ->> 'category') <> 'final_look' then
+    raise exception 'the final look must be the last step'
+      using errcode = '22023';
+  end if;
+
+  -- RLS hides other users' sessions, so a missing row here means either the
+  -- session does not exist or it is not the caller's.
+  select sessions.user_id into v_owner
+  from public.tutorial_v3_sessions as sessions
+  where sessions.id = p_session_id;
+  if v_owner is null then
+    raise exception 'tutorial session not found' using errcode = 'P0002';
+  end if;
+
+  -- Replacing rather than appending: a replan must not interleave two
+  -- generations of steps under one session.
+  delete from public.tutorial_v3_steps
+  where tutorial_v3_session_id = p_session_id;
+
+  insert into public.tutorial_v3_steps (
+    user_id,
+    tutorial_v3_session_id,
+    step_index,
+    category,
+    step_spec_json,
+    product_snapshot_json,
+    guideline_status
+  )
+  select
+    v_user,
+    p_session_id,
+    (step.value ->> 'step_index')::integer,
+    step.value ->> 'category',
+    step.value -> 'step_spec_json',
+    nullif(step.value -> 'product_snapshot_json', 'null'::jsonb),
+    case
+      when step.value ->> 'category' = 'final_look' then 'not_required'
+      else coalesce(step.value ->> 'guideline_status', 'pending')
+    end
+  from jsonb_array_elements(p_steps) as step(value);
+
+  update public.tutorial_v3_sessions
+  set total_steps = v_total,
+      status = 'ready',
+      plan_error = null,
+      planner_model = p_planner_model,
+      planner_prompt_version = p_planner_prompt_version
+  where id = p_session_id;
+
+  return v_total;
+end;
+$$;
+
+revoke all on function public.persist_tutorial_v3_plan(uuid, text, text, jsonb)
+  from anon;
+grant execute on function public.persist_tutorial_v3_plan(uuid, text, text, jsonb)
+  to authenticated;

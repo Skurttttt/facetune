@@ -294,8 +294,12 @@ Deno.serve(async (request) => {
     }
 
     const originalBytes = new Uint8Array(await originalBlob.arrayBuffer());
+    // The canonical final preview is the visual authority the whole tutorial is
+    // grounded in, so it stays on the Pro image model. The fallback must never
+    // be a cheaper or lower-fidelity model: an unset secret would then silently
+    // downgrade every preview instead of failing visibly.
     const model = Deno.env.get("GEMINI_IMAGE_MODEL")?.trim() ||
-      "gemini-3.1-flash-image";
+      "gemini-3-pro-image";
     const generated = await timed("gemini", () =>
       requestGeminiPreview(
         requiredEnvironment("GEMINI_API_KEY"),

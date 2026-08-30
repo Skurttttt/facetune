@@ -18,6 +18,9 @@ import '../../../results/presentation/utils/result_formatters.dart';
 import '../../../results/presentation/widgets/beauty_profile_card.dart';
 import '../../../results/presentation/widgets/before_after_comparison.dart';
 import '../../../results/presentation/widgets/makeup_breakdown.dart';
+import '../../../tutorial/domain/entities/canonical_preview_ref.dart';
+import '../../../tutorial/presentation/pages/tutorial_page.dart';
+import '../../../tutorial/presentation/utils/tutorial_labels.dart';
 import '../../../results/presentation/widgets/recommended_palette.dart';
 import '../../../results/presentation/widgets/result_actions.dart';
 import '../../domain/errors/preview_failure.dart';
@@ -240,6 +243,7 @@ class _ResultContent extends StatelessWidget {
       styleName: styleName,
       actionState: actionState,
       previewId: preview.id,
+      generatedImageUrl: preview.generatedImageUrl,
       onSave: onSave,
       onFavorite: onFavorite,
       onShare: onShare,
@@ -329,6 +333,7 @@ class _ResultDetails extends StatelessWidget {
     required this.styleName,
     required this.actionState,
     required this.previewId,
+    required this.generatedImageUrl,
     required this.onSave,
     required this.onFavorite,
     required this.onShare,
@@ -341,6 +346,11 @@ class _ResultDetails extends StatelessWidget {
   final String styleName;
   final ResultActionsState actionState;
   final String previewId;
+
+  /// Reused as the tutorial's closing image, so the end of the tutorial shows
+  /// the look the user already has rather than generating it again.
+  final String generatedImageUrl;
+
   final VoidCallback onSave;
   final VoidCallback onFavorite;
   final VoidCallback onShare;
@@ -367,6 +377,21 @@ class _ResultDetails extends StatelessWidget {
       const SizedBox(height: AppSpacing.sm),
       MakeupBreakdown(recommendation: recommendation),
       const SizedBox(height: AppSpacing.lg),
+      // The tutorial entry point. Deliberately a secondary action beside the
+      // existing ones rather than a redesign of this screen: opening it starts
+      // no AI work, and the tutorial decides for itself what it already has.
+      SecondaryButton(
+        label: TutorialLabels.startTutorial,
+        icon: Icons.auto_stories_outlined,
+        onPressed: () => context.push(
+          AppConstants.tutorialRoute,
+          extra: TutorialPageArgs(
+            preview: CanonicalPreviewRef.standard(previewId),
+            finalPreviewUrl: generatedImageUrl,
+          ),
+        ),
+      ),
+      const SizedBox(height: AppSpacing.sm),
       ResultActions(
         isSaved: actionState.isSaved(previewId),
         isFavorite: actionState.isFavorite(previewId),

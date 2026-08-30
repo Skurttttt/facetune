@@ -12,9 +12,7 @@ Do not assume previous implementation details.
 Preserve all valid existing work.
 
 gemini-3.6-flash
-gemini-3-pro-image
+gemini-3.1-flash-image
 
 erun the important parts of 18, 20, 21, and 22 against the expanded app before you proceed to 23–26.
-
-
 
