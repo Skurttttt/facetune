@@ -23,6 +23,9 @@ void main() {
   final kitProducts = source(
     'supabase/migrations/20260813000100_makeup_kit_products.sql',
   );
+  final arbiterRepair = source(
+    'supabase/migrations/20260831000100_tutorial_session_arbiter_indexes.sql',
+  );
 
   const newTables = <String>[
     'look_product_snapshot_items',
@@ -400,10 +403,74 @@ void main() {
           'create unique index if not exists tutorial_v4_sessions_kit_canonical_preview_idx',
         ),
       );
+      // V4-2 declared these as PARTIAL unique indexes. PostgREST emits
+      // `ON CONFLICT (<column>)` with no index predicate, and PostgreSQL will
+      // not infer a partial index as an arbiter without one, so every session
+      // upsert failed with 42P10. V4-DEBUG-05 replaces them with ordinary
+      // unique indexes, which are semantically identical on these nullable
+      // columns because NULLs are distinct by default.
       expect(
-        migration,
-        contains('where canonical_generated_image_id is not null'),
+        arbiterRepair,
+        contains(
+          'drop index if exists '
+          'public.tutorial_v4_sessions_canonical_preview_idx;',
+        ),
       );
+      expect(
+        arbiterRepair,
+        contains(
+          'drop index if exists '
+          'public.tutorial_v4_sessions_kit_canonical_preview_idx;',
+        ),
+      );
+    });
+
+    // Assertions below run against SQL statements only: this migration's
+    // comments deliberately name the very constructs being forbidden.
+    String statementsOf(String sql) =>
+        sql.replaceAll(RegExp(r'^\s*--.*$', multiLine: true), '');
+
+    test('the arbiter indexes carry no partial predicate', () {
+      // A `where ... is not null` predicate on either arbiter index is what
+      // broke the upsert; it must not come back.
+      final created = RegExp(
+        r'create unique index (tutorial_v4_sessions_\w*canonical_preview_idx)\s*\n\s*on public\.tutorial_v4_sessions \((\w+)\);',
+      ).allMatches(arbiterRepair).toList();
+
+      expect(created, hasLength(2), reason: 'both arbiters must be recreated');
+      expect(created.map((match) => match.group(2)).toList(), <String>[
+        'canonical_generated_image_id',
+        'canonical_kit_generated_image_id',
+      ]);
+      expect(
+        statementsOf(arbiterRepair),
+        isNot(contains('is not null')),
+        reason: 'a partial predicate would reintroduce 42P10',
+      );
+      expect(
+        statementsOf(arbiterRepair).toLowerCase(),
+        isNot(contains('nulls not distinct')),
+        reason: 'that would forbid more than one row per mode',
+      );
+    });
+
+    test('the repair changes indexes only', () {
+      for (final forbidden in <String>[
+        'alter table',
+        'create table',
+        'drop table',
+        'create policy',
+        'drop policy',
+        'insert into',
+        'update ',
+        'delete from',
+      ]) {
+        expect(
+          statementsOf(arbiterRepair).toLowerCase(),
+          isNot(contains(forbidden)),
+          reason: '$forbidden is outside an index repair',
+        );
+      }
     });
 
     test('permits one step per category per session', () {
