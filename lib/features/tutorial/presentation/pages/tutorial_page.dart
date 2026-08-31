@@ -4,11 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/widgets/app_ui.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../data/providers/tutorial_providers.dart';
+import '../../domain/catalog/tutorial_instruction_catalog.dart';
 import '../../domain/entities/canonical_preview_ref.dart';
 import '../../domain/entities/tutorial_step.dart';
 import '../controllers/tutorial_controller.dart';
 import '../controllers/tutorial_state.dart';
 import '../utils/tutorial_labels.dart';
+import '../widgets/tutorial_guide_key.dart';
+import '../widgets/tutorial_instructions_card.dart';
 import '../widgets/tutorial_product_cards.dart';
 
 /// Navigation arguments for [TutorialPage].
@@ -81,41 +84,47 @@ class _TutorialPageState extends ConsumerState<TutorialPage> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(tutorialControllerProvider);
-    return PageFrame(
-      child: switch (state.status) {
-        TutorialStatus.idle ||
-        TutorialStatus.opening ||
-        TutorialStatus.analyzingManifest => const LoadingState(
-          label: TutorialLabels.preparingTutorial,
-        ),
-        TutorialStatus.kitPreviewMismatch => StatusState(
-          title: TutorialLabels.emptyTitle,
-          message: state.message ?? TutorialLabels.emptyMessage,
-          icon: Icons.info_outline,
-        ),
-        TutorialStatus.failed when state.session == null => StatusState(
-          title: TutorialLabels.guidelineUnavailable,
-          message: state.message ?? '',
-          icon: Icons.error_outline,
-          actionLabel: state.retryable ? TutorialLabels.retry : null,
-          onAction: state.retryable
-              ? () => _controller.open(widget.preview)
-              : null,
-        ),
-        _ when state.stepCount == 0 => const StatusState(
-          title: TutorialLabels.emptyTitle,
-          message: TutorialLabels.emptyMessage,
-          icon: Icons.inbox_outlined,
-        ),
-        _ => _TutorialBody(
-          state: state,
-          finalPreviewUrl: widget.finalPreviewUrl,
-          onNext: _next,
-          onPrevious: _controller.previous,
-          onRetry: _controller.generateCurrentStep,
-          onRedraw: _controller.regenerateCurrentStep,
-        ),
-      },
+    final content = switch (state.status) {
+      TutorialStatus.idle ||
+      TutorialStatus.opening ||
+      TutorialStatus.analyzingManifest => const LoadingState(
+        label: TutorialLabels.preparingTutorial,
+      ),
+      TutorialStatus.kitPreviewMismatch => StatusState(
+        title: TutorialLabels.emptyTitle,
+        message: state.message ?? TutorialLabels.emptyMessage,
+        icon: Icons.info_outline,
+      ),
+      TutorialStatus.failed when state.session == null => StatusState(
+        title: TutorialLabels.guidelineUnavailable,
+        message: state.message ?? '',
+        icon: Icons.error_outline,
+        actionLabel: state.retryable ? TutorialLabels.retry : null,
+        onAction: state.retryable
+            ? () => _controller.open(widget.preview)
+            : null,
+      ),
+      _ when state.stepCount == 0 => const StatusState(
+        title: TutorialLabels.emptyTitle,
+        message: TutorialLabels.emptyMessage,
+        icon: Icons.inbox_outlined,
+      ),
+      _ => _TutorialBody(
+        state: state,
+        finalPreviewUrl: widget.finalPreviewUrl,
+        onNext: _next,
+        onPrevious: _controller.previous,
+        onRetry: _controller.generateCurrentStep,
+        onRedraw: _controller.regenerateCurrentStep,
+      ),
+    };
+    return Scaffold(
+      // Tutorial is a top-level GoRoute, so it must provide its own Material
+      // page surface. Without a Scaffold the route was transparent and the
+      // navigator's black backing showed through in Light, Dark, and System.
+      // This colour remains wholly owned by the active global ColorScheme.
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      body: SafeArea(child: PageFrame(child: content)),
     );
   }
 }
@@ -139,27 +148,31 @@ class _TutorialBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final category = state.currentCategory!;
+    final instructions = TutorialInstructionCatalog.forCategory(category);
     return ListView(
       children: [
         Semantics(
           liveRegion: true,
           child: Text(
             TutorialLabels.stepProgress(state.stepNumber, state.stepCount),
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: AppColors.taupe),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppColors.muted(context),
+            ),
           ),
         ),
         const SizedBox(height: AppSpacing.xxs),
         Text(
           TutorialLabels.categoryName(category),
-          style: Theme.of(context).textTheme.headlineMedium,
+          style: theme.textTheme.headlineMedium,
         ),
         const SizedBox(height: AppSpacing.xs),
         LinearProgressIndicator(
           value: state.stepCount == 0 ? 0 : state.stepNumber / state.stepCount,
-          backgroundColor: AppColors.sand,
+          // Scheme-derived so the unfilled track stays a quiet surface in both
+          // themes; the fixed sand tint read as a light bar on a dark page.
+          backgroundColor: theme.colorScheme.surfaceContainerHighest,
           semanticsLabel: TutorialLabels.stepProgress(
             state.stepNumber,
             state.stepCount,
@@ -167,8 +180,10 @@ class _TutorialBody extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.lg),
         _GuidelineView(state: state, onRetry: onRetry),
+        const SizedBox(height: AppSpacing.sm),
+        TutorialGuideKey(types: instructions.referencedGuideTypes),
         const SizedBox(height: AppSpacing.lg),
-        _instructions(context),
+        TutorialInstructionsCard(instructions: instructions, goal: _goal()),
         const SizedBox(height: AppSpacing.md),
         if (state.isMyMakeupKit)
           MyMakeupKitProductCard(
@@ -202,59 +217,53 @@ class _TutorialBody extends StatelessWidget {
     );
   }
 
-  /// Short structured guidance, taken from the validated recommendation.
+  /// The goal sentence for this step, or null when none is authoritative.
   ///
-  /// Standard Mode has placement and technique wording; My Makeup Kit steps
-  /// rely on the drawn guideline plus the product card, so nothing is invented
-  /// to fill the gap.
-  Widget _instructions(BuildContext context) {
-    final entries = state.session!.lookPlan.standardEntriesFor(
+  /// Standard Mode carries the recommendation's own reasoning — a validated
+  /// one-sentence account of what the category does in this look. My Makeup Kit
+  /// records what the user owns, not why it was chosen, so it has no equivalent
+  /// and a kit step shows no goal. Composing one from the style name or the
+  /// category would be exactly the generic filler the quality contract forbids.
+  String? _goal() {
+    for (final entry in state.session!.lookPlan.standardEntriesFor(
       state.currentCategory!,
-    );
-    if (entries.isEmpty) return const SizedBox.shrink();
-    final entry = entries.first;
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            TutorialLabels.whereToApply,
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: AppSpacing.xxs),
-          Text(entry.placement),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            TutorialLabels.howToApply,
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: AppSpacing.xxs),
-          Text(entry.technique),
-        ],
-      ),
-    );
+    )) {
+      final reasoning = entry.reasoning?.trim();
+      if (reasoning != null && reasoning.isNotEmpty) return reasoning;
+    }
+    return null;
   }
 
-  Widget _controls(BuildContext context) => Row(
-    children: [
-      Expanded(
-        child: SecondaryButton(
-          label: TutorialLabels.back,
-          onPressed: state.currentIndex == 0 ? null : () => onPrevious(),
-        ),
-      ),
-      const SizedBox(width: AppSpacing.sm),
-      Expanded(
-        child: PrimaryButton(
-          label: state.isLastStep
-              ? TutorialLabels.finish_
-              : TutorialLabels.next,
-          onPressed: state.isLastStep
-              ? () => Navigator.of(context).maybePop()
-              : () => onNext(),
-        ),
-      ),
-    ],
+  Widget _controls(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final back = SecondaryButton(
+        label: TutorialLabels.back,
+        onPressed: state.currentIndex == 0 ? null : () => onPrevious(),
+      );
+      final next = PrimaryButton(
+        label: state.isLastStep ? TutorialLabels.finish_ : TutorialLabels.next,
+        onPressed: state.isLastStep
+            ? () => Navigator.of(context).maybePop()
+            : () => onNext(),
+      );
+      final scaledBodySize = MediaQuery.textScalerOf(context).scale(14);
+      if (constraints.maxWidth < 360 || scaledBodySize > 20) {
+        return Column(
+          children: [
+            back,
+            const SizedBox(height: AppSpacing.xs),
+            next,
+          ],
+        );
+      }
+      return Row(
+        children: [
+          Expanded(child: back),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(child: next),
+        ],
+      );
+    },
   );
 }
 
@@ -277,12 +286,14 @@ class _GuidelineView extends StatelessWidget {
     if (state.status == TutorialStatus.failed) {
       return AspectRatio(
         aspectRatio: 3 / 4,
-        child: StatusState(
-          title: TutorialLabels.guidelineUnavailable,
-          message: state.message ?? TutorialLabels.imageUnavailable,
-          icon: Icons.image_not_supported_outlined,
-          actionLabel: state.retryable ? TutorialLabels.retry : null,
-          onAction: state.retryable ? () => onRetry() : null,
+        child: SingleChildScrollView(
+          child: StatusState(
+            title: TutorialLabels.guidelineUnavailable,
+            message: state.message ?? TutorialLabels.imageUnavailable,
+            icon: Icons.image_not_supported_outlined,
+            actionLabel: state.retryable ? TutorialLabels.retry : null,
+            onAction: state.retryable ? () => onRetry() : null,
+          ),
         ),
       );
     }
@@ -295,12 +306,14 @@ class _GuidelineView extends StatelessWidget {
     if (step.status == TutorialStepStatus.failed || url == null) {
       return AspectRatio(
         aspectRatio: 3 / 4,
-        child: StatusState(
-          title: TutorialLabels.guidelineUnavailable,
-          message: state.message ?? TutorialLabels.imageUnavailable,
-          icon: Icons.image_not_supported_outlined,
-          actionLabel: TutorialLabels.retry,
-          onAction: () => onRetry(),
+        child: SingleChildScrollView(
+          child: StatusState(
+            title: TutorialLabels.guidelineUnavailable,
+            message: state.message ?? TutorialLabels.imageUnavailable,
+            icon: Icons.image_not_supported_outlined,
+            actionLabel: TutorialLabels.retry,
+            onAction: () => onRetry(),
+          ),
         ),
       );
     }
@@ -311,12 +324,14 @@ class _GuidelineView extends StatelessWidget {
         child: PrivateImage(
           url: url,
           semanticLabel: TutorialLabels.guidelineImageLabel(category),
-          errorChild: StatusState(
-            title: TutorialLabels.imageUnavailable,
-            message: '',
-            icon: Icons.image_not_supported_outlined,
-            actionLabel: TutorialLabels.retry,
-            onAction: () => onRetry(),
+          errorChild: SingleChildScrollView(
+            child: StatusState(
+              title: TutorialLabels.imageUnavailable,
+              message: '',
+              icon: Icons.image_not_supported_outlined,
+              actionLabel: TutorialLabels.retry,
+              onAction: () => onRetry(),
+            ),
           ),
         ),
       ),

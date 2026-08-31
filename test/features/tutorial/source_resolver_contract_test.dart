@@ -7,9 +7,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// Contract tests over the server-authoritative source resolver.
 ///
-/// Deno is not installed here, so `tutorial_source_resolver_test.ts` cannot be
-/// executed. These assert the same security properties against the TypeScript
-/// source, and pin the shared vocabulary to the Dart definitions.
+/// A cross-language guard: these assert the same security properties against
+/// the TypeScript source from the Dart suite, and pin the shared vocabulary to
+/// the Dart definitions. `tutorial_source_resolver_test.ts` covers the Deno
+/// side; both are run.
 void main() {
   final root = Directory.current;
 

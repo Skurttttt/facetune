@@ -4,9 +4,11 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// Contract tests over the two canonical final-preview Edge Functions.
 ///
-/// Deno is not installed here, so the Deno suites beside these functions cannot
-/// be executed; these assert the same properties against the TypeScript source,
-/// following `makeup_kit_security_contract_test.dart`.
+/// A cross-language guard: these assert the same properties against the
+/// TypeScript source from the Dart suite, so the contract is checked by
+/// `flutter test` alone. The Deno suites beside those functions cover the same
+/// ground from the other side; both are run, and neither replaces the other.
+/// Follows `makeup_kit_security_contract_test.dart`.
 void main() {
   final root = Directory.current;
 

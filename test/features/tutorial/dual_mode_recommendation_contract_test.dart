@@ -4,12 +4,11 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// Contract tests over the two recommendation Edge Functions.
 ///
-/// Deno is not installed in this environment, so the existing `*_test.ts` suites
-/// beside those functions cannot be executed here. These Dart tests assert the
-/// same security properties directly against the TypeScript source, using the
-/// cross-language technique already established by
-/// `makeup_kit_security_contract_test.dart`. They prove the rules are present
-/// and wired; they do not replace running the Deno suites.
+/// These Dart tests assert the security properties directly against the
+/// TypeScript source, using the cross-language technique established by
+/// `makeup_kit_security_contract_test.dart`, so the contract is checked by
+/// `flutter test` alone. They prove the rules are present and wired; they do
+/// not replace running the Deno suites beside those functions.
 void main() {
   final root = Directory.current;
 

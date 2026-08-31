@@ -1,6 +1,8 @@
 import 'package:facetune/features/tutorial/data/data_sources/tutorial_remote_data_source.dart';
+import 'package:facetune/features/tutorial/data/models/tutorial_dtos.dart';
 import 'package:facetune/features/tutorial/data/repositories/supabase_tutorial_repositories.dart';
 import 'package:facetune/features/tutorial/domain/entities/canonical_preview_ref.dart';
+import 'package:facetune/features/tutorial/domain/entities/recommendation_source_mode.dart';
 import 'package:facetune/features/tutorial/domain/entities/tutorial_category.dart';
 import 'package:facetune/features/tutorial/domain/errors/tutorial_failure.dart';
 import 'package:facetune/features/tutorial/domain/usecases/resolve_tutorial_manifest.dart';
@@ -188,7 +190,20 @@ class FakeTutorialRemote implements TutorialRemoteDataSource {
           'finish': 'cream',
           'productName': 'My Lipstick',
         },
-      ],
+      ]
+    else
+      'recommendation_json': <String, Object?>{
+        'blush': <String, Object?>{
+          'name': 'Warm Rose',
+          'hex': '#B65A68',
+          'placement': 'Across the upper cheek.',
+          'technique': 'Blend toward the temple.',
+          'finish': 'soft satin',
+          'intensity': 'medium',
+          'reasoning': 'Adds balanced warmth to this look.',
+        },
+        'overallIntensity': 'medium',
+      },
   };
 
   @override
@@ -417,6 +432,57 @@ void main() {
       for (final step in materialised.steps) {
         expect(step.productSnapshotItems, isEmpty);
       }
+    });
+  });
+
+  group('Standard recommendation metadata linkage', () {
+    test(
+      'repository rows carry validated metadata into the look plan',
+      () async {
+        final remote = FakeTutorialRemote(
+          session: sessionRow(),
+          manifestItems: manifestRows(const <String>['blush']),
+        );
+
+        final session = await build(remote).sessions.loadForCanonicalPreview(
+          const CanonicalPreviewRef.standard('preview-1'),
+        );
+        final entry = session!.lookPlan
+            .standardEntriesFor(TutorialCategory.blush)
+            .single;
+
+        expect(entry.shadeName, 'Warm Rose');
+        expect(entry.colorHex, '#B65A68');
+        expect(entry.finish, 'soft satin');
+        expect(entry.intensity, 'medium');
+        expect(entry.reasoning, 'Adds balanced warmth to this look.');
+        expect(entry.planKey, 'blush');
+      },
+    );
+
+    test('missing optional metadata stays absent rather than invented', () {
+      final plan = LookPlanDto.fromRow(<String, Object?>{
+        'id': 'rec-1',
+        'analysis_id': 'analysis-1',
+        'makeup_style': 'natural',
+        'model_name': 'model',
+        'prompt_version': 'v2',
+        'created_at': _time,
+        'recommendation_json': <String, Object?>{
+          'blush': <String, Object?>{'name': 'Warm Rose', 'hex': '#B65A68'},
+          // No name means there is no truthful Standard shade identity, so
+          // this item is omitted rather than turned into a generic lip colour.
+          'lipstick': <String, Object?>{'hex': '#AA6677'},
+        },
+      }, sourceMode: RecommendationSourceMode.standard);
+
+      final blush = plan.standardEntriesFor(TutorialCategory.blush).single;
+      expect(blush.placement, isEmpty);
+      expect(blush.technique, isEmpty);
+      expect(blush.finish, isEmpty);
+      expect(blush.intensity, isEmpty);
+      expect(blush.reasoning, isNull);
+      expect(plan.standardEntriesFor(TutorialCategory.lips), isEmpty);
     });
   });
 

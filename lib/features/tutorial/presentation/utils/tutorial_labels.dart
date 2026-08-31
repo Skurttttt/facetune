@@ -3,6 +3,8 @@ import '../../../makeup_kit/domain/entities/foundation_undertone.dart';
 import '../../../makeup_kit/domain/entities/makeup_kit_category.dart';
 import '../../../makeup_kit/domain/entities/makeup_kit_finish.dart';
 import '../../domain/entities/tutorial_category.dart';
+import '../../domain/entities/tutorial_guide_type.dart';
+import '../../domain/entities/tutorial_shade_details.dart';
 
 /// Every user-facing string the tutorial shows.
 ///
@@ -15,12 +17,18 @@ abstract final class TutorialLabels {
   static const suggestedShades = 'Suggested shades';
   static const fromYourKit = 'From your kit';
   static const shade = 'Shade';
+  static const hex = 'Hex';
   static const finish = 'Finish';
   static const intensity = 'Intensity';
   static const depth = 'Depth';
   static const undertone = 'Undertone';
   static const howToApply = 'How to apply';
   static const whereToApply = 'Where to apply';
+  static const guideKey = 'What the guides mean';
+  static const technique = 'Technique';
+  static const yourGoal = 'Your goal';
+  static const guideKeySemantics =
+      'Key explaining the marks drawn on the guideline image';
   static const back = 'Back';
   static const next = 'Next';
   static const finish_ = 'Finish';
@@ -64,6 +72,30 @@ abstract final class TutorialLabels {
     TutorialCategory.lips => 'Lips',
   };
 
+  /// The human-readable name of a guide marking.
+  ///
+  /// Pairs with [TutorialGuideType.symbol], which is not translated: the key
+  /// shows the glyph and this name together, so the meaning never rests on the
+  /// symbol alone.
+  /// Screen-reader wording for one guide type.
+  ///
+  /// The glyph is decorative to a screen reader — "●" announces as nothing
+  /// useful — so the spoken form carries the meaning instead.
+  static String guideTypeSemantics(TutorialGuideType type) => switch (type) {
+    TutorialGuideType.startAnchor => 'A dot marks where to start',
+    TutorialGuideType.placementBoundary =>
+      'A solid line marks the placement boundary to follow',
+    TutorialGuideType.blendZone => 'A dashed line marks a blend or fade zone',
+    TutorialGuideType.direction => 'An arrow marks the direction to move',
+  };
+
+  static String guideTypeName(TutorialGuideType type) => switch (type) {
+    TutorialGuideType.startAnchor => 'Start',
+    TutorialGuideType.placementBoundary => 'Placement',
+    TutorialGuideType.blendZone => 'Blend zone',
+    TutorialGuideType.direction => 'Direction',
+  };
+
   /// The display name of an inventory category, used when a product has no
   /// user-entered name.
   static String inventoryCategory(MakeupKitCategory category) =>
@@ -78,6 +110,19 @@ abstract final class TutorialLabels {
         MakeupKitCategory.contourBronzer => 'Contour or bronzer',
         MakeupKitCategory.eyebrow => 'Eyebrow product',
         MakeupKitCategory.eyeliner => 'Eyeliner',
+      };
+
+  /// The display name of a validated intensity.
+  ///
+  /// Four values, not the three the quality contract sketches, because the
+  /// recommendation schema validates four and collapsing `sheer` into `soft`
+  /// would report a strength the recommendation never gave.
+  static String intensityName(TutorialIntensity intensity) =>
+      switch (intensity) {
+        TutorialIntensity.sheer => 'Sheer',
+        TutorialIntensity.soft => 'Soft',
+        TutorialIntensity.medium => 'Medium',
+        TutorialIntensity.bold => 'Bold',
       };
 
   static String finishName(MakeupKitFinish finish) => switch (finish) {

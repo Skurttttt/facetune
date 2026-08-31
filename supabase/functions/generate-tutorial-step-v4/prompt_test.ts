@@ -9,10 +9,15 @@ import {
   isUnchanged,
   validateGuidelineImage,
 } from "./gemini_client.ts";
-import { categoryIntent, productNote, tutorialGuidelinePrompt } from "./prompt.ts";
+import {
+  categoryGuidance,
+  categoryIntent,
+  productNote,
+  tutorialGuidelinePrompt,
+} from "./prompt.ts";
 import {
   guidelineStoragePath,
-  isPilotCategory,
+  isRenderableCategory,
   TUTORIAL_GUIDELINE_PROMPT_VERSION,
   TUTORIAL_OUTPUT_RESOLUTION,
 } from "../_shared/tutorial_ai_config.ts";
@@ -24,20 +29,24 @@ const sessionId = "33333333-3333-4333-8333-333333333333";
 function blushPrompt(products: Parameters<typeof productNote>[0] = []): string {
   return tutorialGuidelinePrompt({
     category: "blush",
-    intent: categoryIntent("blush")!,
+    guidance: categoryGuidance("blush")!,
     stepPosition: 2,
     stepCount: 4,
     productNote: productNote(products),
   });
 }
 
-Deno.test("only the pilot category is enabled", () => {
-  assertEquals(isPilotCategory("blush"), true);
+// This file was written for the V4-9 single-pilot renderer and still called
+// `isPilotCategory` and an `intent` parameter that V4-10 replaced. It has not
+// compiled since, which is why nothing caught the drift — repaired here so the
+// V4-QA-2 assertions beside it can actually run.
+Deno.test("every category in the vocabulary is renderable", () => {
   for (
     const category of [
       "foundation",
       "concealer",
       "contour_bronzer",
+      "blush",
       "highlighter",
       "eyebrows",
       "eyeshadow",
@@ -45,9 +54,9 @@ Deno.test("only the pilot category is enabled", () => {
       "lips",
     ] as const
   ) {
-    assertEquals(isPilotCategory(category), false);
+    assertEquals(isRenderableCategory(category), true);
+    assertEquals(categoryIntent(category) !== null, true);
   }
-  assertEquals(categoryIntent("lips"), null);
 });
 
 Deno.test("the prompt assigns Image A and Image B their roles", () => {
@@ -168,7 +177,34 @@ Deno.test("each attempt writes a new object", () => {
 
 Deno.test("the locked configuration is 1K and a versioned prompt", () => {
   assertEquals(TUTORIAL_OUTPUT_RESOLUTION, "1K");
-  assertEquals(TUTORIAL_GUIDELINE_PROMPT_VERSION, "tutorial_guideline_v4_1");
+  assertEquals(TUTORIAL_GUIDELINE_PROMPT_VERSION, "tutorial_guideline_v4_7");
+});
+
+Deno.test("blush asks what changed before it draws", () => {
+  const prompt = blushPrompt();
+  assertStringIncludes(prompt, "WHAT CHANGED — ANSWER THESE BEFORE YOU DRAW");
+  assertStringIncludes(prompt, "Determine what visibly changed in THIS category");
+  assertStringIncludes(prompt, "Do not substitute generic makeup placement.");
+});
+
+Deno.test("blush is told to draw few marks, not thorough ones", () => {
+  const prompt = blushPrompt();
+  assertStringIncludes(
+    prompt,
+    "Prefer a few meaningful guide elements over dense decorative geometry.",
+  );
+  assertStringIncludes(
+    prompt,
+    "Three marks that each teach something beat fourteen that look thorough.",
+  );
+});
+
+Deno.test("the negative contract is stated literally", () => {
+  const prompt = blushPrompt();
+  assertStringIncludes(prompt, "DO NOT APPLY MAKEUP.");
+  assertStringIncludes(prompt, "DO NOT beautify.");
+  assertStringIncludes(prompt, "DO NOT recolor the face.");
+  assertStringIncludes(prompt, "DO NOT change other categories.");
 });
 
 Deno.test("a non-image or malformed payload is rejected", () => {

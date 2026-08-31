@@ -1,7 +1,9 @@
 import '../../../makeup_kit/domain/entities/kit_makeup_recommendation.dart';
+import '../../domain/catalog/tutorial_category_mapping.dart';
 import '../../domain/entities/canonical_preview_ref.dart';
 import '../../domain/entities/look_product_snapshot.dart';
 import '../../domain/entities/recommendation_source_mode.dart';
+import '../../domain/entities/standard_look_entry.dart';
 import '../../domain/entities/tutorial_ai_configuration.dart';
 import '../../domain/entities/tutorial_category.dart';
 import '../../domain/entities/tutorial_manifest.dart';
@@ -208,6 +210,7 @@ abstract final class LookPlanDto {
       source: switch (sourceMode) {
         RecommendationSourceMode.standard => StandardLookPlanSource(
           recommendationId: id,
+          entries: _standardEntries(row['recommendation_json']),
         ),
         RecommendationSourceMode.myMakeupKit => MyMakeupKitLookPlanSource(
           kitRecommendationId: id,
@@ -218,6 +221,51 @@ abstract final class LookPlanDto {
       promptVersion: _Read.nullableText(row, 'prompt_version') ?? '',
       createdAt: _Read.time(row, 'created_at'),
     );
+  }
+
+  /// Groups the persisted Standard Mode plan into brand-neutral entries.
+  ///
+  /// [value] is the `recommendation_json` column: the validated plan object
+  /// keyed by recommendation vocabulary (`blush`, `lipGloss`, and so on), which
+  /// [TutorialCategoryMapping] turns into tutorial categories. A key outside
+  /// that vocabulary is skipped rather than guessed at — it cannot belong to a
+  /// step.
+  ///
+  /// Parsing here is lenient where [_Read] is strict, deliberately. An item
+  /// missing its required text is dropped and the rest of the plan still
+  /// renders, which mirrors the server-side resolver exactly: a single odd
+  /// category must not cost the user their whole tutorial. Nothing is
+  /// substituted for what is dropped — a missing value stays missing.
+  static StandardLookEntries _standardEntries(Object? value) {
+    if (value is! Map) return StandardLookEntries.empty;
+    final plan = value.map((key, item) => MapEntry(key.toString(), item));
+    final grouped = <TutorialCategory, List<StandardLookEntry>>{};
+    for (final key in plan.keys) {
+      final category = TutorialCategoryMapping.fromStandardRecommendationKey(
+        key,
+      );
+      if (category == null) continue;
+      final raw = plan[key];
+      if (raw is! Map) continue;
+      final item = raw.map((key, value) => MapEntry(key.toString(), value));
+      final shadeName = _Read.nullableText(item, 'name');
+      if (shadeName == null) continue;
+      grouped
+          .putIfAbsent(category, () => <StandardLookEntry>[])
+          .add(
+            StandardLookEntry(
+              planKey: key,
+              shadeName: shadeName,
+              colorHex: _Read.nullableText(item, 'hex'),
+              placement: _Read.nullableText(item, 'placement') ?? '',
+              technique: _Read.nullableText(item, 'technique') ?? '',
+              finish: _Read.nullableText(item, 'finish') ?? '',
+              intensity: _Read.nullableText(item, 'intensity') ?? '',
+              reasoning: _Read.nullableText(item, 'reasoning'),
+            ),
+          );
+    }
+    return StandardLookEntries(byCategory: grouped);
   }
 
   static LookProductSnapshot _snapshot(Object? value) {

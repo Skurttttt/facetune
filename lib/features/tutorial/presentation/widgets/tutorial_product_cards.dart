@@ -4,6 +4,7 @@ import '../../../../shared/widgets/app_ui.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../domain/entities/look_product_snapshot.dart';
 import '../../domain/entities/standard_look_entry.dart';
+import '../../domain/entities/tutorial_shade_details.dart';
 import '../utils/tutorial_labels.dart';
 
 /// A colour chip showing an exact stored shade.
@@ -21,6 +22,7 @@ class _ShadeChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final parsed = int.tryParse(hex.replaceFirst('#', ''), radix: 16);
     final color = parsed == null ? null : Color(0xFF000000 | parsed);
+    final scheme = Theme.of(context).colorScheme;
     return Semantics(
       // container + excludeSemantics so the swatch and the hex text read as one
       // node. Without it the label never forms its own node, and a screen
@@ -35,9 +37,11 @@ class _ShadeChip extends StatelessWidget {
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: color ?? AppColors.sand,
+              // The fill is recommendation/snapshot data, not a UI theme
+              // colour. Only an invalid value falls back to a themed surface.
+              color: color ?? scheme.surfaceContainerHighest,
               shape: BoxShape.circle,
-              border: Border.all(color: AppColors.taupeLight),
+              border: Border.all(color: scheme.outlineVariant),
             ),
           ),
           const SizedBox(width: AppSpacing.xs),
@@ -48,26 +52,76 @@ class _ShadeChip extends StatelessWidget {
   }
 }
 
-Widget _detailRow(BuildContext context, String label, String value) => Padding(
-  padding: const EdgeInsets.only(top: AppSpacing.xxs),
-  child: Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      SizedBox(
-        width: 92,
-        child: Text(
+Widget _detailRow(BuildContext context, String label, String value) {
+  final body = Theme.of(context).textTheme.bodySmall;
+  // Derived from the effective body colour rather than a fixed token, because
+  // these rows appear on two different surfaces: the default card, and the
+  // petal card whose foreground AppCard has already overridden. A global muted
+  // token is correct on one and wrong on the other; a softened version of
+  // whatever colour is actually in force is correct on both.
+  final labelColor = body?.color?.withValues(alpha: 0.72);
+  return Padding(
+    padding: const EdgeInsets.only(top: AppSpacing.xxs),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final useStack =
+            constraints.maxWidth < 220 ||
+            MediaQuery.textScalerOf(context).scale(12) > 18;
+        final labelWidget = Text(
           label,
-          style: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(color: AppColors.taupe),
-        ),
-      ),
-      Expanded(
-        child: Text(value, style: Theme.of(context).textTheme.bodySmall),
-      ),
-    ],
-  ),
-);
+          style: body?.copyWith(color: labelColor),
+        );
+        final valueWidget = Text(value, style: body);
+        if (useStack) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [labelWidget, const SizedBox(height: 2), valueWidget],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(width: 92, child: labelWidget),
+            Expanded(child: valueWidget),
+          ],
+        );
+      },
+    ),
+  );
+}
+
+Widget _hexDetailRow(BuildContext context, String hex, {String? shadeLabel}) {
+  final body = Theme.of(context).textTheme.bodySmall;
+  final labelColor = body?.color?.withValues(alpha: 0.72);
+  return Padding(
+    padding: const EdgeInsets.only(top: AppSpacing.xxs),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final useStack =
+            constraints.maxWidth < 220 ||
+            MediaQuery.textScalerOf(context).scale(12) > 18;
+        final labelWidget = Text(
+          TutorialLabels.hex,
+          style: body?.copyWith(color: labelColor),
+        );
+        final valueWidget = _ShadeChip(hex: hex, label: shadeLabel);
+        if (useStack) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [labelWidget, const SizedBox(height: 2), valueWidget],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            SizedBox(width: 92, child: labelWidget),
+            Expanded(child: valueWidget),
+          ],
+        );
+      },
+    ),
+  );
+}
 
 /// Standard Mode: brand-neutral colour guidance.
 ///
@@ -92,18 +146,54 @@ class StandardProductCard extends StatelessWidget {
           ),
           for (final entry in entries) ...[
             const SizedBox(height: AppSpacing.sm),
-            Text(
-              entry.shadeName,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            if (entry.colorHex != null) ...[
-              const SizedBox(height: AppSpacing.xxs),
-              _ShadeChip(hex: entry.colorHex!),
-            ],
+            _detailRow(context, TutorialLabels.shade, entry.shadeName),
+            if (entry.colorHex != null)
+              _hexDetailRow(
+                context,
+                entry.colorHex!,
+                shadeLabel: entry.shadeName,
+              ),
             if (entry.finish.isNotEmpty)
               _detailRow(context, TutorialLabels.finish, entry.finish),
-            if (entry.intensity.isNotEmpty)
-              _detailRow(context, TutorialLabels.intensity, entry.intensity),
+            // Routed through the controlled vocabulary rather than printed raw.
+            // A value outside the validated set is shown as nothing at all —
+            // displaying an unrecognised strength would be a guess.
+            ?switch (TutorialIntensity.fromCode(entry.intensity)) {
+              final intensity? => _detailRow(
+                context,
+                TutorialLabels.intensity,
+                TutorialLabels.intensityName(intensity),
+              ),
+              null => null,
+            },
+            // The recommendation's own placement and technique wording. It is
+            // look-specific and authoritative, so it belongs with the rest of
+            // the recommendation metadata — not in the numbered instructions,
+            // which describe the drawn guides and must reference a symbol.
+            if (entry.placement.trim().isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                TutorialLabels.whereToApply,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                entry.placement,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+            if (entry.technique.trim().isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                TutorialLabels.technique,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                entry.technique,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
           ],
         ],
       ),
@@ -155,10 +245,13 @@ class MyMakeupKitProductCard extends StatelessWidget {
                   TutorialLabels.inventoryCategory(item.kitCategory),
               style: Theme.of(context).textTheme.bodyMedium,
             ),
-            const SizedBox(height: AppSpacing.xxs),
-            _ShadeChip(hex: item.color.value, label: item.colorLabel),
             if (item.colorLabel != null)
               _detailRow(context, TutorialLabels.shade, item.colorLabel!),
+            _hexDetailRow(
+              context,
+              item.color.value,
+              shadeLabel: item.colorLabel,
+            ),
             _detailRow(
               context,
               TutorialLabels.finish,

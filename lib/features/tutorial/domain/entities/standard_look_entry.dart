@@ -16,6 +16,7 @@ class StandardLookEntry {
     required this.finish,
     required this.intensity,
     this.colorHex,
+    this.reasoning,
   });
 
   /// The recommendation plan key this came from — `lipstick`, `lipGloss`, and
@@ -32,6 +33,16 @@ class StandardLookEntry {
   final String technique;
   final String finish;
   final String intensity;
+
+  /// The recommendation's own one-sentence account of what this category is
+  /// for in this look.
+  ///
+  /// Carried through so the tutorial can state a goal without composing one.
+  /// The upstream schema validates it as a short single sentence, and it is the
+  /// only authoritative "what this achieves" text the system holds — My Makeup
+  /// Kit has no equivalent, so a kit step shows no goal rather than a
+  /// manufactured one.
+  final String? reasoning;
 }
 
 /// The Standard Mode entries for a look, grouped by tutorial category.

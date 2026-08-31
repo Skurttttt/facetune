@@ -100,6 +100,7 @@ StandardLookEntries _standardEntries(MakeupRecommendation recommendation) {
             technique: item.technique,
             finish: item.finish,
             intensity: item.intensity,
+            reasoning: item.reasoning,
           ),
         );
   });

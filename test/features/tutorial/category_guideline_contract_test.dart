@@ -6,8 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 /// Contract tests over the per-category guideline modules and the product
 /// presentation adapters.
 ///
-/// Deno is not installed here, so `category_prompts_test.ts` cannot be
-/// executed. These assert the same properties against the TypeScript source.
+/// A cross-language guard: these assert the same properties against the
+/// TypeScript source from the Dart suite, so the contract is checked by
+/// `flutter test` alone. `category_prompts_test.ts` covers the same ground from
+/// the Deno side; both are run, and neither replaces the other.
 void main() {
   final root = Directory.current;
 
@@ -67,16 +69,22 @@ void main() {
       'foundation': <String>['perimeter', 'blended outward', 'jawline'],
       'concealer': <String>['under-eye', 'blending direction', 'fade'],
       'contour_bronzer': <String>['cheekbone', 'temple', 'jawline', 'nose'],
-      'blush': <String>['apple', 'cheekbone', 'upward and outward'],
+      // V4-QA-2C rewrote the representative four from category description
+      // into target extraction. Blush no longer names a region or its
+      // conventional sweep — it names the footprint to find in IMAGE B.
+      'blush': <String>['footprint', 'bounds of the colour', 'strongest'],
       'highlighter': <String>['brow bone', 'inner corner', "Cupid's bow"],
       'eyebrows': <String>['arch', 'tail', 'direction'],
       'eyeshadow': <String>['mobile lid', 'crease', 'outer V', 'inner corner'],
       'eyeliner': <String>['lash line', 'wing', 'curvature', 'endpoint'],
+      // The target border leads now; the natural border is only a reference
+      // where it differs. Fragments must appear contiguously in the TypeScript
+      // source, so they avoid the string-concatenation line breaks.
       'lips': <String>[
         "Cupid's bow",
-        'corners',
-        'lower lip boundary',
-        'border',
+        'each corner',
+        'target border',
+        'not the lip anatomy in IMAGE A',
       ],
     };
 
@@ -126,9 +134,47 @@ void main() {
     });
 
     test('contour and highlighter mark only what is visible', () {
-      expect(categories, contains('those you can genuinely see'));
+      // V4-QA-3 rewrote both fragments from category description into target
+      // extraction, so the wording moved from "those you can genuinely see"
+      // to a per-region conditional check.
+      expect(categories, contains('genuinely see added depth there'));
       expect(categories, contains('only if you can see it'));
       expect(categories, contains('visibly gained brightness'));
+    });
+
+    test('the propagated five each reject their conventional diagram', () {
+      // The specific default each category collapses into when unguided. These
+      // are the V4-QA-3 equivalents of the representative four's gates.
+      for (final gate in <String>[
+        'DO NOT OUTLINE THE WHOLE FACE UNLESS IMAGE B SHOWS COVERAGE ACROSS ALL OF IT.',
+        'DO NOT DRAW AN UNDER-EYE TRIANGLE UNLESS IMAGE B IS VISIBLY BRIGHTER THERE.',
+        'DO NOT DRAW THE STANDARD CONTOUR MAP. MARK ONLY BANDS YOU CAN SEE.',
+        'DO NOT DRAW THE CLASSIC FIVE-POINT HIGHLIGHT MAP. MARK ONLY POINTS YOU CAN SEE.',
+        'DO NOT DRAW BROW CONSTRUCTION GEOMETRY',
+      ]) {
+        expect(categories, contains(gate));
+      }
+    });
+
+    test('all nine categories now carry the same guidance fields', () {
+      // analysis, hardRules, prefer, and avoid began as the representative
+      // gate's fields; V4-QA-3 propagated them, so every category has them.
+      for (final field in <String>[
+        'analysis:',
+        'hardRules:',
+        'prefer:',
+        'avoid:',
+        'noMakeup:',
+      ]) {
+        expect(
+          RegExp(
+            '^    ${RegExp.escape(field)}',
+            multiLine: true,
+          ).allMatches(categories).length,
+          9,
+          reason: '$field must be present for every category',
+        );
+      }
     });
   });
 
@@ -210,8 +256,16 @@ void main() {
     });
 
     test('the prompt version was bumped for the changed wording', () {
-      expect(config, contains('"tutorial_guideline_v4_2"'));
-      expect(config, isNot(contains('"tutorial_guideline_v4_1"')));
+      // v4_3 from the V4-QA-2 representative gate: the shared fidelity,
+      // minimum-geometry, and negative-contract sections changed every
+      // rendered prompt, and Blush, Eyeshadow, Eyeliner, and Lips additionally
+      // gained visual-difference questions. Reusing v4_2 would misreport what
+      // produced a step.
+      expect(config, contains('"tutorial_guideline_v4_7"'));
+      // Guarding the immediate predecessor is what catches a bump that was
+      // written but not applied. The old `v4_1` assertion beside it was six
+      // versions stale and could no longer fail for any real reason.
+      expect(config, isNot(contains('= "tutorial_guideline_v4_6"')));
     });
   });
 

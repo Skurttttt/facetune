@@ -7,10 +7,11 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// Contract tests over the manifest analyzer Edge Function.
 ///
-/// Deno is not installed here, so `analyze-tutorial-manifest-v4/validation_test.ts`
-/// cannot be executed. These assert the same guarantees against the TypeScript
-/// source, and additionally pin the Dart and TypeScript vocabularies together —
-/// the one guarantee neither language's own suite can make alone.
+/// A cross-language guard: these assert the same guarantees against the
+/// TypeScript source from the Dart suite, and additionally pin the Dart and
+/// TypeScript vocabularies together — the one guarantee neither language's own
+/// suite can make alone. `analyze-tutorial-manifest-v4/validation_test.ts`
+/// covers the Deno side; both are run.
 void main() {
   final root = Directory.current;
 

@@ -198,10 +198,15 @@ class SupabaseTutorialRemoteDataSource extends SupabaseRemoteDataSource
   }) => client
       .from(isMyMakeupKit ? 'kit_makeup_recommendations' : 'recommendations')
       .select(
+        // Both modes select the column holding their validated plan. Standard
+        // Mode's `recommendation_json` was previously left out, which is why a
+        // Standard tutorial had no shade, finish, or intensity to show: the
+        // metadata was never fetched, so every category resolved to empty.
         isMyMakeupKit
             ? 'id,analysis_id,makeup_style,model_name,prompt_version,'
                   'created_at,product_snapshot_json'
-            : 'id,analysis_id,makeup_style,model_name,prompt_version,created_at',
+            : 'id,analysis_id,makeup_style,model_name,prompt_version,'
+                  'created_at,recommendation_json',
       )
       .eq('id', recommendationId)
       .maybeSingle();

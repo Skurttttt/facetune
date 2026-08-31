@@ -16,3 +16,17 @@ gemini-3.1-flash-image
 
 erun the important parts of 18, 20, 21, and 22 against the expanded app before you proceed to 23–26.
 
+4-QA-4B
+Dynamic Numbered Visual Instructions
+↓
+Gemini prompt may be changed under a new controlled phase
+↓
+① ② ③ ④ + tiny labels
+↓
+Regression-test guideline-only behavior
+↓
+STOP
+
+THEN
+
+V4-QA-5

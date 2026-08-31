@@ -4,9 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// The V4-14 security audit, expressed as executable assertions.
 ///
-/// Deno is not installed here, so this asserts the properties against the
-/// TypeScript, SQL, and config that implement them. It proves the controls are
-/// present and wired; only a live system proves they hold at runtime.
+/// Asserts the properties against the TypeScript, SQL, and config that
+/// implement them, from the Dart suite, so the audit runs under `flutter test`
+/// alone. It proves the controls are present and wired; only a live system
+/// proves they hold at runtime.
 void main() {
   final root = Directory.current;
 

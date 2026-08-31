@@ -5,6 +5,7 @@ import 'package:facetune/features/tutorial/data/providers/tutorial_providers.dar
 import 'package:facetune/features/tutorial/domain/catalog/look_plan_convergence.dart';
 import 'package:facetune/features/tutorial/domain/entities/canonical_preview_ref.dart';
 import 'package:facetune/features/tutorial/domain/entities/recommendation_source_mode.dart';
+import 'package:facetune/features/tutorial/domain/entities/standard_look_entry.dart';
 import 'package:facetune/features/tutorial/domain/entities/tutorial_category.dart';
 import 'package:facetune/features/tutorial/domain/entities/tutorial_manifest.dart';
 import 'package:facetune/features/tutorial/domain/entities/tutorial_session.dart';
@@ -15,24 +16,37 @@ import 'package:facetune/features/tutorial/domain/repositories/tutorial_session_
 import 'package:facetune/features/tutorial/domain/repositories/tutorial_step_repository.dart';
 import 'package:facetune/features/tutorial/domain/entities/validated_look_plan.dart';
 import 'package:facetune/features/tutorial/presentation/pages/tutorial_page.dart';
+import 'package:facetune/features/tutorial/presentation/utils/tutorial_labels.dart';
+import 'package:facetune/features/tutorial/presentation/widgets/tutorial_product_cards.dart';
+import 'package:facetune/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 final _now = DateTime.utc(2026, 8, 30);
 
-MakeupRecommendationItem _item(String name, String hex) =>
-    MakeupRecommendationItem(
-      name: name,
-      hex: hex,
-      placement: 'Across the cheeks and temples.',
-      technique: 'Blend upward and outward.',
-      finish: 'satin',
-      intensity: 'soft',
-      reasoning: 'Suits the undertone.',
-    );
+MakeupRecommendationItem _item(
+  String name,
+  String hex, {
+  String placement = 'Across the cheeks and temples.',
+  String technique = 'Blend upward and outward.',
+  String finish = 'satin',
+  String intensity = 'soft',
+  String reasoning = 'Suits the undertone.',
+}) => MakeupRecommendationItem(
+  name: name,
+  hex: hex,
+  placement: placement,
+  technique: technique,
+  finish: finish,
+  intensity: intensity,
+  reasoning: reasoning,
+);
 
-ValidatedLookPlan _standardPlan() => LookPlanConvergence.fromStandard(
+ValidatedLookPlan _standardPlan({
+  String blushName = 'Warm peach',
+  String blushReasoning = 'Suits the undertone.',
+}) => LookPlanConvergence.fromStandard(
   MakeupRecommendation(
     id: 'rec-1',
     analysisId: 'analysis-1',
@@ -40,7 +54,7 @@ ValidatedLookPlan _standardPlan() => LookPlanConvergence.fromStandard(
     overallIntensity: 'soft',
     items: <String, MakeupRecommendationItem>{
       'foundation': _item('Warm beige', '#E3C4A8'),
-      'blush': _item('Warm peach', '#E8A08C'),
+      'blush': _item(blushName, '#E8A08C', reasoning: blushReasoning),
       'lipstick': _item('Rosewood', '#B86F72'),
       'lipGloss': _item('Clear shine', '#D8A0A2'),
     },
@@ -88,6 +102,32 @@ ValidatedLookPlan _kitPlan() => LookPlanConvergence.fromMyMakeupKit(
     promptVersion: 'v1',
     createdAt: _now,
   ),
+);
+
+ValidatedLookPlan _standardPlanWithOnlyShade() => ValidatedLookPlan(
+  id: 'rec-minimal',
+  analysisId: 'analysis-1',
+  styleCode: 'natural',
+  source: StandardLookPlanSource(
+    recommendationId: 'rec-minimal',
+    entries: StandardLookEntries(
+      byCategory: <TutorialCategory, List<StandardLookEntry>>{
+        TutorialCategory.blush: const <StandardLookEntry>[
+          StandardLookEntry(
+            planKey: 'blush',
+            shadeName: 'Muted rose',
+            placement: '',
+            technique: '',
+            finish: '',
+            intensity: '',
+          ),
+        ],
+      },
+    ),
+  ),
+  modelId: 'm',
+  promptVersion: 'v1',
+  createdAt: _now,
 );
 
 TutorialStep _step(
@@ -226,13 +266,19 @@ Future<_Steps> _pump(
   List<TutorialStep> steps = const <TutorialStep>[],
   String? finalPreviewUrl,
   _Steps? stepRepository,
+  ThemeMode themeMode = ThemeMode.light,
+  Brightness systemBrightness = Brightness.light,
+  Size size = const Size(1200, 4000),
+  double textScale = 1,
 }) async {
   // A tall surface so the whole step fits: the page is a lazily-built ListView,
   // and an off-screen product card is simply not in the tree to find.
-  tester.view.physicalSize = const Size(1200, 4000);
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
+  tester.platformDispatcher.platformBrightnessTestValue = systemBrightness;
+  addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
 
   final session = _session(present: present, plan: plan, steps: steps);
   final stepRepo = stepRepository ?? _Steps();
@@ -247,13 +293,20 @@ Future<_Steps> _pump(
         tutorialStepRepositoryProvider.overrideWithValue(stepRepo),
       ],
       child: MaterialApp(
-        home: Scaffold(
-          body: TutorialPage(
-            preview: plan.sourceMode == RecommendationSourceMode.standard
-                ? const CanonicalPreviewRef.standard('preview-1')
-                : const CanonicalPreviewRef.myMakeupKit('preview-1'),
-            finalPreviewUrl: finalPreviewUrl,
-          ),
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: themeMode,
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child!,
+        ),
+        home: TutorialPage(
+          preview: plan.sourceMode == RecommendationSourceMode.standard
+              ? const CanonicalPreviewRef.standard('preview-1')
+              : const CanonicalPreviewRef.myMakeupKit('preview-1'),
+          finalPreviewUrl: finalPreviewUrl,
         ),
       ),
     ),
@@ -411,6 +464,17 @@ void main() {
       );
 
       expect(find.text('Suggested shades'), findsOneWidget);
+      expect(find.text(TutorialLabels.yourGoal), findsOneWidget);
+      expect(find.text(TutorialLabels.shade), findsOneWidget);
+      expect(find.text(TutorialLabels.hex), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(StandardProductCard),
+          matching: find.text(TutorialLabels.finish),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text(TutorialLabels.intensity), findsOneWidget);
       expect(find.text('Warm peach'), findsOneWidget);
       expect(find.text('#E8A08C'), findsOneWidget);
       expect(find.text('Where to apply'), findsOneWidget);
@@ -442,6 +506,17 @@ void main() {
       expect(find.text('Studio Base'), findsOneWidget);
       expect(find.text('#E3C4A8'), findsOneWidget);
       expect(find.text('Warm Sand'), findsOneWidget);
+      expect(find.text(TutorialLabels.shade), findsOneWidget);
+      expect(find.text(TutorialLabels.hex), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(MyMakeupKitProductCard),
+          matching: find.text(TutorialLabels.finish),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text(TutorialLabels.intensity), findsNothing);
+      expect(find.text(TutorialLabels.yourGoal), findsNothing);
       expect(find.text('Light'), findsOneWidget);
       expect(find.text('Warm'), findsOneWidget);
       expect(find.text('Suggested shades'), findsNothing);
@@ -584,6 +659,91 @@ void main() {
     });
   });
 
+  group('responsive result metadata', () {
+    testWidgets('missing optional fields are omitted without placeholders', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        present: const <TutorialCategory>[TutorialCategory.blush],
+        plan: _standardPlanWithOnlyShade(),
+        steps: <TutorialStep>[_step(TutorialCategory.blush, 1)],
+      );
+
+      expect(find.text(TutorialLabels.shade), findsOneWidget);
+      expect(find.text('Muted rose'), findsOneWidget);
+      expect(find.text(TutorialLabels.hex), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byType(StandardProductCard),
+          matching: find.text(TutorialLabels.finish),
+        ),
+        findsNothing,
+      );
+      expect(find.text(TutorialLabels.intensity), findsNothing);
+      expect(find.text(TutorialLabels.yourGoal), findsNothing);
+    });
+
+    testWidgets('long shade and goal wrap on a narrow large-text screen', (
+      tester,
+    ) async {
+      final plan = _standardPlan(
+        blushName:
+            'Layered muted warm rose with a softly neutral peach undertone',
+        blushReasoning:
+            'Adds balanced warmth while keeping the strongest colour on the '
+            'outer cheek and the inner edge softly diffused.',
+      );
+      await _pump(
+        tester,
+        present: const <TutorialCategory>[TutorialCategory.blush],
+        plan: plan,
+        steps: <TutorialStep>[_step(TutorialCategory.blush, 1)],
+        size: const Size(320, 800),
+        textScale: 2,
+      );
+
+      expect(tester.takeException(), isNull);
+      final longShade = find.text(
+        'Layered muted warm rose with a softly neutral peach undertone',
+        skipOffstage: false,
+      );
+      final outerScrollable = find
+          .descendant(
+            of: find.byType(ListView),
+            matching: find.byType(Scrollable),
+          )
+          .first;
+      final scrollableState = tester.state<ScrollableState>(outerScrollable);
+      var sawGoal = find
+          .text(TutorialLabels.yourGoal, skipOffstage: false)
+          .evaluate()
+          .isNotEmpty;
+      for (
+        var scroll = 0;
+        scroll < 20 && longShade.evaluate().isEmpty;
+        scroll++
+      ) {
+        scrollableState.position.jumpTo(
+          (scrollableState.position.pixels + 500).clamp(
+            0,
+            scrollableState.position.maxScrollExtent,
+          ),
+        );
+        await tester.pumpAndSettle();
+        sawGoal =
+            sawGoal ||
+            find
+                .text(TutorialLabels.yourGoal, skipOffstage: false)
+                .evaluate()
+                .isNotEmpty;
+      }
+      expect(tester.takeException(), isNull);
+      expect(longShade, findsOneWidget);
+      expect(sawGoal, isTrue);
+    });
+  });
+
   group('the UI causes no duplicate AI calls', () {
     testWidgets('a rebuild does not generate again', (tester) async {
       final steps = await _pump(
@@ -628,5 +788,71 @@ void main() {
 
       expect(steps.generateCalls, 0, reason: 'both steps were already ready');
     });
+  });
+
+  group('the route owns a globally themed page surface', () {
+    testWidgets('Light uses the app light surface instead of black', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        present: const <TutorialCategory>[TutorialCategory.blush],
+        plan: _standardPlan(),
+        steps: <TutorialStep>[_step(TutorialCategory.blush, 1)],
+      );
+
+      final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+      expect(scaffold.backgroundColor, AppTheme.lightTheme.colorScheme.surface);
+      expect(scaffold.backgroundColor, isNot(Colors.black));
+      expect(
+        Theme.of(tester.element(find.byType(TutorialPage))).brightness,
+        Brightness.light,
+      );
+    });
+
+    testWidgets('Dark uses the app dark surface and dark card theme', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        present: const <TutorialCategory>[TutorialCategory.blush],
+        plan: _standardPlan(),
+        steps: <TutorialStep>[_step(TutorialCategory.blush, 1)],
+        themeMode: ThemeMode.dark,
+      );
+
+      final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+      expect(scaffold.backgroundColor, AppTheme.darkTheme.colorScheme.surface);
+      final cardContext = tester.element(find.byType(Card).first);
+      expect(
+        Theme.of(cardContext).cardTheme.color,
+        AppTheme.darkTheme.cardTheme.color,
+      );
+    });
+
+    for (final brightness in Brightness.values) {
+      testWidgets('System follows $brightness platform brightness', (
+        tester,
+      ) async {
+        await _pump(
+          tester,
+          present: const <TutorialCategory>[TutorialCategory.blush],
+          plan: _standardPlan(),
+          steps: <TutorialStep>[_step(TutorialCategory.blush, 1)],
+          themeMode: ThemeMode.system,
+          systemBrightness: brightness,
+        );
+
+        final expectedTheme = brightness == Brightness.dark
+            ? AppTheme.darkTheme
+            : AppTheme.lightTheme;
+        final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+        expect(scaffold.backgroundColor, expectedTheme.colorScheme.surface);
+        expect(
+          Theme.of(tester.element(find.byType(TutorialPage))).brightness,
+          brightness,
+        );
+      });
+    }
   });
 }

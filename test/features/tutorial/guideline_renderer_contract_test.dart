@@ -4,9 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// Contract tests over the guideline renderer.
 ///
-/// Deno is not installed here, so `generate-tutorial-step-v4/prompt_test.ts`
-/// cannot be executed. These assert the same properties against the TypeScript
-/// source.
+/// A cross-language guard: these assert the same properties against the
+/// TypeScript source from the Dart suite, so the contract is checked by
+/// `flutter test` alone. `generate-tutorial-step-v4/prompt_test.ts` covers the
+/// same ground from the Deno side; both are run.
 void main() {
   final root = Directory.current;
 
@@ -53,13 +54,15 @@ void main() {
 
     test('the prompt is versioned in the same place', () {
       // Bumped to v4_2 in V4-10, when per-category landmarks and prohibitions
-      // changed every rendered prompt. What this guards is that the version
-      // lives beside the model and resolution, not that it never moves.
+      // changed every rendered prompt, and to v4_3 in V4-QA-2, when the shared
+      // fidelity and minimum-geometry sections changed them again. What this
+      // guards is that the version lives beside the model and resolution, not
+      // that it never moves.
       expect(
         config,
         contains(
           'export const TUTORIAL_GUIDELINE_PROMPT_VERSION = '
-          '"tutorial_guideline_v4_2"',
+          '"tutorial_guideline_v4_7"',
         ),
       );
     });
