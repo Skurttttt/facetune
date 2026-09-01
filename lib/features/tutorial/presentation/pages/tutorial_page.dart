@@ -9,10 +9,21 @@ import '../../domain/entities/canonical_preview_ref.dart';
 import '../../domain/entities/tutorial_step.dart';
 import '../controllers/tutorial_controller.dart';
 import '../controllers/tutorial_state.dart';
+import '../utils/tutorial_image_focus.dart';
 import '../utils/tutorial_labels.dart';
+import '../widgets/tutorial_final_look_card.dart';
 import '../widgets/tutorial_guide_key.dart';
+import '../widgets/tutorial_image_viewer.dart';
 import '../widgets/tutorial_instructions_card.dart';
 import '../widgets/tutorial_product_cards.dart';
+
+/// The guideline image's full-screen tap target.
+///
+/// Named so a test can press the thing the user presses. The alternative —
+/// finding an `InkWell` by type — would also match every card on the page, and
+/// would keep passing while pressing the wrong one.
+@visibleForTesting
+const Key guidelineViewerTapKey = Key('tutorial.guideline.openViewer');
 
 /// Navigation arguments for [TutorialPage].
 ///
@@ -182,6 +193,14 @@ class _TutorialBody extends StatelessWidget {
         _GuidelineView(state: state, onRetry: onRetry),
         const SizedBox(height: AppSpacing.sm),
         TutorialGuideKey(types: instructions.referencedGuideTypes),
+        // The final look sits immediately under the guideline, so the two
+        // questions a step raises — where does this go, what should it end up
+        // looking like — are answered next to each other rather than one of
+        // them being five steps away.
+        if (finalPreviewUrl != null && !state.isLastStep) ...[
+          const SizedBox(height: AppSpacing.sm),
+          TutorialFinalLookCard(url: finalPreviewUrl!),
+        ],
         const SizedBox(height: AppSpacing.lg),
         TutorialInstructionsCard(instructions: instructions, goal: _goal()),
         const SizedBox(height: AppSpacing.md),
@@ -200,9 +219,12 @@ class _TutorialBody extends StatelessWidget {
           StandardProductCard(
             entries: state.session!.lookPlan.standardEntriesFor(category),
           ),
+        // The last step keeps the full-size presentation it has always had:
+        // there is nothing left to apply, so the finished look is the content
+        // of the step rather than a reference beside it.
         if (state.isLastStep && finalPreviewUrl != null) ...[
           const SizedBox(height: AppSpacing.lg),
-          _FinalPreview(url: finalPreviewUrl!),
+          TutorialFinalLookCard(url: finalPreviewUrl!, expanded: true),
         ],
         const SizedBox(height: AppSpacing.lg),
         _controls(context),
@@ -317,20 +339,42 @@ class _GuidelineView extends StatelessWidget {
         ),
       );
     }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppRadii.lg),
-      child: AspectRatio(
-        aspectRatio: 3 / 4,
-        child: PrivateImage(
+    // Tapping opens the same image full screen, at a zoom chosen for this
+    // category. It is a viewing action over an artifact already on screen: no
+    // request, no signing, and above all no generation.
+    return Semantics(
+      button: true,
+      container: true,
+      excludeSemantics: true,
+      label:
+          '${TutorialLabels.guidelineImageLabel(category)}. '
+          '${TutorialLabels.tapToEnlarge}.',
+      child: InkWell(
+        key: guidelineViewerTapKey,
+        onTap: () => TutorialImageViewer.open(
+          context,
           url: url,
+          title: TutorialLabels.categoryName(category),
           semanticLabel: TutorialLabels.guidelineImageLabel(category),
-          errorChild: SingleChildScrollView(
-            child: StatusState(
-              title: TutorialLabels.imageUnavailable,
-              message: '',
-              icon: Icons.image_not_supported_outlined,
-              actionLabel: TutorialLabels.retry,
-              onAction: () => onRetry(),
+          focus: TutorialImageFocus.forCategory(category),
+        ),
+        borderRadius: BorderRadius.circular(AppRadii.lg),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadii.lg),
+          child: AspectRatio(
+            aspectRatio: 3 / 4,
+            child: PrivateImage(
+              url: url,
+              semanticLabel: TutorialLabels.guidelineImageLabel(category),
+              errorChild: SingleChildScrollView(
+                child: StatusState(
+                  title: TutorialLabels.imageUnavailable,
+                  message: '',
+                  icon: Icons.image_not_supported_outlined,
+                  actionLabel: TutorialLabels.retry,
+                  onAction: () => onRetry(),
+                ),
+              ),
             ),
           ),
         ),
@@ -339,31 +383,8 @@ class _GuidelineView extends StatelessWidget {
   }
 }
 
-/// The canonical final preview, reused rather than regenerated.
-class _FinalPreview extends StatelessWidget {
-  const _FinalPreview({required this.url});
-
-  final String url;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(
-        TutorialLabels.yourFinalLook,
-        style: Theme.of(context).textTheme.titleSmall,
-      ),
-      const SizedBox(height: AppSpacing.xs),
-      ClipRRect(
-        borderRadius: BorderRadius.circular(AppRadii.lg),
-        child: AspectRatio(
-          aspectRatio: 3 / 4,
-          child: PrivateImage(
-            url: url,
-            semanticLabel: TutorialLabels.yourFinalLook,
-          ),
-        ),
-      ),
-    ],
-  );
-}
+// The canonical final preview is rendered by TutorialFinalLookCard, which
+// replaced the private _FinalPreview widget that used to live here. The two
+// presentations it now covers — a compact reference on every step and the
+// full-size image on the last — read the same signed URL for the same
+// canonical artifact, so there is still exactly one final preview per look.

@@ -23,6 +23,7 @@ class PrivateImage extends StatelessWidget {
     this.fit = BoxFit.cover,
     this.semanticLabel,
     this.errorChild,
+    this.decodeMultiplier = 1,
   });
 
   final String url;
@@ -32,13 +33,29 @@ class PrivateImage extends StatelessWidget {
   /// Shown when the image cannot be loaded. Defaults to a broken-image tile.
   final Widget? errorChild;
 
+  /// How many times the layout size to decode at.
+  ///
+  /// One is right almost everywhere: the box is the size the image is drawn,
+  /// so decoding larger only wastes memory. A zoomable viewer is the exception
+  /// — it draws the image into a box of one size and then magnifies it, and a
+  /// decode matched to the box goes soft the moment the user pinches.
+  ///
+  /// Raising it is bounded rather than open-ended. `Image.network`'s
+  /// [cacheWidth] resizes through `ResizeImage`, which does not upscale, so a
+  /// multiplier larger than the source allows simply decodes the source at its
+  /// own resolution instead of inventing pixels.
+  final int decodeMultiplier;
+
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) => Image.network(
       url,
       fit: fit,
       semanticLabel: semanticLabel,
-      cacheWidth: decodeWidthFor(context, constraints),
+      cacheWidth: switch (decodeWidthFor(context, constraints)) {
+        final width? => width * decodeMultiplier,
+        null => null,
+      },
       frameBuilder: (context, child, frame, synchronouslyLoaded) =>
           synchronouslyLoaded || frame != null
           ? child

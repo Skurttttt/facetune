@@ -42,6 +42,12 @@ abstract final class TutorialLabels {
   static const completeMessage =
       'You have been through every step this look needs.';
   static const yourFinalLook = 'Your final look';
+  static const finalLookHint = 'The finished result you are working toward';
+  static const viewFinalLook = 'View your final look';
+  static const close = 'Close';
+  static const resetView = 'Reset view';
+  static const viewerHint = 'Pinch to zoom. Double-tap to reset.';
+  static const tapToEnlarge = 'Tap to enlarge';
   static const startTutorial = 'Show me how';
   static const emptyTitle = 'No steps for this look';
   static const emptyMessage =

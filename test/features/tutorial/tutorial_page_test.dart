@@ -16,7 +16,10 @@ import 'package:facetune/features/tutorial/domain/repositories/tutorial_session_
 import 'package:facetune/features/tutorial/domain/repositories/tutorial_step_repository.dart';
 import 'package:facetune/features/tutorial/domain/entities/validated_look_plan.dart';
 import 'package:facetune/features/tutorial/presentation/pages/tutorial_page.dart';
+import 'package:facetune/features/tutorial/presentation/utils/tutorial_image_focus.dart';
 import 'package:facetune/features/tutorial/presentation/utils/tutorial_labels.dart';
+import 'package:facetune/features/tutorial/presentation/widgets/tutorial_final_look_card.dart';
+import 'package:facetune/features/tutorial/presentation/widgets/tutorial_image_viewer.dart';
 import 'package:facetune/features/tutorial/presentation/widgets/tutorial_product_cards.dart';
 import 'package:facetune/theme/app_theme.dart';
 import 'package:flutter/material.dart';
@@ -595,11 +598,37 @@ void main() {
       // shown straight away rather than after navigating forward.
       expect(find.text('Step 2 of 2'), findsOneWidget);
       expect(find.text('Your final look'), findsOneWidget);
+    });
+
+    // Until V4-QA-5 this asserted the opposite — that stepping back hid the
+    // final look, because it was rendered on the last step alone. QA-5
+    // supersedes that: the finished result is most useful while the user is
+    // still mid-application, so it is now reachable from every step.
+    testWidgets('every step can reach the final look', (tester) async {
+      await _pump(
+        tester,
+        present: const <TutorialCategory>[
+          TutorialCategory.blush,
+          TutorialCategory.lips,
+        ],
+        plan: _standardPlan(),
+        steps: <TutorialStep>[
+          _step(TutorialCategory.blush, 1),
+          _step(TutorialCategory.lips, 2),
+        ],
+        finalPreviewUrl: 'https://example.invalid/final.png',
+      );
 
       await tester.tap(find.text('Back'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Your final look'), findsNothing);
+      expect(find.text('Step 1 of 2'), findsOneWidget);
+      expect(find.text('Your final look'), findsOneWidget);
+      expect(
+        find.text('The finished result you are working toward'),
+        findsOneWidget,
+        reason: 'a non-final step shows the compact reference',
+      );
     });
 
     testWidgets('no final preview is shown when none was handed over', (
@@ -613,6 +642,175 @@ void main() {
       );
 
       expect(find.text('Your final look'), findsNothing);
+    });
+
+    testWidgets('there is exactly one final look on a step', (tester) async {
+      await _pump(
+        tester,
+        present: const <TutorialCategory>[
+          TutorialCategory.blush,
+          TutorialCategory.lips,
+        ],
+        plan: _standardPlan(),
+        steps: <TutorialStep>[
+          _step(TutorialCategory.blush, 1),
+          _step(TutorialCategory.lips, 2),
+        ],
+        finalPreviewUrl: 'https://example.invalid/final.png',
+      );
+
+      // The last step shows the expanded presentation and must not also show
+      // the compact reference: one canonical preview, rendered once.
+      expect(find.text('Your final look'), findsOneWidget);
+      expect(
+        find.text('The finished result you are working toward'),
+        findsNothing,
+      );
+    });
+
+    testWidgets('the final look is a different artifact to the guideline', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        present: const <TutorialCategory>[
+          TutorialCategory.blush,
+          TutorialCategory.lips,
+        ],
+        plan: _standardPlan(),
+        steps: <TutorialStep>[
+          _step(TutorialCategory.blush, 1),
+          _step(TutorialCategory.lips, 2),
+        ],
+        finalPreviewUrl: 'https://example.invalid/final.png',
+      );
+
+      final urls = tester
+          .widgetList<PrivateImage>(find.byType(PrivateImage))
+          .map((image) => image.url)
+          .toSet();
+      expect(
+        urls.contains('https://example.invalid/final.png'),
+        isTrue,
+        reason: 'the canonical preview handed over is the one displayed',
+      );
+      expect(
+        urls.length,
+        greaterThan(1),
+        reason: 'the guideline and the final look are separate images',
+      );
+    });
+  });
+
+  group('viewing is free', () {
+    testWidgets('opening the guideline full screen generates nothing', (
+      tester,
+    ) async {
+      final steps = await _pump(
+        tester,
+        present: const <TutorialCategory>[TutorialCategory.eyeliner],
+        plan: _standardPlan(),
+        steps: <TutorialStep>[_step(TutorialCategory.eyeliner, 1)],
+        finalPreviewUrl: 'https://example.invalid/final.png',
+      );
+      final generatedBefore = steps.generateCalls;
+      final signedBefore = steps.signCalls;
+
+      await tester.tap(find.byKey(guidelineViewerTapKey));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TutorialImageViewer), findsOneWidget);
+      expect(steps.generateCalls, generatedBefore);
+      expect(
+        steps.signCalls,
+        signedBefore,
+        reason: 'the viewer reuses the URL already on screen',
+      );
+    });
+
+    testWidgets('the viewer opens the guideline it was tapped from', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        present: const <TutorialCategory>[TutorialCategory.eyeliner],
+        plan: _standardPlan(),
+        steps: <TutorialStep>[_step(TutorialCategory.eyeliner, 1)],
+      );
+
+      final inline = tester
+          .widgetList<PrivateImage>(find.byType(PrivateImage))
+          .first
+          .url;
+
+      await tester.tap(find.byKey(guidelineViewerTapKey));
+      await tester.pumpAndSettle();
+
+      final viewer = tester.widget<TutorialImageViewer>(
+        find.byType(TutorialImageViewer),
+      );
+      expect(viewer.url, inline);
+      expect(
+        viewer.focus,
+        TutorialImageFocus.eyes,
+        reason: 'an eyeliner step opens on the eyes',
+      );
+      expect(viewer.title, 'Eyeliner');
+    });
+
+    testWidgets('the viewer closes back to the step it came from', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        present: const <TutorialCategory>[TutorialCategory.blush],
+        plan: _standardPlan(),
+        steps: <TutorialStep>[_step(TutorialCategory.blush, 1)],
+      );
+
+      await tester.tap(find.byKey(guidelineViewerTapKey));
+      await tester.pumpAndSettle();
+      expect(find.byType(TutorialImageViewer), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Close'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TutorialImageViewer), findsNothing);
+      expect(find.text('Step 1 of 1'), findsOneWidget);
+    });
+
+    testWidgets('the final look opens its own viewer, not the guideline', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        present: const <TutorialCategory>[
+          TutorialCategory.blush,
+          TutorialCategory.lips,
+        ],
+        plan: _standardPlan(),
+        steps: <TutorialStep>[
+          _step(TutorialCategory.blush, 1),
+          _step(TutorialCategory.lips, 2),
+        ],
+        finalPreviewUrl: 'https://example.invalid/final.png',
+      );
+
+      await tester.tap(find.text('Back'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(TutorialFinalLookCard));
+      await tester.pumpAndSettle();
+
+      final viewer = tester.widget<TutorialImageViewer>(
+        find.byType(TutorialImageViewer),
+      );
+      expect(viewer.url, 'https://example.invalid/final.png');
+      expect(viewer.title, 'Your final look');
+      expect(
+        viewer.focus,
+        TutorialImageFocus.wholeFace,
+        reason: 'the finished look is judged whole, never zoomed into',
+      );
     });
   });
 
@@ -682,6 +880,41 @@ void main() {
       );
       expect(find.text(TutorialLabels.intensity), findsNothing);
       expect(find.text(TutorialLabels.yourGoal), findsNothing);
+    });
+
+    testWidgets('the final-look reference fits POCO X3 GT at large text', (
+      tester,
+    ) async {
+      // Two steps so the compact reference is what renders, at the POCO X3 GT's
+      // real width rather than the 320 floor — width is what drives horizontal
+      // overflow, and 393 is the screen this phase is signed off on. The height
+      // is deliberately not the device's: the page is a lazy ListView, and at
+      // 873 the controls simply are not built yet, so a taller surface is what
+      // lets the whole step be laid out and checked at once.
+      await _pump(
+        tester,
+        present: const <TutorialCategory>[
+          TutorialCategory.blush,
+          TutorialCategory.lips,
+        ],
+        plan: _standardPlan(),
+        // No stored steps, so the tutorial opens on step 1 and the compact
+        // reference is what renders. Navigating back from step 2 would reach
+        // the same place, but the controls sit below the fold at 2x text and
+        // getting to them adds scrolling that has nothing to do with what is
+        // being asserted.
+        finalPreviewUrl: 'https://example.invalid/final.png',
+        size: const Size(393, 4000),
+        textScale: 2,
+      );
+
+      expect(find.text('Step 1 of 2'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      expect(find.byType(TutorialFinalLookCard), findsOneWidget);
+      expect(
+        find.text('The finished result you are working toward'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('long shade and goal wrap on a narrow large-text screen', (
