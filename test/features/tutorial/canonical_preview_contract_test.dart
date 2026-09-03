@@ -26,22 +26,44 @@ void main() {
   final standardGemini = source('$standardDir/gemini_client.ts');
   final kitGemini = source('$kitDir/gemini_client.ts');
 
-  group('the canonical model is Pro in both modes', () {
-    test('both previews default to gemini-3-pro-image', () {
+  // Until the V4-QA-8 remediation this group asserted the opposite: that both
+  // previews *defaulted* to gemini-3-pro-image and read GEMINI_IMAGE_MODEL
+  // directly. That encoded the defect as a contract. The environment could
+  // silently decide which model drew the canonical preview — the artifact every
+  // manifest, guideline and quality baseline is measured against — so the model
+  // is now locked in code and the environment only validates it.
+  group('the canonical model is locked in both modes', () {
+    test('both previews resolve the one locked model', () {
       for (final index in <String>[standardIndex, kitIndex]) {
-        expect(index, contains('"gemini-3-pro-image"'));
+        expect(index, contains('const model = FINAL_PREVIEW_MODEL;'));
         expect(
           index,
-          isNot(contains('"gemini-3.1-flash-image"')),
-          reason: 'the canonical preview must not fall back to a Flash model',
+          contains('../_shared/final_preview_model.ts'),
+          reason: 'both modes resolve through one shared lock',
         );
       }
     });
 
-    test('both read the same server-side configuration key', () {
+    test('neither can fall back to another model', () {
       for (final index in <String>[standardIndex, kitIndex]) {
-        expect(index, contains('Deno.env.get("GEMINI_IMAGE_MODEL")'));
+        expect(
+          index,
+          isNot(contains('"gemini-3-pro-image"')),
+          reason: 'an unset secret must not change the canonical model',
+        );
+        expect(index, isNot(contains('Deno.env.get("GEMINI_IMAGE_MODEL")')));
       }
+    });
+
+    test('both share one server-side model authority', () {
+      final lock = source('supabase/functions/_shared/final_preview_model.ts');
+      expect(
+        lock,
+        contains('export const FINAL_PREVIEW_MODEL = "gemini-3.1-flash-image"'),
+      );
+      // The environment is still read, but only to detect a deployment that
+      // disagrees with the lock — never to choose.
+      expect(lock, contains('Deno.env.get(CONFIGURED_MODEL_VARIABLE)'));
     });
 
     test('the model is never supplied by the client', () {

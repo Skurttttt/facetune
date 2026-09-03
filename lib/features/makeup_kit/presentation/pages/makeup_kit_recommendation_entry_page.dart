@@ -17,7 +17,11 @@ import '../controllers/makeup_kit_products_state.dart';
 import '../controllers/makeup_kit_result_actions_controller.dart';
 import '../controllers/makeup_kit_result_actions_state.dart';
 import '../widgets/kit_result_product_card.dart';
+import '../../../tutorial/data/providers/tutorial_providers.dart';
+import '../../../tutorial/domain/catalog/realized_look_filter.dart';
 import '../../../tutorial/domain/entities/canonical_preview_ref.dart';
+import '../../../tutorial/presentation/controllers/realized_look_controller.dart';
+import '../../domain/entities/kit_makeup_recommendation.dart';
 import '../../../tutorial/presentation/pages/tutorial_page.dart';
 import '../../../tutorial/presentation/utils/tutorial_labels.dart';
 
@@ -444,14 +448,9 @@ class _KitPreviewContent extends StatelessWidget {
           '${recommendation.selections.length} owned product${recommendation.selections.length == 1 ? '' : 's'} selected · ${recommendation.overallIntensity} intensity',
         ),
         const SizedBox(height: AppSpacing.md),
-        ...recommendation.selections.expand(
-          (selection) => [
-            KitResultProductCard(
-              selection: selection,
-              snapshot: recommendation.snapshotFor(selection.productId),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-          ],
+        _RealizedKitBreakdown(
+          preview: CanonicalPreviewRef.myMakeupKit(preview.id),
+          recommendation: recommendation,
         ),
         const SizedBox(height: AppSpacing.sm),
         // The kit-mode tutorial entry. The same screen and the same controller
@@ -499,6 +498,120 @@ class _KitPreviewContent extends StatelessWidget {
           label: const Text('Return home'),
         ),
         const SizedBox(height: AppSpacing.xl),
+      ],
+    );
+  }
+}
+
+/// The owned-product breakdown, filtered to what the canonical preview shows.
+///
+/// The kit-mode counterpart of the Standard breakdown, and the same join:
+/// presence comes from the accepted manifest, product data from the immutable
+/// validated snapshot the recommendation already carries. Live inventory is
+/// never consulted, so a product edited or deleted since the look was validated
+/// still presents as it was used.
+///
+/// A kit-preview mismatch is surfaced rather than filtered away. Dropping a
+/// visibly-present category that no owned product backs would present an
+/// unreproducible look as a valid one, which is the opposite of what the
+/// mismatch exists to prevent.
+class _RealizedKitBreakdown extends ConsumerStatefulWidget {
+  const _RealizedKitBreakdown({
+    required this.preview,
+    required this.recommendation,
+  });
+
+  final CanonicalPreviewRef preview;
+  final KitMakeupRecommendation recommendation;
+
+  @override
+  ConsumerState<_RealizedKitBreakdown> createState() =>
+      _RealizedKitBreakdownState();
+}
+
+class _RealizedKitBreakdownState extends ConsumerState<_RealizedKitBreakdown> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(realizedLookControllerProvider.notifier).ensure(widget.preview);
+    });
+  }
+
+  @override
+  void didUpdateWidget(_RealizedKitBreakdown oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.preview != widget.preview) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref
+            .read(realizedLookControllerProvider.notifier)
+            .ensure(widget.preview);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(realizedLookControllerProvider);
+    final isThisPreview = state.preview == widget.preview;
+    if (!isThisPreview ||
+        state.status == RealizedLookStatus.idle ||
+        state.status == RealizedLookStatus.ensuring) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
+        child: LoadingState(label: 'Checking what this look actually used…'),
+      );
+    }
+    if (state.status == RealizedLookStatus.kitPreviewMismatch) {
+      return const StatusState(
+        title: 'This look uses makeup that is not in your kit yet',
+        message:
+            'The preview shows a category no registered product can reproduce, '
+            'so the breakdown cannot be shown as owned products.',
+        icon: Icons.inventory_2_outlined,
+      );
+    }
+    if (state.status != RealizedLookStatus.ready) {
+      return StatusState(
+        title: 'Breakdown unavailable',
+        message:
+            state.message ??
+            'This look could not be checked against your final preview.',
+        icon: Icons.info_outline_rounded,
+        actionLabel: state.retryable ? 'Try again' : null,
+        onAction: state.retryable
+            ? () => ref.read(realizedLookControllerProvider.notifier).retry()
+            : null,
+      );
+    }
+    // One section per manifest category, however many owned products feed it.
+    // The kit card is titled by product name, so the canonical category heading
+    // is what tells the user which step a product belongs to — and it is what
+    // makes this list countable against the tutorial's steps.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final group in RealizedLookFilter.kitGroups(
+          recommendation: widget.recommendation,
+          included: state.includedCategories,
+        )) ...[
+          Text(
+            TutorialLabels.categoryName(group.category),
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          for (final entry in group.entries) ...[
+            KitResultProductCard(
+              selection: entry.selection,
+              snapshot: widget.recommendation.snapshotFor(
+                entry.selection.productId,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+        ],
       ],
     );
   }

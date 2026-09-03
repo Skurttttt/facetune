@@ -18,7 +18,10 @@ import '../../../results/presentation/utils/result_formatters.dart';
 import '../../../results/presentation/widgets/beauty_profile_card.dart';
 import '../../../results/presentation/widgets/before_after_comparison.dart';
 import '../../../results/presentation/widgets/makeup_breakdown.dart';
+import '../../../tutorial/data/providers/tutorial_providers.dart';
+import '../../../tutorial/domain/catalog/realized_look_filter.dart';
 import '../../../tutorial/domain/entities/canonical_preview_ref.dart';
+import '../../../tutorial/presentation/controllers/realized_look_controller.dart';
 import '../../../tutorial/presentation/pages/tutorial_page.dart';
 import '../../../tutorial/presentation/utils/tutorial_labels.dart';
 import '../../../results/presentation/widgets/recommended_palette.dart';
@@ -375,7 +378,10 @@ class _ResultDetails extends StatelessWidget {
             '${ResultFormatters.label(recommendation.overallIntensity)} intensity',
       ),
       const SizedBox(height: AppSpacing.sm),
-      MakeupBreakdown(recommendation: recommendation),
+      _RealizedBreakdown(
+        preview: CanonicalPreviewRef.standard(previewId),
+        recommendation: recommendation,
+      ),
       const SizedBox(height: AppSpacing.lg),
       // The tutorial entry point. Deliberately a secondary action beside the
       // existing ones rather than a redesign of this screen: opening it starts
@@ -405,4 +411,93 @@ class _ResultDetails extends StatelessWidget {
       ),
     ],
   );
+}
+
+/// The Makeup Breakdown, filtered to what the canonical preview actually shows.
+///
+/// A `ConsumerStatefulWidget` so the manifest is ensured from `initState`
+/// rather than from `build`. That is the same discipline the tutorial page
+/// follows and for the same reason: a build runs for reasons that have nothing
+/// to do with intent — a snackbar, a theme change, a parent rebuilding — and
+/// starting paid analysis from one would be a bug the user pays for.
+///
+/// Ensuring is idempotent and reuse-first, so whichever consumer arrives first
+/// for a given preview causes at most one analysis and every later arrival
+/// resolves from persistence. Opening the tutorial afterwards analyses nothing.
+class _RealizedBreakdown extends ConsumerStatefulWidget {
+  const _RealizedBreakdown({
+    required this.preview,
+    required this.recommendation,
+  });
+
+  final CanonicalPreviewRef preview;
+  final MakeupRecommendation recommendation;
+
+  @override
+  ConsumerState<_RealizedBreakdown> createState() => _RealizedBreakdownState();
+}
+
+class _RealizedBreakdownState extends ConsumerState<_RealizedBreakdown> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(realizedLookControllerProvider.notifier).ensure(widget.preview);
+    });
+  }
+
+  @override
+  void didUpdateWidget(_RealizedBreakdown oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Generating a variation replaces the canonical preview, and the previous
+    // preview's manifest is not authoritative for it.
+    if (oldWidget.preview != widget.preview) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref
+            .read(realizedLookControllerProvider.notifier)
+            .ensure(widget.preview);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(realizedLookControllerProvider);
+    // A result for a different preview is not evidence about this one.
+    final isThisPreview = state.preview == widget.preview;
+    if (!isThisPreview ||
+        state.status == RealizedLookStatus.idle ||
+        state.status == RealizedLookStatus.ensuring) {
+      // Deliberately a wait rather than the unfiltered recommendation. Showing
+      // nine categories and then correcting to eight would tell the user
+      // something false, and being briefly false does not make it harmless.
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
+        child: LoadingState(label: 'Checking what this look actually used…'),
+      );
+    }
+    if (state.status != RealizedLookStatus.ready) {
+      // Never falls back to the full recommendation: that is exactly the
+      // second, weaker category authority this phase removed.
+      return StatusState(
+        title: 'Breakdown unavailable',
+        message:
+            state.message ??
+            'This look could not be checked against your final preview.',
+        icon: Icons.info_outline_rounded,
+        actionLabel: state.retryable ? 'Try again' : null,
+        onAction: state.retryable
+            ? () => ref.read(realizedLookControllerProvider.notifier).retry()
+            : null,
+      );
+    }
+    return MakeupBreakdown(
+      groups: RealizedLookFilter.standardGroups(
+        recommendation: widget.recommendation,
+        included: state.includedCategories,
+      ),
+    );
+  }
 }

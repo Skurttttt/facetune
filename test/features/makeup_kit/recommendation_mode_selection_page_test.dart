@@ -26,6 +26,17 @@ import 'package:facetune/features/recommendation/data/models/makeup_recommendati
 import 'package:facetune/features/recommendation/data/providers/recommendation_providers.dart';
 import 'package:facetune/features/recommendation/domain/entities/makeup_recommendation.dart';
 import 'package:facetune/features/recommendation/domain/repositories/makeup_recommendation_repository.dart';
+import 'package:facetune/features/tutorial/data/providers/tutorial_providers.dart';
+import 'package:facetune/features/tutorial/domain/entities/canonical_preview_ref.dart';
+import 'package:facetune/features/tutorial/domain/entities/look_product_snapshot.dart';
+import 'package:facetune/features/tutorial/domain/entities/recommendation_source_mode.dart';
+import 'package:facetune/features/tutorial/domain/entities/tutorial_category.dart';
+import 'package:facetune/features/tutorial/domain/entities/tutorial_manifest.dart';
+import 'package:facetune/features/tutorial/domain/entities/tutorial_session.dart';
+import 'package:facetune/features/tutorial/domain/entities/tutorial_step.dart';
+import 'package:facetune/features/tutorial/domain/entities/validated_look_plan.dart';
+import 'package:facetune/features/tutorial/domain/repositories/tutorial_manifest_repository.dart';
+import 'package:facetune/features/tutorial/domain/repositories/tutorial_session_repository.dart';
 import 'package:facetune/features/analysis/presentation/controllers/face_analysis_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -64,6 +75,8 @@ _pump(
       ),
       makeupKitLookRepositoryProvider.overrideWithValue(kitLook),
       makeupRecommendationRepositoryProvider.overrideWithValue(recommendation),
+      tutorialManifestRepositoryProvider.overrideWithValue(_FakeManifests()),
+      tutorialSessionRepositoryProvider.overrideWithValue(_FakeSessions()),
     ],
   );
   addTearDown(container.dispose);
@@ -368,4 +381,98 @@ class _FakeKitLookRepository implements MakeupKitLookRepository {
       createdAt: DateTime.utc(2026, 8, 13),
     );
   }
+}
+
+/// An accepted manifest for the kit preview, so the breakdown can render.
+///
+/// V4-QA-6B gated the owned-product breakdown behind the accepted dynamic
+/// manifest, so a page with no manifest now truthfully shows nothing rather
+/// than listing products the final preview may not contain. These fakes supply
+/// the manifest this test's assertions depend on, without any AI.
+TutorialSession _kitSession() {
+  const preview = 'kit-preview-1';
+  return TutorialSession(
+    id: 'session-1',
+    userId: 'user-1',
+    analysisId: 'analysis-1',
+    canonicalPreviewId: preview,
+    lookPlan: ValidatedLookPlan(
+      id: 'kit-recommendation-1',
+      analysisId: 'analysis-1',
+      styleCode: 'soft_glam',
+      source: MyMakeupKitLookPlanSource(
+        kitRecommendationId: 'kit-recommendation-1',
+        productSnapshot: LookProductSnapshot(
+          items: <LookProductSnapshotItem>[
+            LookProductSnapshotItem.fromKitSnapshot(
+              const KitProductSnapshot(
+                productId: 'product-1',
+                category: 'lipstick',
+                productName: 'My lipstick',
+                colorHex: '#B86F72',
+                finish: 'matte',
+              ),
+            ),
+          ],
+        ),
+      ),
+      modelId: 'm',
+      promptVersion: 'v1',
+      createdAt: DateTime.utc(2026, 8, 13),
+    ),
+    status: TutorialSessionStatus.ready,
+    manifest: TutorialManifest(
+      canonicalPreviewId: preview,
+      sourceMode: RecommendationSourceMode.myMakeupKit,
+      status: TutorialManifestStatus.accepted,
+      items: <TutorialManifestItem>[
+        for (final category in TutorialCategory.values)
+          TutorialManifestItem(
+            category: category,
+            // Only Lips is visibly present, and it is owned.
+            presence: category == TutorialCategory.lips
+                ? TutorialCategoryPresence.present
+                : TutorialCategoryPresence.absent,
+            productBacked: category == TutorialCategory.lips,
+          ),
+      ],
+      modelId: 'm',
+      promptVersion: 'tutorial_manifest_v4_1',
+      schemaVersion: 'manifest_schema_v1',
+      createdAt: DateTime.utc(2026, 8, 13),
+    ),
+    steps: const <TutorialStep>[],
+    createdAt: DateTime.utc(2026, 8, 13),
+    updatedAt: DateTime.utc(2026, 8, 13),
+  );
+}
+
+class _FakeManifests implements TutorialManifestRepository {
+  int analyzeCalls = 0;
+
+  @override
+  Future<TutorialSession?> loadAccepted(CanonicalPreviewRef preview) async =>
+      _kitSession();
+
+  @override
+  Future<TutorialSession> analyze(CanonicalPreviewRef preview) async {
+    analyzeCalls++;
+    return _kitSession();
+  }
+}
+
+class _FakeSessions implements TutorialSessionRepository {
+  @override
+  Future<TutorialSession?> loadForCanonicalPreview(
+    CanonicalPreviewRef preview,
+  ) async => _kitSession();
+
+  @override
+  Future<TutorialSession> loadById(String sessionId) async => _kitSession();
+
+  @override
+  Future<TutorialSession> ensureSteps(TutorialSession value) async => value;
+
+  @override
+  Future<void> delete(String sessionId) async {}
 }

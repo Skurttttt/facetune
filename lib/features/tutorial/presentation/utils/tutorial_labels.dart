@@ -5,6 +5,7 @@ import '../../../makeup_kit/domain/entities/makeup_kit_finish.dart';
 import '../../domain/entities/tutorial_category.dart';
 import '../../domain/entities/tutorial_guide_type.dart';
 import '../../domain/entities/tutorial_shade_details.dart';
+import 'tutorial_redraw_reason.dart';
 
 /// Every user-facing string the tutorial shows.
 ///
@@ -34,6 +35,18 @@ abstract final class TutorialLabels {
   static const finish_ = 'Finish';
   static const retry = 'Try again';
   static const redraw = 'Draw this step again';
+  static const redrawExplanation =
+      'This creates a new guideline image for this step. The one you have now '
+      'is replaced.';
+  static const redrawReasonPrompt = 'What is wrong with it? (optional)';
+  // Says plainly that nothing is collected. The reasons help the user decide
+  // whether redrawing will help; they are not analytics, and the wording must
+  // never imply that they are.
+  static const redrawReasonPrivacy =
+      'Your answer stays on this device. It is not sent with the request and '
+      'does not change how the image is drawn.';
+  static const redrawConfirm = 'Draw it again';
+  static const cancel = 'Cancel';
   static const preparingTutorial = 'Working out which steps this look needs…';
   static const drawingStep = 'Drawing this step…';
   static const guidelineUnavailable = 'This step could not be drawn.';
@@ -57,6 +70,23 @@ abstract final class TutorialLabels {
       'From your kit ($count products)';
 
   static String stepProgress(int step, int total) => 'Step $step of $total';
+
+  /// How many times this step has already been drawn.
+  ///
+  /// Stated as a plain count rather than "n of 5". The ceiling lives in the
+  /// Edge Function with no Dart mirror, and a limit that silently drifted from
+  /// the server would mislead worse than saying nothing.
+  static String redrawAttemptsUsed(int attempts) => attempts == 1
+      ? 'You have drawn this step once already.'
+      : 'You have drawn this step $attempts times already.';
+
+  static String redrawReason(TutorialRedrawReason reason) => switch (reason) {
+    TutorialRedrawReason.placementWrong => 'Placement looks wrong',
+    TutorialRedrawReason.guideUnclear => 'Guide is unclear',
+    TutorialRedrawReason.faceChanged => 'Face changed',
+    TutorialRedrawReason.tooManyGuidelines => 'Too many guidelines',
+    TutorialRedrawReason.anotherVersion => 'Try another version',
+  };
 
   /// Screen-reader description of the guideline image.
   ///

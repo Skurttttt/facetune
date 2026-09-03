@@ -11,6 +11,7 @@ import '../data_sources/tutorial_remote_data_source.dart';
 import '../repositories/supabase_tutorial_repositories.dart';
 import '../repositories/supabase_tutorial_step_repository.dart';
 import '../repositories/unavailable_tutorial_repositories.dart';
+import '../../presentation/controllers/realized_look_controller.dart';
 import '../../presentation/controllers/tutorial_controller.dart';
 import '../../presentation/controllers/tutorial_state.dart';
 
@@ -62,6 +63,21 @@ final resolveTutorialManifestProvider = Provider<ResolveTutorialManifest>((
     sessionRepository: ref.watch(tutorialSessionRepositoryProvider),
   );
 });
+
+/// The realized look's category set, for whoever presents it outside the
+/// tutorial.
+///
+/// Shares [resolveTutorialManifestProvider] with the tutorial controller, so
+/// the Makeup Breakdown and the Step-by-Step tutorial cannot disagree about
+/// which categories a canonical preview contains — they are reading one
+/// accepted manifest through one use case. Starts idle for the same reason the
+/// tutorial controller does: watching it must never start paid analysis.
+final realizedLookControllerProvider =
+    StateNotifierProvider<RealizedLookController, RealizedLookState>((ref) {
+      return RealizedLookController(
+        resolveManifest: ref.watch(resolveTutorialManifestProvider),
+      );
+    });
 
 final tutorialStepRepositoryProvider = Provider<TutorialStepRepository?>((ref) {
   final remote = ref.watch(tutorialRemoteDataSourceProvider);

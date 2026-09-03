@@ -2,6 +2,10 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 import { consumeAiQuota, quotaMessage } from "../_shared/ai_quota.ts";
+import {
+  FINAL_PREVIEW_MODEL,
+  finalPreviewModelConfigurationError,
+} from "../_shared/final_preview_model.ts";
 import { isOwnedOriginalPath } from "../_shared/storage_ownership.ts";
 import { extensionFor } from "./image_validation.ts";
 import { requestGeminiPreview } from "./gemini_client.ts";
@@ -295,11 +299,14 @@ Deno.serve(async (request) => {
 
     const originalBytes = new Uint8Array(await originalBlob.arrayBuffer());
     // The canonical final preview is the visual authority the whole tutorial is
-    // grounded in, so it stays on the Pro image model. The fallback must never
-    // be a cheaper or lower-fidelity model: an unset secret would then silently
-    // downgrade every preview instead of failing visibly.
-    const model = Deno.env.get("GEMINI_IMAGE_MODEL")?.trim() ||
-      "gemini-3-pro-image";
+    // grounded in, so the model is locked in code rather than selected by
+    // environment. Checked before the request, so a misconfigured deployment
+    // fails without spending anything.
+    const configurationError = finalPreviewModelConfigurationError();
+    if (configurationError !== null) {
+      throw new FunctionFailure(500, "server_configuration", configurationError);
+    }
+    const model = FINAL_PREVIEW_MODEL;
     const generated = await timed("gemini", () =>
       requestGeminiPreview(
         requiredEnvironment("GEMINI_API_KEY"),

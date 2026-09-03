@@ -15,6 +15,7 @@ import '../widgets/tutorial_final_look_card.dart';
 import '../widgets/tutorial_guide_key.dart';
 import '../widgets/tutorial_image_viewer.dart';
 import '../widgets/tutorial_instructions_card.dart';
+import '../widgets/tutorial_redraw_sheet.dart';
 import '../widgets/tutorial_product_cards.dart';
 
 /// The guideline image's full-screen tap target.
@@ -231,12 +232,31 @@ class _TutorialBody extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         Center(
           child: TextButton(
-            onPressed: state.hasCurrentGuideline ? () => onRedraw() : null,
+            // Confirmed before it spends anything. This used to regenerate on
+            // a single tap, on a scrolling page, with no warning — which made
+            // an accidental brush against it cost a paid image.
+            onPressed: state.hasCurrentGuideline
+                ? () => _confirmRedraw(context)
+                : null,
             child: const Text(TutorialLabels.redraw),
           ),
         ),
       ],
     );
+  }
+
+  /// Asks before spending a generation, and only redraws if the user says yes.
+  ///
+  /// The sheet may offer a reason, but the reason never triggers anything — the
+  /// confirm button is the only thing that does, and dismissing costs nothing.
+  /// Every existing guard still applies afterwards: quota, the server's
+  /// attempt ceiling, and in-flight coalescing.
+  Future<void> _confirmRedraw(BuildContext context) async {
+    final confirmed = await TutorialRedrawSheet.confirm(
+      context,
+      attemptsUsed: state.currentStep?.generationAttempt ?? 0,
+    );
+    if (confirmed) await onRedraw();
   }
 
   /// The goal sentence for this step, or null when none is authoritative.
