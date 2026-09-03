@@ -151,43 +151,57 @@ class _BreakdownCard extends StatelessWidget {
 }
 
 /// The expandable body shared by both shapes above.
-class _BreakdownTile extends StatelessWidget {
+class _BreakdownTile extends StatefulWidget {
   const _BreakdownTile({required this.title, required this.item});
 
   final String title;
   final MakeupRecommendationItem item;
 
   @override
+  State<_BreakdownTile> createState() => _BreakdownTileState();
+}
+
+class _BreakdownTileState extends State<_BreakdownTile> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return ExpansionTile(
-      tilePadding: EdgeInsets.zero,
-      childrenPadding: const EdgeInsets.only(bottom: AppSpacing.xs),
-      shape: const Border(),
-      collapsedShape: const Border(),
-      leading: AppColorSwatch(
-        color: _swatchColour(item.hex),
-        semanticLabel: item.hex == null
-            ? null
-            : 'Shade ${item.name}, hex code ${item.hex}',
-      ),
-      title: Text(title, style: theme.textTheme.titleSmall),
-      subtitle: Text(
-        // The recommendation's own metadata, verbatim and unreordered.
-        '${item.name} · ${item.intensity} · ${item.finish}',
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: AppColors.muted(context),
+    return Semantics(
+      container: true,
+      button: true,
+      expanded: _expanded,
+      label: '${widget.title} makeup details',
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(bottom: AppSpacing.xs),
+        shape: const Border(),
+        collapsedShape: const Border(),
+        onExpansionChanged: (expanded) => setState(() => _expanded = expanded),
+        leading: AppColorSwatch(
+          color: _swatchColour(widget.item.hex),
+          semanticLabel: widget.item.hex == null
+              ? null
+              : 'Shade ${widget.item.name}, hex code ${widget.item.hex}',
         ),
-      ),
-      children: [
-        DetailRow(label: 'Placement', value: item.placement),
-        DetailRow(label: 'Technique', value: item.technique),
-        DetailRow(
-          label: 'Why it works',
-          value: item.reasoning,
-          padding: EdgeInsets.zero,
+        title: Text(widget.title, style: theme.textTheme.titleSmall),
+        subtitle: Text(
+          // The recommendation's own metadata, verbatim and unreordered.
+          '${widget.item.name} · ${widget.item.intensity} · ${widget.item.finish}',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: AppColors.muted(context),
+          ),
         ),
-      ],
+        children: [
+          DetailRow(label: 'Placement', value: widget.item.placement),
+          DetailRow(label: 'Technique', value: widget.item.technique),
+          DetailRow(
+            label: 'Why it works',
+            value: widget.item.reasoning,
+            padding: EdgeInsets.zero,
+          ),
+        ],
+      ),
     );
   }
 

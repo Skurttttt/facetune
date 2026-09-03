@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../../../shared/widgets/surfaces/app_card.dart';
-import '../../../../theme/app_semantics.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../../analysis/domain/entities/face_analysis.dart';
 import '../utils/result_formatters.dart';
@@ -50,62 +49,95 @@ class BeautyProfileCard extends StatelessWidget {
         confidence: analysis.confidence.eyeColor,
       ),
     ];
-    final theme = Theme.of(context);
-    // Was the fixed `AppColors.petal` with an `onAccent` foreground — readable,
-    // but a permanently light chip on a dark card. The info role is the same
-    // pink in light mode and a dark tint in dark mode, so the chips now belong
-    // to the card they sit on.
-    final info = AppTone.info.resolve(context);
     return AppCard(
-      child: Wrap(
-        spacing: AppSpacing.sm,
-        runSpacing: AppSpacing.sm,
-        children: attributes
-            .map(
-              (attribute) => Semantics(
-                container: true,
-                excludeSemantics: true,
-                label:
-                    '${attribute.label}, ${attribute.value}, ${(attribute.confidence * 100).round()} percent confidence',
-                child: Container(
-                  constraints: const BoxConstraints(minWidth: 130),
-                  padding: const EdgeInsets.all(AppSpacing.sm),
-                  decoration: BoxDecoration(
-                    color: info.surface,
-                    borderRadius: BorderRadius.circular(AppRadii.md),
-                    border: Border.all(
-                      color: info.border,
-                      width: AppBorders.hairline,
-                    ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.xs,
+      ),
+      child: Column(
+        children: [
+          for (var index = 0; index < attributes.length; index++) ...[
+            _ProfileAttributeRow(attribute: attributes[index]),
+            if (index != attributes.length - 1) const Divider(height: 1),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileAttributeRow extends StatelessWidget {
+  const _ProfileAttributeRow({required this.attribute});
+
+  final ({String label, String value, double confidence}) attribute;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final confidence = '${(attribute.confidence * 100).round()}%';
+    return Semantics(
+      container: true,
+      excludeSemantics: true,
+      label: '${attribute.label}, ${attribute.value}, $confidence confidence',
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final stackValue =
+              constraints.maxWidth < 300 ||
+              MediaQuery.textScalerOf(context).scale(14) > 19;
+          final valueAndConfidence = Row(
+            mainAxisSize: stackValue ? MainAxisSize.max : MainAxisSize.min,
+            children: [
+              if (stackValue)
+                Expanded(
+                  child: Text(
+                    attribute.value,
+                    style: theme.textTheme.titleSmall,
                   ),
-                  child: Column(
+                )
+              else
+                Text(attribute.value, style: theme.textTheme.titleSmall),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                confidence,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: AppColors.muted(context),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          );
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+            child: stackValue
+                ? Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
                         attribute.label,
                         style: theme.textTheme.labelMedium?.copyWith(
-                          color: info.accent,
+                          color: AppColors.muted(context),
                         ),
                       ),
-                      Text(
-                        attribute.value,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          color: info.onSurface,
+                      const SizedBox(height: AppSpacing.xxs),
+                      valueAndConfidence,
+                    ],
+                  )
+                : Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          attribute.label,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: AppColors.muted(context),
+                          ),
                         ),
                       ),
-                      Text(
-                        '${(attribute.confidence * 100).round()}% confidence',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: info.onSurface.withValues(alpha: .72),
-                        ),
-                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      valueAndConfidence,
                     ],
                   ),
-                ),
-              ),
-            )
-            .toList(),
+          );
+        },
       ),
     );
   }

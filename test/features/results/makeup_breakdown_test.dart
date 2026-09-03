@@ -1,3 +1,5 @@
+import 'dart:ui' show SemanticsFlag;
+
 import 'package:facetune/features/recommendation/domain/entities/makeup_recommendation.dart';
 import 'package:facetune/features/results/presentation/widgets/makeup_breakdown.dart';
 import 'package:facetune/features/tutorial/domain/catalog/realized_look_filter.dart';
@@ -179,6 +181,29 @@ void main() {
       }
     });
 
+    for (final categoryCount in <int>[6, 8, 9]) {
+      testWidgets('renders a dynamic $categoryCount-category result', (
+        tester,
+      ) async {
+        final groups = <RealizedCategoryGroup<RealizedStandardEntry>>[
+          for (final category in TutorialCategory.values.take(categoryCount))
+            _group(category, [
+              ('item-${category.code}', 'Shade for ${category.code}'),
+            ]),
+        ];
+
+        await tester.pumpWidget(_host(MakeupBreakdown(groups: groups)));
+
+        expect(find.byType(ExpansionTile), findsNWidgets(categoryCount));
+        for (final group in groups) {
+          expect(
+            find.text(TutorialLabels.categoryName(group.category)),
+            findsOneWidget,
+          );
+        }
+      });
+    }
+
     testWidgets('an empty look renders nothing rather than a placeholder', (
       tester,
     ) async {
@@ -216,11 +241,22 @@ void main() {
         ),
       );
 
+      final expansion = find.bySemanticsLabel('Blush makeup details');
+      expect(expansion, findsOneWidget);
+      expect(
+        tester.getSemantics(expansion).hasFlag(SemanticsFlag.isExpanded),
+        isFalse,
+      );
+
       await tester.tap(
         find.text(TutorialLabels.categoryName(TutorialCategory.blush)),
       );
       await tester.pumpAndSettle();
 
+      expect(
+        tester.getSemantics(expansion).hasFlag(SemanticsFlag.isExpanded),
+        isTrue,
+      );
       expect(find.textContaining('Warm Rose placement'), findsOneWidget);
       expect(find.textContaining('Warm Rose technique'), findsOneWidget);
       expect(find.textContaining('Why Warm Rose works'), findsOneWidget);

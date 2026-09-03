@@ -276,52 +276,69 @@ class _ResultContent extends StatelessWidget {
     final details = _ResultDetails(
       analysis: analysis,
       recommendation: recommendation,
-      styleName: styleName,
       actionState: actionState,
       previewId: preview.id,
-      generatedImageUrl: preview.generatedImageUrl,
-      onSave: onSave,
       onFavorite: onFavorite,
       onShare: onShare,
       onGenerateAnother: onGenerateAnother,
       onReturnHome: onReturnHome,
     );
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth >= 900) {
-          return ListView(
-            children: [
-              _ResultHeader(
-                styleName: styleName,
-                generationNumber: preview.generationNumber,
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    final header = _ResultHeader(
+      styleName: styleName,
+      intensity: recommendation.overallIntensity,
+      undertone: analysis.attributes.undertone.name,
+      generationNumber: preview.generationNumber,
+    );
+    return Column(
+      children: [
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth >= 900) {
+                return ListView(
+                  key: const ValueKey('result-content-scroll'),
+                  children: [
+                    header,
+                    const SizedBox(height: AppSpacing.lg),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(flex: 6, child: comparison),
+                        const SizedBox(width: AppSpacing.xl),
+                        Expanded(flex: 5, child: details),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                  ],
+                );
+              }
+              return ListView(
+                key: const ValueKey('result-content-scroll'),
                 children: [
-                  Expanded(child: comparison),
-                  const SizedBox(width: AppSpacing.xl),
-                  Expanded(child: details),
+                  header,
+                  const SizedBox(height: AppSpacing.md),
+                  comparison,
+                  const SizedBox(height: AppSpacing.md),
+                  details,
+                  const SizedBox(height: AppSpacing.lg),
                 ],
-              ),
-              const SizedBox(height: AppSpacing.xl),
-            ],
-          );
-        }
-        return ListView(
-          children: [
-            _ResultHeader(
-              styleName: styleName,
-              generationNumber: preview.generationNumber,
+              );
+            },
+          ),
+        ),
+        _PrimaryResultActions(
+          isSaved: actionState.isSaved(preview.id),
+          isMutating: actionState.isMutating,
+          onShowTutorial: () => context.push(
+            AppConstants.tutorialRoute,
+            extra: TutorialPageArgs(
+              preview: CanonicalPreviewRef.standard(preview.id),
+              finalPreviewUrl: preview.generatedImageUrl,
             ),
-            const SizedBox(height: AppSpacing.lg),
-            comparison,
-            const SizedBox(height: AppSpacing.lg),
-            details,
-            const SizedBox(height: AppSpacing.xl),
-          ],
-        );
-      },
+          ),
+          onSave: onSave,
+        ),
+      ],
     );
   }
 }
@@ -329,10 +346,14 @@ class _ResultContent extends StatelessWidget {
 class _ResultHeader extends StatelessWidget {
   const _ResultHeader({
     required this.styleName,
+    required this.intensity,
+    required this.undertone,
     required this.generationNumber,
   });
 
   final String styleName;
+  final String intensity;
+  final String undertone;
   final int generationNumber;
 
   @override
@@ -345,7 +366,7 @@ class _ResultHeader extends StatelessWidget {
       ),
       const SizedBox(height: AppSpacing.xs),
       Text(
-        '$styleName · Variation $generationNumber',
+        '$styleName · ${ResultFormatters.label(intensity)} intensity',
         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
           color: AppColors.rose,
           fontWeight: FontWeight.w700,
@@ -353,7 +374,14 @@ class _ResultHeader extends StatelessWidget {
       ),
       const SizedBox(height: AppSpacing.xs),
       Text(
-        'Drag across the image to compare. AI identity preservation is a goal, so regenerate if the result does not feel like you.',
+        '${ResultFormatters.label(undertone)} undertone · Variation $generationNumber',
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: AppColors.muted(context)),
+      ),
+      const SizedBox(height: AppSpacing.xs),
+      Text(
+        'Drag across the image to compare. Regenerate if the result does not feel like you.',
         style: Theme.of(
           context,
         ).textTheme.bodyMedium?.copyWith(color: AppColors.muted(context)),
@@ -362,15 +390,14 @@ class _ResultHeader extends StatelessWidget {
   );
 }
 
-class _ResultDetails extends StatelessWidget {
+enum _ResultSection { overview, makeup, profile }
+
+class _ResultDetails extends StatefulWidget {
   const _ResultDetails({
     required this.analysis,
     required this.recommendation,
-    required this.styleName,
     required this.actionState,
     required this.previewId,
-    required this.generatedImageUrl,
-    required this.onSave,
     required this.onFavorite,
     required this.onShare,
     required this.onGenerateAnother,
@@ -379,15 +406,97 @@ class _ResultDetails extends StatelessWidget {
 
   final FaceAnalysis analysis;
   final MakeupRecommendation recommendation;
-  final String styleName;
   final ResultActionsState actionState;
   final String previewId;
+  final VoidCallback onFavorite;
+  final VoidCallback onShare;
+  final VoidCallback onGenerateAnother;
+  final VoidCallback onReturnHome;
 
-  /// Reused as the tutorial's closing image, so the end of the tutorial shows
-  /// the look the user already has rather than generating it again.
-  final String generatedImageUrl;
+  @override
+  State<_ResultDetails> createState() => _ResultDetailsState();
+}
 
-  final VoidCallback onSave;
+class _ResultDetailsState extends State<_ResultDetails> {
+  _ResultSection _section = _ResultSection.overview;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    key: const ValueKey('result-progressive-details'),
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      SizedBox(
+        width: double.infinity,
+        child: SegmentedButton<_ResultSection>(
+          key: const ValueKey('result-section-tabs'),
+          showSelectedIcon: false,
+          segments: [
+            for (final section in _ResultSection.values)
+              ButtonSegment<_ResultSection>(
+                value: section,
+                label: Semantics(
+                  container: true,
+                  excludeSemantics: true,
+                  selected: _section == section,
+                  label: '${_sectionLabel(section)} tab',
+                  child: Text(_sectionLabel(section)),
+                ),
+              ),
+          ],
+          selected: <_ResultSection>{_section},
+          onSelectionChanged: (selection) {
+            if (selection.isEmpty) return;
+            setState(() => _section = selection.single);
+          },
+        ),
+      ),
+      const SizedBox(height: AppSpacing.md),
+      if (_section == _ResultSection.overview)
+        _OverviewSection(
+          actionState: widget.actionState,
+          previewId: widget.previewId,
+          recommendation: widget.recommendation,
+          onFavorite: widget.onFavorite,
+          onShare: widget.onShare,
+          onGenerateAnother: widget.onGenerateAnother,
+          onReturnHome: widget.onReturnHome,
+        ),
+      // The realized look stays mounted even while another section is shown.
+      // Its initState is the only presentation lifecycle point allowed to
+      // ensure the accepted manifest, so tab switching can never restart it.
+      Offstage(
+        offstage: _section != _ResultSection.makeup,
+        child: _MakeupSection(
+          previewId: widget.previewId,
+          recommendation: widget.recommendation,
+        ),
+      ),
+      if (_section == _ResultSection.profile)
+        _ProfileSection(analysis: widget.analysis),
+    ],
+  );
+
+  static String _sectionLabel(_ResultSection section) => switch (section) {
+    _ResultSection.overview => 'Overview',
+    _ResultSection.makeup => 'Makeup',
+    _ResultSection.profile => 'Profile',
+  };
+}
+
+class _OverviewSection extends StatelessWidget {
+  const _OverviewSection({
+    required this.actionState,
+    required this.previewId,
+    required this.recommendation,
+    required this.onFavorite,
+    required this.onShare,
+    required this.onGenerateAnother,
+    required this.onReturnHome,
+  });
+
+  final ResultActionsState actionState;
+  final String previewId;
+  final MakeupRecommendation recommendation;
   final VoidCallback onFavorite;
   final VoidCallback onShare;
   final VoidCallback onGenerateAnother;
@@ -395,16 +504,42 @@ class _ResultDetails extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Column(
+    key: const ValueKey('result-section-overview'),
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      const SectionHeader('Detected beauty profile'),
-      const SizedBox(height: AppSpacing.sm),
-      BeautyProfileCard(analysis: analysis),
-      const SizedBox(height: AppSpacing.lg),
       const SectionHeader('Recommended palette'),
       const SizedBox(height: AppSpacing.sm),
       RecommendedPalette(recommendation: recommendation),
-      const SizedBox(height: AppSpacing.lg),
+      const SizedBox(height: AppSpacing.md),
+      ResultActions(
+        includeSave: false,
+        isSaved: actionState.isSaved(previewId),
+        isFavorite: actionState.isFavorite(previewId),
+        isSharing: actionState.isSharing,
+        isMutating: actionState.isMutating,
+        onSave: _unusedSave,
+        onFavorite: onFavorite,
+        onShare: onShare,
+        onGenerateAnother: onGenerateAnother,
+        onReturnHome: onReturnHome,
+      ),
+    ],
+  );
+
+  static void _unusedSave() {}
+}
+
+class _MakeupSection extends StatelessWidget {
+  const _MakeupSection({required this.previewId, required this.recommendation});
+
+  final String previewId;
+  final MakeupRecommendation recommendation;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    key: const ValueKey('result-section-makeup'),
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
       SectionHeader(
         'Makeup breakdown',
         action:
@@ -415,35 +550,99 @@ class _ResultDetails extends StatelessWidget {
         preview: CanonicalPreviewRef.standard(previewId),
         recommendation: recommendation,
       ),
-      const SizedBox(height: AppSpacing.lg),
-      // The tutorial entry point. Deliberately a secondary action beside the
-      // existing ones rather than a redesign of this screen: opening it starts
-      // no AI work, and the tutorial decides for itself what it already has.
-      SecondaryButton(
-        label: TutorialLabels.startTutorial,
-        icon: Icons.auto_stories_outlined,
-        onPressed: () => context.push(
-          AppConstants.tutorialRoute,
-          extra: TutorialPageArgs(
-            preview: CanonicalPreviewRef.standard(previewId),
-            finalPreviewUrl: generatedImageUrl,
+    ],
+  );
+}
+
+class _ProfileSection extends StatelessWidget {
+  const _ProfileSection({required this.analysis});
+
+  final FaceAnalysis analysis;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    key: const ValueKey('result-section-profile'),
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const SectionHeader('Detected beauty profile'),
+      const SizedBox(height: AppSpacing.sm),
+      BeautyProfileCard(analysis: analysis),
+    ],
+  );
+}
+
+class _PrimaryResultActions extends StatelessWidget {
+  const _PrimaryResultActions({
+    required this.isSaved,
+    required this.isMutating,
+    required this.onShowTutorial,
+    required this.onSave,
+  });
+
+  final bool isSaved;
+  final bool isMutating;
+  final VoidCallback onShowTutorial;
+  final VoidCallback onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.scaffoldBackgroundColor,
+      child: SafeArea(
+        top: false,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.only(top: AppSpacing.sm),
+          decoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(
+                color: theme.dividerTheme.color ?? theme.dividerColor,
+              ),
+            ),
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final stackActions =
+                  constraints.maxWidth < 420 ||
+                  MediaQuery.textScalerOf(context).scale(14) > 19;
+              final tutorial = PrimaryButton(
+                key: const ValueKey('result-show-tutorial'),
+                label: TutorialLabels.startTutorial,
+                icon: Icons.auto_stories_outlined,
+                onPressed: onShowTutorial,
+              );
+              final save = SecondaryButton(
+                key: const ValueKey('result-save-look'),
+                label: isSaved ? 'Saved' : 'Save look',
+                icon: isSaved
+                    ? Icons.bookmark_rounded
+                    : Icons.bookmark_border_rounded,
+                onPressed: isMutating ? null : onSave,
+              );
+              if (stackActions) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    tutorial,
+                    const SizedBox(height: AppSpacing.xs),
+                    save,
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: tutorial),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(child: save),
+                ],
+              );
+            },
           ),
         ),
       ),
-      const SizedBox(height: AppSpacing.sm),
-      ResultActions(
-        isSaved: actionState.isSaved(previewId),
-        isFavorite: actionState.isFavorite(previewId),
-        isSharing: actionState.isSharing,
-        isMutating: actionState.isMutating,
-        onSave: onSave,
-        onFavorite: onFavorite,
-        onShare: onShare,
-        onGenerateAnother: onGenerateAnother,
-        onReturnHome: onReturnHome,
-      ),
-    ],
-  );
+    );
+  }
 }
 
 /// The Makeup Breakdown, filtered to what the canonical preview actually shows.
