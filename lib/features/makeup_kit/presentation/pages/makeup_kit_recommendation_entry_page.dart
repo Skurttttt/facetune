@@ -80,7 +80,7 @@ class MakeupKitRecommendationEntryPage extends ConsumerWidget {
     );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('My Makeup Kit look')),
+      appBar: const FaceTuneTopBar(title: 'My Makeup Kit look'),
       body: SafeArea(
         child: PageFrame(
           child: resultReady

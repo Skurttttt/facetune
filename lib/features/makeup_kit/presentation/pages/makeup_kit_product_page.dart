@@ -47,7 +47,7 @@ class MakeupKitProductPage extends ConsumerWidget {
     });
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Product Details')),
+      appBar: const FaceTuneTopBar(title: 'Product Details'),
       body: SafeArea(
         child: PageFrame(
           child: product == null

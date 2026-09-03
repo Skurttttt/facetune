@@ -25,5 +25,8 @@ export 'media/beauty_image.dart';
 export 'media/color_swatch.dart';
 export 'media/image_states.dart';
 export 'media/private_image.dart';
+export 'navigation/facetune_back_button.dart';
+export 'navigation/facetune_nav_metrics.dart';
+export 'navigation/facetune_top_bar.dart';
 export 'overlays/app_overlays.dart';
 export 'surfaces/app_card.dart';

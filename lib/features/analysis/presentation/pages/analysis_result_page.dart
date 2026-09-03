@@ -16,7 +16,7 @@ class AnalysisResultPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final analysis = ref.watch(faceAnalysisControllerProvider).analysis;
     return Scaffold(
-      appBar: AppBar(title: const Text('Your beauty profile')),
+      appBar: const FaceTuneTopBar(title: 'Your beauty profile'),
       body: SafeArea(
         child: PageFrame(
           child: analysis == null

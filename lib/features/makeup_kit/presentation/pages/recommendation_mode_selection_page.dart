@@ -26,7 +26,7 @@ class RecommendationModeSelectionPage extends ConsumerWidget {
 
     if (analysis == null || style == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Choose recommendation mode')),
+        appBar: const FaceTuneTopBar(title: 'Choose recommendation mode'),
         body: SafeArea(
           child: PageFrame(
             child: Center(
@@ -51,7 +51,7 @@ class RecommendationModeSelectionPage extends ConsumerWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Choose recommendation mode')),
+      appBar: const FaceTuneTopBar(title: 'Choose recommendation mode'),
       body: SafeArea(
         child: PageFrame(
           child: ListView(

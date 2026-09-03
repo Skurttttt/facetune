@@ -10,6 +10,7 @@ import '../../../analysis/presentation/controllers/face_analysis_controller.dart
 import '../../../analysis/domain/entities/face_analysis.dart';
 import '../../../authentication/presentation/controllers/auth_controller.dart';
 import '../../../history/presentation/controllers/history_controller.dart';
+import '../../../makeup_styles/domain/entities/makeup_style.dart';
 import '../../../makeup_styles/presentation/controllers/makeup_style_selection_controller.dart';
 import '../../../recommendation/presentation/controllers/makeup_recommendation_controller.dart';
 import '../../../recommendation/domain/entities/makeup_recommendation.dart';
@@ -27,6 +28,7 @@ import '../../../tutorial/presentation/pages/tutorial_page.dart';
 import '../../../tutorial/presentation/utils/tutorial_labels.dart';
 import '../../../results/presentation/widgets/recommended_palette.dart';
 import '../../../results/presentation/widgets/result_actions.dart';
+import '../../domain/entities/generated_preview.dart';
 import '../../domain/errors/preview_failure.dart';
 import '../controllers/makeup_preview_controller.dart';
 import '../controllers/makeup_preview_state.dart';
@@ -91,8 +93,51 @@ class PreviewResultPage extends ConsumerWidget {
       ref.read(resultActionsControllerProvider.notifier).clearFeedback();
     });
 
+    final result = _ResolvedResult.from(
+      analysis: analysis,
+      recommendation: recommendation,
+      style: selectedStyle,
+      preview: preview,
+    );
+    final hasResult =
+        previewState.status == MakeupPreviewStatus.success && result != null;
+
+    // The one Home behaviour on this screen. It was a quiet text action at the
+    // bottom of the overview list; it is the top-right utility now. Same
+    // invalidate, same destination, same order — only the control moved.
+    void returnHome() {
+      ref.invalidate(historyControllerProvider);
+      context.go(AppConstants.homeRoute);
+    }
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Your FaceTune result')),
+      // No page title. The look's own name is the title, and it is the first
+      // thing under this bar — repeating "Your FaceTune result" above it spent
+      // the most valuable line on the screen saying what the screen already is.
+      //
+      // Back on the left goes to the previous route; Home on the right goes to
+      // the app's home. Two different journeys, so two different controls.
+      appBar: FaceTuneTopBar(
+        actions: hasResult
+            ? <Widget>[_HomeAction(onPressed: returnHome)]
+            : null,
+      ),
+      // The committing actions own real layout space in the Scaffold rather
+      // than floating over the content. This is what keeps the tabs reachable:
+      // the body is measured against what is left after the bar, so nothing
+      // can ever be scrolled to a position the bar is covering.
+      bottomNavigationBar: hasResult
+          ? _PrimaryResultActions(
+              key: const ValueKey('result-primary-actions'),
+              onShowTutorial: () => context.push(
+                AppConstants.tutorialRoute,
+                extra: TutorialPageArgs(
+                  preview: CanonicalPreviewRef.standard(result.preview.id),
+                  finalPreviewUrl: result.preview.generatedImageUrl,
+                ),
+              ),
+            )
+          : null,
       body: SafeArea(
         child: PageFrame(
           // Wider than the 720 default so the side-by-side branch below can
@@ -102,6 +147,17 @@ class PreviewResultPage extends ConsumerWidget {
           // the extra width, because it is the only one with two things worth
           // reading at once.
           maxWidth: 1000,
+          // `PageFrame`'s generous bottom tail exists, by its own account, so a
+          // screen's last element clears the navigation bar and the gesture
+          // area. When the action bar is present it already does that job, and
+          // the tail becomes a second reservation for the same thing — 32
+          // points of dead scroll stacked under the list's own trailing gap.
+          //
+          // Dropped only while the bar is there. The loading and error states
+          // below render with no bar, and still need the tail.
+          padding: hasResult
+              ? PageFrame.defaultPadding.copyWith(bottom: 0)
+              : PageFrame.defaultPadding,
           child: switch (previewState.status) {
             MakeupPreviewStatus.generating => const Center(
               child: LoadingState(
@@ -157,41 +213,19 @@ class PreviewResultPage extends ConsumerWidget {
                 ],
               ),
             ),
-            MakeupPreviewStatus.success
-                when analysis != null &&
-                    recommendation != null &&
-                    selectedStyle != null &&
-                    preview != null &&
-                    analysis.id == recommendation.analysisId &&
-                    analysis.id == preview.analysisId &&
-                    recommendation.id == preview.recommendationId &&
-                    selectedStyle.code == recommendation.styleCode =>
-              _ResultContent(
-                previewState: previewState,
-                analysis: analysis,
-                recommendation: recommendation,
-                styleName: selectedStyle.name,
-                actionState: actionState,
-                onSave: () => ref
-                    .read(resultActionsControllerProvider.notifier)
-                    .toggleSaved(previewState.preview!),
-                onFavorite: () => ref
-                    .read(resultActionsControllerProvider.notifier)
-                    .toggleFavorite(previewState.preview!),
-                onShare: () => ref
-                    .read(resultActionsControllerProvider.notifier)
-                    .share(
-                      preview: previewState.preview!,
-                      styleName: selectedStyle.name,
-                    ),
-                onGenerateAnother: () => ref
-                    .read(makeupPreviewControllerProvider.notifier)
-                    .generateVariation(),
-                onReturnHome: () {
-                  ref.invalidate(historyControllerProvider);
-                  context.go(AppConstants.homeRoute);
-                },
-              ),
+            MakeupPreviewStatus.success when result != null => _ResultContent(
+              result: result,
+              actionState: actionState,
+              onFavorite: () => ref
+                  .read(resultActionsControllerProvider.notifier)
+                  .toggleFavorite(result.preview),
+              onShare: () => ref
+                  .read(resultActionsControllerProvider.notifier)
+                  .share(preview: result.preview, styleName: result.style.name),
+              onGenerateAnother: () => ref
+                  .read(makeupPreviewControllerProvider.notifier)
+                  .generateVariation(),
+            ),
             MakeupPreviewStatus.success => _ScrollableStateRegion(
               // A broken referential chain between analysis, plan and preview
               // is a failure, not an absence — the guard above rejected a
@@ -223,6 +257,85 @@ class PreviewResultPage extends ConsumerWidget {
   }
 }
 
+/// A result whose four parts actually refer to each other.
+///
+/// The same guard that used to sit in the `switch` above, and the same four
+/// identity checks in the same order — moved into a value because two places
+/// now need the answer rather than one. The top bar's Save utility is the
+/// second: it acts on a preview, and it must not offer to act on one whose
+/// links to the analysis and the plan do not hold.
+class _ResolvedResult {
+  const _ResolvedResult({
+    required this.analysis,
+    required this.recommendation,
+    required this.style,
+    required this.preview,
+  });
+
+  final FaceAnalysis analysis;
+  final MakeupRecommendation recommendation;
+  final MakeupStyle style;
+  final GeneratedPreview preview;
+
+  /// Null when anything is missing or the chain is broken — which the page
+  /// treats as a failure, not an absence, exactly as it did before.
+  static _ResolvedResult? from({
+    required FaceAnalysis? analysis,
+    required MakeupRecommendation? recommendation,
+    required MakeupStyle? style,
+    required GeneratedPreview? preview,
+  }) {
+    if (analysis == null ||
+        recommendation == null ||
+        style == null ||
+        preview == null) {
+      return null;
+    }
+    if (analysis.id != recommendation.analysisId ||
+        analysis.id != preview.analysisId ||
+        recommendation.id != preview.recommendationId ||
+        style.code != recommendation.styleCode) {
+      return null;
+    }
+    return _ResolvedResult(
+      analysis: analysis,
+      recommendation: recommendation,
+      style: style,
+      preview: preview,
+    );
+  }
+}
+
+/// Home, as a top-bar utility.
+///
+/// The screen's two navigation escapes now sit at the two top corners, which is
+/// where a user looks for them: Back on the left for the previous route, Home
+/// on the right for the app's home. Neither does the other's job.
+///
+/// Presentation only. [onPressed] is the same closure the "Return home" text
+/// action at the bottom of the overview list used to call — the same history
+/// invalidation followed by the same `go` to the same route.
+class _HomeAction extends StatelessWidget {
+  const _HomeAction({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => MergeSemantics(
+    child: Semantics(
+      button: true,
+      // Stated rather than left to a tooltip: a house glyph is conventional,
+      // but conventional is not the same as announced.
+      label: 'Home',
+      child: IconButton(
+        key: const ValueKey('result-home'),
+        onPressed: onPressed,
+        icon: const Icon(Icons.home_outlined),
+      ),
+    ),
+  );
+}
+
 /// Keeps compact page states centred while allowing them to scroll when large
 /// text makes them taller than the viewport.
 class _ScrollableStateRegion extends StatelessWidget {
@@ -243,145 +356,120 @@ class _ScrollableStateRegion extends StatelessWidget {
 
 class _ResultContent extends StatelessWidget {
   const _ResultContent({
-    required this.previewState,
-    required this.analysis,
-    required this.recommendation,
-    required this.styleName,
+    required this.result,
     required this.actionState,
-    required this.onSave,
     required this.onFavorite,
     required this.onShare,
     required this.onGenerateAnother,
-    required this.onReturnHome,
   });
 
-  final MakeupPreviewState previewState;
-  final FaceAnalysis analysis;
-  final MakeupRecommendation recommendation;
-  final String styleName;
+  final _ResolvedResult result;
   final ResultActionsState actionState;
-  final VoidCallback onSave;
   final VoidCallback onFavorite;
   final VoidCallback onShare;
   final VoidCallback onGenerateAnother;
-  final VoidCallback onReturnHome;
 
   @override
   Widget build(BuildContext context) {
-    final preview = previewState.preview!;
+    final preview = result.preview;
+    final recommendation = result.recommendation;
     final comparison = BeforeAfterComparison(
       originalImageUrl: preview.originalImageUrl,
       generatedImageUrl: preview.generatedImageUrl,
     );
     final details = _ResultDetails(
-      analysis: analysis,
+      analysis: result.analysis,
       recommendation: recommendation,
       actionState: actionState,
       previewId: preview.id,
       onFavorite: onFavorite,
       onShare: onShare,
       onGenerateAnother: onGenerateAnother,
-      onReturnHome: onReturnHome,
     );
     final header = _ResultHeader(
-      styleName: styleName,
+      styleName: result.style.name,
       intensity: recommendation.overallIntensity,
-      undertone: analysis.attributes.undertone.name,
-      generationNumber: preview.generationNumber,
+      undertone: result.analysis.attributes.undertone.name,
     );
-    return Column(
-      children: [
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              if (constraints.maxWidth >= 900) {
-                return ListView(
-                  key: const ValueKey('result-content-scroll'),
-                  children: [
-                    header,
-                    const SizedBox(height: AppSpacing.lg),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(flex: 6, child: comparison),
-                        const SizedBox(width: AppSpacing.xl),
-                        Expanded(flex: 5, child: details),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                  ],
-                );
-              }
-              return ListView(
-                key: const ValueKey('result-content-scroll'),
+    // Just the scroll view now. The committing actions moved out to the
+    // Scaffold's own bottom slot, so this no longer has to share a column with
+    // them — and the height it is given is already what is left over after the
+    // bar has taken its space.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 900) {
+          return ListView(
+            key: const ValueKey('result-content-scroll'),
+            children: [
+              header,
+              const SizedBox(height: AppSpacing.lg),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  header,
-                  const SizedBox(height: AppSpacing.md),
-                  comparison,
-                  const SizedBox(height: AppSpacing.md),
-                  details,
-                  const SizedBox(height: AppSpacing.lg),
+                  Expanded(flex: 6, child: comparison),
+                  const SizedBox(width: AppSpacing.xl),
+                  Expanded(flex: 5, child: details),
                 ],
-              );
-            },
-          ),
-        ),
-        _PrimaryResultActions(
-          isSaved: actionState.isSaved(preview.id),
-          isMutating: actionState.isMutating,
-          onShowTutorial: () => context.push(
-            AppConstants.tutorialRoute,
-            extra: TutorialPageArgs(
-              preview: CanonicalPreviewRef.standard(preview.id),
-              finalPreviewUrl: preview.generatedImageUrl,
-            ),
-          ),
-          onSave: onSave,
-        ),
-      ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+            ],
+          );
+        }
+        return ListView(
+          key: const ValueKey('result-content-scroll'),
+          children: [
+            header,
+            const SizedBox(height: AppSpacing.md),
+            comparison,
+            const SizedBox(height: AppSpacing.md),
+            details,
+            const SizedBox(height: AppSpacing.lg),
+          ],
+        );
+      },
     );
   }
 }
 
+/// The look's name, and the two facts that qualify it.
+///
+/// Four blocks of copy used to stand between the top of the screen and the
+/// image: a page title, a marketing headline, the style split across two lines
+/// with a variation counter, and a sentence of instructions. Each was defensible
+/// on its own and together they pushed the one thing the user came for below
+/// the fold.
+///
+/// What is left is what a reader actually needs to name what they are looking
+/// at. The style is the title, because it is the true one. The variation number
+/// is gone from here — it is bookkeeping about how the image was produced, not
+/// a fact about the look, and it remains on the state and in History, where it
+/// distinguishes one saved result from another. The comparison instruction now
+/// sits on the image it describes.
 class _ResultHeader extends StatelessWidget {
   const _ResultHeader({
     required this.styleName,
     required this.intensity,
     required this.undertone,
-    required this.generationNumber,
   });
 
   final String styleName;
   final String intensity;
   final String undertone;
-  final int generationNumber;
 
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Text(
-        'Your look, revealed',
-        style: Theme.of(context).textTheme.headlineMedium,
-      ),
-      const SizedBox(height: AppSpacing.xs),
-      Text(
-        '$styleName · ${ResultFormatters.label(intensity)} intensity',
-        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-          color: AppColors.rose,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-      const SizedBox(height: AppSpacing.xs),
-      Text(
-        '${ResultFormatters.label(undertone)} undertone · Variation $generationNumber',
+        styleName,
         style: Theme.of(
           context,
-        ).textTheme.bodyMedium?.copyWith(color: AppColors.muted(context)),
+        ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
       ),
-      const SizedBox(height: AppSpacing.xs),
+      const SizedBox(height: AppSpacing.xxs),
       Text(
-        'Drag across the image to compare. Regenerate if the result does not feel like you.',
+        '${ResultFormatters.label(intensity)} intensity · '
+        '${ResultFormatters.label(undertone)} undertone',
         style: Theme.of(
           context,
         ).textTheme.bodyMedium?.copyWith(color: AppColors.muted(context)),
@@ -401,7 +489,6 @@ class _ResultDetails extends StatefulWidget {
     required this.onFavorite,
     required this.onShare,
     required this.onGenerateAnother,
-    required this.onReturnHome,
   });
 
   final FaceAnalysis analysis;
@@ -411,7 +498,6 @@ class _ResultDetails extends StatefulWidget {
   final VoidCallback onFavorite;
   final VoidCallback onShare;
   final VoidCallback onGenerateAnother;
-  final VoidCallback onReturnHome;
 
   @override
   State<_ResultDetails> createState() => _ResultDetailsState();
@@ -459,7 +545,6 @@ class _ResultDetailsState extends State<_ResultDetails> {
           onFavorite: widget.onFavorite,
           onShare: widget.onShare,
           onGenerateAnother: widget.onGenerateAnother,
-          onReturnHome: widget.onReturnHome,
         ),
       // The realized look stays mounted even while another section is shown.
       // Its initState is the only presentation lifecycle point allowed to
@@ -491,7 +576,6 @@ class _OverviewSection extends StatelessWidget {
     required this.onFavorite,
     required this.onShare,
     required this.onGenerateAnother,
-    required this.onReturnHome,
   });
 
   final ResultActionsState actionState;
@@ -500,7 +584,6 @@ class _OverviewSection extends StatelessWidget {
   final VoidCallback onFavorite;
   final VoidCallback onShare;
   final VoidCallback onGenerateAnother;
-  final VoidCallback onReturnHome;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -512,21 +595,15 @@ class _OverviewSection extends StatelessWidget {
       RecommendedPalette(recommendation: recommendation),
       const SizedBox(height: AppSpacing.md),
       ResultActions(
-        includeSave: false,
-        isSaved: actionState.isSaved(previewId),
         isFavorite: actionState.isFavorite(previewId),
         isSharing: actionState.isSharing,
         isMutating: actionState.isMutating,
-        onSave: _unusedSave,
         onFavorite: onFavorite,
         onShare: onShare,
         onGenerateAnother: onGenerateAnother,
-        onReturnHome: onReturnHome,
       ),
     ],
   );
-
-  static void _unusedSave() {}
 }
 
 class _MakeupSection extends StatelessWidget {
@@ -571,73 +648,68 @@ class _ProfileSection extends StatelessWidget {
   );
 }
 
+/// The screen's one committing action, in the space the Scaffold reserves.
+///
+/// This strip has held two full-width buttons and asked the user to choose
+/// between them. It holds one now, and its height is the height of that one
+/// button — the bar sizes to its content, so removing the second did not leave
+/// a gap where it used to be.
+///
+/// Saving a look is still a first-class feature; it is reached from Saved Looks
+/// and from History rather than from a second large button competing with the
+/// reason the user generated the result in the first place.
 class _PrimaryResultActions extends StatelessWidget {
-  const _PrimaryResultActions({
-    required this.isSaved,
-    required this.isMutating,
-    required this.onShowTutorial,
-    required this.onSave,
-  });
+  const _PrimaryResultActions({required this.onShowTutorial, super.key});
 
-  final bool isSaved;
-  final bool isMutating;
   final VoidCallback onShowTutorial;
-  final VoidCallback onSave;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Material(
       color: theme.scaffoldBackgroundColor,
-      child: SafeArea(
-        top: false,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.only(top: AppSpacing.sm),
-          decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(
-                color: theme.dividerTheme.color ?? theme.dividerColor,
-              ),
+      child: DecoratedBox(
+        // Drawn outside the safe area and outside the gutter, so the rule runs
+        // edge to edge and reads as the boundary of the screen rather than as
+        // the top of a floating card.
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color: theme.dividerTheme.color ?? theme.dividerColor,
             ),
           ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final stackActions =
-                  constraints.maxWidth < 420 ||
-                  MediaQuery.textScalerOf(context).scale(14) > 19;
-              final tutorial = PrimaryButton(
+        ),
+        child: SafeArea(
+          top: false,
+          // The same readable column and gutter the body uses, so the buttons
+          // line up with the content above them.
+          //
+          // Not `PageFrame`: its `Center` expands to whatever height it is
+          // offered, which in a `bottomNavigationBar` slot is the whole screen
+          // — the bar would eat the body. `heightFactor: 1` makes this hug its
+          // children and take only the height it needs, which is the entire
+          // point of putting it in the Scaffold's slot.
+          child: Align(
+            alignment: Alignment.topCenter,
+            heightFactor: 1,
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 1000),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.gutter,
+                AppSpacing.sm,
+                AppSpacing.gutter,
+                AppSpacing.sm,
+              ),
+              // The button alone, with no column of one and no leftover
+              // spacer: the gap under the CTA used to belong to the button
+              // beneath it, and it left with that button.
+              child: PrimaryButton(
                 key: const ValueKey('result-show-tutorial'),
                 label: TutorialLabels.startTutorial,
                 icon: Icons.auto_stories_outlined,
                 onPressed: onShowTutorial,
-              );
-              final save = SecondaryButton(
-                key: const ValueKey('result-save-look'),
-                label: isSaved ? 'Saved' : 'Save look',
-                icon: isSaved
-                    ? Icons.bookmark_rounded
-                    : Icons.bookmark_border_rounded,
-                onPressed: isMutating ? null : onSave,
-              );
-              if (stackActions) {
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    tutorial,
-                    const SizedBox(height: AppSpacing.xs),
-                    save,
-                  ],
-                );
-              }
-              return Row(
-                children: [
-                  Expanded(child: tutorial),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(child: save),
-                ],
-              );
-            },
+              ),
+            ),
           ),
         ),
       ),

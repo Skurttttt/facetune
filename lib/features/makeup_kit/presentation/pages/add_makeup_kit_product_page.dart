@@ -110,7 +110,9 @@ class _AddMakeupKitProductPageState
     final isFoundation = _category == MakeupKitCategory.foundation;
 
     return Scaffold(
-      appBar: AppBar(title: Text(_isEditing ? 'Edit Product' : 'Add Product')),
+      appBar: FaceTuneTopBar(
+        title: _isEditing ? 'Edit Product' : 'Add Product',
+      ),
       body: SafeArea(
         child: PageFrame(
           child: SingleChildScrollView(

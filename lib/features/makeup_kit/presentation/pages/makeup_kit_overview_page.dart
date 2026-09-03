@@ -21,7 +21,7 @@ class MakeupKitOverviewPage extends ConsumerWidget {
     final isGuest = ref.watch(authControllerProvider).user?.isAnonymous == true;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('My Makeup Kit')),
+      appBar: const FaceTuneTopBar(title: 'My Makeup Kit'),
       floatingActionButton: state.status == MakeupKitProductsStatus.ready
           ? FloatingActionButton.extended(
               onPressed: () =>

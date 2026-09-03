@@ -38,7 +38,7 @@ class MakeupRecommendationPage extends ConsumerWidget {
       ),
     );
     return Scaffold(
-      appBar: AppBar(title: const Text('Your makeup plan')),
+      appBar: const FaceTuneTopBar(title: 'Your makeup plan'),
       body: SafeArea(
         child: PageFrame(
           child: switch (state.status) {

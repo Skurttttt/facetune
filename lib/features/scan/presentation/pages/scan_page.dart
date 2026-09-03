@@ -37,8 +37,8 @@ class ScanPage extends ConsumerWidget {
     });
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('New scan'),
+      appBar: FaceTuneTopBar(
+        title: 'New scan',
         actions: [
           if (selfie != null || analysisState.status != FaceAnalysisStatus.idle)
             IconButton(

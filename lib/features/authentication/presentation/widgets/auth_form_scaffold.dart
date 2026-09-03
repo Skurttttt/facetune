@@ -22,7 +22,7 @@ class AuthFormScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(),
+    appBar: const FaceTuneTopBar(),
     body: SafeArea(
       child: PageFrame(
         child: ListView(

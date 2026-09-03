@@ -21,7 +21,7 @@ class StyleSelectionPage extends ConsumerWidget {
       makeupStyleSelectionControllerProvider.notifier,
     );
     return Scaffold(
-      appBar: AppBar(title: const Text('Choose your style')),
+      appBar: const FaceTuneTopBar(title: 'Choose your style'),
       body: SafeArea(
         child: PageFrame(
           child: Column(

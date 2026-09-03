@@ -37,7 +37,7 @@ class SettingsPage extends ConsumerWidget {
     });
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: const FaceTuneTopBar(title: 'Settings'),
       body: SafeArea(
         child: PageFrame(
           child: switch (state.status) {

@@ -18,95 +18,125 @@ class BeforeAfterComparison extends StatefulWidget {
 }
 
 class _BeforeAfterComparisonState extends State<BeforeAfterComparison> {
+  /// How far an assistive-technology nudge moves the reveal.
+  ///
+  /// Ten steps across the image: coarse enough to cross it without a dozen
+  /// gestures, fine enough to stop where the user means to.
+  static const _nudgeStep = 0.1;
+
   double _reveal = 0.5;
 
   void _updateFromPosition(double x, double width) {
     setState(() => _reveal = (x / width).clamp(0.0, 1.0));
   }
 
+  void _nudge(double delta) {
+    setState(() => _reveal = (_reveal + delta).clamp(0.0, 1.0));
+  }
+
   @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      Semantics(
-        // The image is also the control. Labelling it only as an image left
-        // the screen's primary interaction unannounced — a reader was told a
-        // picture was there but never that dragging it does anything, and the
-        // slider below was the sole discoverable path.
-        label: 'Before and after makeup comparison',
-        hint: 'Drag across the image, or use the slider below, to compare',
-        image: true,
-        slider: true,
-        value: '${(_reveal * 100).round()} percent before',
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(AppRadii.xl),
-          child: AspectRatio(
-            aspectRatio: 3 / 4,
-            child: LayoutBuilder(
-              builder: (context, constraints) => GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onHorizontalDragUpdate: (details) => _updateFromPosition(
-                  details.localPosition.dx,
-                  constraints.maxWidth,
+  Widget build(BuildContext context) => Semantics(
+    // The image is the control, and now the only one. A second slider drawn
+    // beneath it showed the same number twice and gave the user two things to
+    // operate for one outcome.
+    //
+    // `onIncrease`/`onDecrease` are what make removing it safe rather than a
+    // downgrade: the visible slider was carrying the adjustable actions that a
+    // screen reader or switch access needs, because a horizontal drag is not
+    // something those users can perform. The actions move here, onto the same
+    // single [_reveal] value — no second state, no second visible control.
+    label: 'Before and after makeup comparison',
+    hint: 'Drag across the image to compare',
+    image: true,
+    slider: true,
+    value: '${(_reveal * 100).round()} percent before',
+    increasedValue:
+        '${((_reveal + _nudgeStep).clamp(0.0, 1.0) * 100).round()} percent before',
+    decreasedValue:
+        '${((_reveal - _nudgeStep).clamp(0.0, 1.0) * 100).round()} percent before',
+    onIncrease: () => _nudge(_nudgeStep),
+    onDecrease: () => _nudge(-_nudgeStep),
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(AppRadii.xl),
+      child: AspectRatio(
+        aspectRatio: 3 / 4,
+        child: LayoutBuilder(
+          builder: (context, constraints) => GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragUpdate: (details) => _updateFromPosition(
+              details.localPosition.dx,
+              constraints.maxWidth,
+            ),
+            onTapDown: (details) => _updateFromPosition(
+              details.localPosition.dx,
+              constraints.maxWidth,
+            ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _ResultImage(
+                  url: widget.generatedImageUrl,
+                  semanticsLabel: 'Generated makeup preview',
                 ),
-                onTapDown: (details) => _updateFromPosition(
-                  details.localPosition.dx,
-                  constraints.maxWidth,
+                ClipRect(
+                  clipper: _RevealClipper(_reveal),
+                  child: _ResultImage(
+                    url: widget.originalImageUrl,
+                    semanticsLabel: 'Original selfie',
+                  ),
                 ),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    _ResultImage(
-                      url: widget.generatedImageUrl,
-                      semanticsLabel: 'Generated makeup preview',
-                    ),
-                    ClipRect(
-                      clipper: _RevealClipper(_reveal),
-                      child: _ResultImage(
-                        url: widget.originalImageUrl,
-                        semanticsLabel: 'Original selfie',
+                Positioned(
+                  left: constraints.maxWidth * _reveal - 1,
+                  top: 0,
+                  bottom: 0,
+                  child: Container(width: 2, color: Colors.white),
+                ),
+                Positioned(
+                  left: constraints.maxWidth * _reveal - 22,
+                  top: constraints.maxHeight / 2 - 22,
+                  child: const CircleAvatar(
+                    backgroundColor: Colors.white,
+                    foregroundColor: AppColors.rose,
+                    child: Icon(Icons.compare_arrows_rounded),
+                  ),
+                ),
+                const Positioned(
+                  left: AppSpacing.sm,
+                  top: AppSpacing.sm,
+                  child: _ImageLabel('Before'),
+                ),
+                const Positioned(
+                  right: AppSpacing.sm,
+                  top: AppSpacing.sm,
+                  child: _ImageLabel('After'),
+                ),
+                // The instruction, on the thing it is about. It used to be
+                // a sentence above the image, where it competed with the
+                // result for first read and still left the affordance
+                // undiscoverable for anyone who skimmed past it.
+                //
+                // Excluded from semantics on purpose: the comparison node
+                // above already carries the full hint, and a reader that
+                // announced both would say the same thing twice.
+                const Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: AppSpacing.sm,
+                  child: ExcludeSemantics(
+                    child: Center(
+                      child: _ImageLabel(
+                        'Drag to compare',
+                        icon: Icons.compare_arrows_rounded,
                       ),
                     ),
-                    Positioned(
-                      left: constraints.maxWidth * _reveal - 1,
-                      top: 0,
-                      bottom: 0,
-                      child: Container(width: 2, color: Colors.white),
-                    ),
-                    Positioned(
-                      left: constraints.maxWidth * _reveal - 22,
-                      top: constraints.maxHeight / 2 - 22,
-                      child: const CircleAvatar(
-                        backgroundColor: Colors.white,
-                        foregroundColor: AppColors.rose,
-                        child: Icon(Icons.compare_arrows_rounded),
-                      ),
-                    ),
-                    const Positioned(
-                      left: AppSpacing.sm,
-                      top: AppSpacing.sm,
-                      child: _ImageLabel('Before'),
-                    ),
-                    const Positioned(
-                      right: AppSpacing.sm,
-                      top: AppSpacing.sm,
-                      child: _ImageLabel('After'),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
         ),
       ),
-      Semantics(
-        label: 'Reveal before or after image',
-        value: '${(_reveal * 100).round()} percent before',
-        child: Slider(
-          value: _reveal,
-          onChanged: (value) => setState(() => _reveal = value),
-        ),
-      ),
-    ],
+    ),
   );
 }
 
@@ -148,9 +178,13 @@ class _RevealClipper extends CustomClipper<Rect> {
 }
 
 class _ImageLabel extends StatelessWidget {
-  const _ImageLabel(this.label);
+  const _ImageLabel(this.label, {this.icon});
 
   final String label;
+
+  /// Optional glyph before the label. Used by the comparison hint, where the
+  /// arrows say "drag" faster than the words do — but never instead of them.
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -171,11 +205,22 @@ class _ImageLabel extends StatelessWidget {
       color: Colors.black.withValues(alpha: .68),
       borderRadius: BorderRadius.circular(AppRadii.pill),
     ),
-    child: Text(
-      label,
-      style: Theme.of(
-        context,
-      ).textTheme.labelMedium?.copyWith(color: Colors.white),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (icon != null) ...[
+          Icon(icon, size: AppIconSizes.sm, color: Colors.white),
+          const SizedBox(width: AppSpacing.xxs + 2),
+        ],
+        Flexible(
+          child: Text(
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.labelMedium?.copyWith(color: Colors.white),
+          ),
+        ),
+      ],
     ),
   );
 }
