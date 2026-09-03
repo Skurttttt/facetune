@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../shared/widgets/app_ui.dart';
+import '../../../../theme/app_semantics.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../domain/entities/face_analysis.dart';
 import '../controllers/face_analysis_controller.dart';
@@ -19,10 +20,9 @@ class AnalysisResultPage extends ConsumerWidget {
       body: SafeArea(
         child: PageFrame(
           child: analysis == null
-              ? StatusState(
+              ? StatusState.error(
                   title: 'Analysis unavailable',
                   message: 'Return to Scan and analyze a validated selfie.',
-                  icon: Icons.error_outline_rounded,
                   actionLabel: 'Return to scan',
                   onAction: () => context.go(AppConstants.scanRoute),
                 )
@@ -73,50 +73,35 @@ class _AnalysisContent extends StatelessWidget {
     return ListView(
       children: [
         const SizedBox(height: AppSpacing.md),
-        Row(
-          children: [
-            const Icon(Icons.verified_rounded, color: AppColors.success),
-            const SizedBox(width: AppSpacing.sm),
-            Text(
-              'Analysis complete',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        const Text(
-          'Your selfie passed secure visibility, lighting, sharpness, and framing checks.',
+        // The result of the secure checks, stated as the success it is. The
+        // confidence figures below are the model's own, unchanged — this screen
+        // reports state, it does not invent a step or a percentage.
+        const AppNotice(
+          tone: AppTone.success,
+          title: 'Analysis complete',
+          message:
+              'Your selfie passed secure visibility, lighting, sharpness, and '
+              'framing checks.',
         ),
         const SizedBox(height: AppSpacing.lg),
+        const SectionHeader('Detected attributes'),
+        const SizedBox(height: AppSpacing.sm),
         AppCard(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.xs,
+          ),
           child: Column(
-            children: attributes.entries
-                .map(
-                  (item) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: Row(
-                      children: [
-                        Expanded(child: Text(item.key)),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              item.value.value,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              '${(item.value.confidence * 100).round()}% confidence',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-                .toList(),
+            children: [
+              for (final (index, item) in attributes.entries.indexed) ...[
+                if (index > 0) const Divider(height: AppSpacing.xxs),
+                _AttributeRow(
+                  label: item.key,
+                  value: item.value.value,
+                  confidence: item.value.confidence,
+                ),
+              ],
+            ],
           ),
         ),
         const SizedBox(height: AppSpacing.lg),
@@ -124,6 +109,7 @@ class _AnalysisContent extends StatelessWidget {
           label: 'Choose a makeup style',
           onPressed: () => context.push(AppConstants.stylesRoute),
         ),
+        const SizedBox(height: AppSpacing.md),
       ],
     );
   }
@@ -134,5 +120,77 @@ class _AnalysisContent extends StatelessWidget {
       (match) => '${match.group(1)} ${match.group(2)}',
     );
     return '${words[0].toUpperCase()}${words.substring(1)}';
+  }
+}
+
+/// One detected attribute, its value, and the model's confidence in it.
+///
+/// The confidence figure is reported exactly as the analysis supplied it. It is
+/// the only number on this screen and it is not derived, rounded up, or
+/// presented as progress.
+class _AttributeRow extends StatelessWidget {
+  const _AttributeRow({
+    required this.label,
+    required this.value,
+    required this.confidence,
+  });
+
+  final String label;
+  final String value;
+  final double confidence;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final labelText = Text(label, style: theme.textTheme.bodyMedium);
+    final valueBlock = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          value,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        Text(
+          '${(confidence * 100).round()}% confidence',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: AppColors.muted(context),
+          ),
+        ),
+      ],
+    );
+
+    return Semantics(
+      container: true,
+      excludeSemantics: true,
+      // Read as one sentence. Split across three nodes a screen reader
+      // announces "Face shape", "Oval", "92% confidence" as unrelated
+      // fragments.
+      label: '$label: $value, ${(confidence * 100).round()} percent confidence',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+        child: MediaQuery.textScalerOf(context).scale(14) > 20
+            // Seven attribute names sit beside a value and a confidence line.
+            // Past this scale there is no width left for two columns, so they
+            // stack rather than wrapping into slivers.
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  labelText,
+                  const SizedBox(height: AppSpacing.xxs),
+                  valueBlock,
+                ],
+              )
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: labelText),
+                  const SizedBox(width: AppSpacing.sm),
+                  Flexible(child: valueBlock),
+                ],
+              ),
+      ),
+    );
   }
 }

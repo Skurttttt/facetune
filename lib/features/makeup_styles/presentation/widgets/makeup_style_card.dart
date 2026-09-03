@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../theme/app_semantics.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../domain/entities/makeup_style.dart';
 
@@ -17,7 +18,20 @@ class MakeupStyleCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    // The selected surface used to be the fixed `AppColors.petal`, which keeps
+    // its own brightness in dark mode while the label inside it followed the
+    // theme to near-white — light text on a near-white card. The info role is
+    // the same pink in light mode and a dark tint in dark mode, and it brings a
+    // foreground that is guaranteed to read on whichever it resolves to.
+    final selected = AppTone.info.resolve(context);
+    final surface = isSelected ? selected.surface : colorScheme.surface;
+    final onSurface = isSelected ? selected.onSurface : colorScheme.onSurface;
+    final muted = isSelected
+        ? selected.onSurface.withValues(alpha: .72)
+        : AppColors.muted(context);
+
     return Semantics(
       button: true,
       enabled: onSelected != null,
@@ -26,12 +40,12 @@ class MakeupStyleCard extends StatelessWidget {
       onTap: onSelected,
       child: ExcludeSemantics(
         child: Material(
-          color: isSelected ? AppColors.petal : colorScheme.surface,
+          color: surface,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadii.lg),
             side: BorderSide(
-              color: isSelected ? AppColors.rose : colorScheme.outlineVariant,
-              width: isSelected ? 2 : 1,
+              color: isSelected ? selected.accent : colorScheme.outlineVariant,
+              width: isSelected ? AppBorders.emphasis : AppBorders.hairline,
             ),
           ),
           clipBehavior: Clip.antiAlias,
@@ -48,6 +62,9 @@ class MakeupStyleCard extends StatelessWidget {
                         width: 40,
                         height: 40,
                         decoration: const BoxDecoration(
+                          // A fixed light-on-dark pair, readable in either
+                          // theme, so the style's own mark stays constant while
+                          // the card around it changes.
                           color: AppColors.blush,
                           shape: BoxShape.circle,
                         ),
@@ -60,14 +77,13 @@ class MakeupStyleCard extends StatelessWidget {
                       const Spacer(),
                       AnimatedSwitcher(
                         duration: AppDurations.quick,
+                        switchInCurve: AppCurves.standard,
                         child: Icon(
                           isSelected
                               ? Icons.check_circle_rounded
                               : Icons.circle_outlined,
                           key: ValueKey(isSelected),
-                          color: isSelected
-                              ? AppColors.rose
-                              : AppColors.muted(context),
+                          color: isSelected ? selected.accent : muted,
                         ),
                       ),
                     ],
@@ -75,16 +91,17 @@ class MakeupStyleCard extends StatelessWidget {
                   const SizedBox(height: AppSpacing.sm),
                   Text(
                     style.name,
-                    style: Theme.of(context).textTheme.titleMedium,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: onSurface,
+                    ),
                     maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: AppSpacing.xs),
+                  const SizedBox(height: AppSpacing.xxs),
                   Expanded(
                     child: Text(
                       style.description,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppColors.muted(context),
-                      ),
+                      style: theme.textTheme.bodySmall?.copyWith(color: muted),
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),

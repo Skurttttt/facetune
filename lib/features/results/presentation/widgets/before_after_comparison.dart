@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../../shared/widgets/feedback/status_state.dart';
-import '../../../../shared/widgets/media/private_image.dart';
+import '../../../../shared/widgets/app_ui.dart';
 import '../../../../theme/app_tokens.dart';
 
 class BeforeAfterComparison extends StatefulWidget {
@@ -29,8 +28,15 @@ class _BeforeAfterComparisonState extends State<BeforeAfterComparison> {
   Widget build(BuildContext context) => Column(
     children: [
       Semantics(
+        // The image is also the control. Labelling it only as an image left
+        // the screen's primary interaction unannounced — a reader was told a
+        // picture was there but never that dragging it does anything, and the
+        // slider below was the sole discoverable path.
         label: 'Before and after makeup comparison',
+        hint: 'Drag across the image, or use the slider below, to compare',
         image: true,
+        slider: true,
+        value: '${(_reveal * 100).round()} percent before',
         child: ClipRRect(
           borderRadius: BorderRadius.circular(AppRadii.xl),
           child: AspectRatio(
@@ -114,19 +120,16 @@ class _ResultImage extends StatelessWidget {
   Widget build(BuildContext context) => PrivateImage(
     url: url,
     semanticLabel: semanticsLabel,
-    errorChild: const ColoredBox(
-      color: AppColors.sand,
-      child: Center(
-        child: Padding(
-          padding: EdgeInsets.all(AppSpacing.md),
-          child: StatusState(
-            title: 'Image unavailable',
-            message:
-                'Return and reopen this result to refresh its private link.',
-            icon: Icons.broken_image_outlined,
-          ),
-        ),
-      ),
+    // Was a full `StatusState` card on a fixed `AppColors.sand` ground: a light
+    // block behind a themed card, which in dark mode put a dark card on a light
+    // rectangle. It also nested a whole card inside a 3:4 image box, where its
+    // title and body had nowhere to go.
+    //
+    // The shared image-failure state fits the box it is given and stays quiet
+    // about the cause, which is almost always an expired signed URL — not
+    // something the user can act on, and not something to describe to them.
+    errorChild: const ImageUnavailable(
+      label: 'Image unavailable. Reopen this result to refresh its link.',
     ),
   );
 }
@@ -151,11 +154,28 @@ class _ImageLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    padding: const EdgeInsets.symmetric(
+      horizontal: AppSpacing.sm,
+      vertical: AppSpacing.xxs + 2,
+    ),
     decoration: BoxDecoration(
-      color: Colors.black54,
+      // Deepened from `black54`. These labels sit over a photograph whose
+      // brightness is unknowable — a blown-out highlight can sit directly
+      // behind them — so the scrim, not the image, has to carry the contrast.
+      //
+      // Measured against the worst case of a pure-white photo underneath:
+      // `black54` composites to #757575 and gives white 4.61:1, which passes AA
+      // by 0.11. This composites to #525252 and gives 7.81:1. The old value was
+      // not wrong so much as it had no margin, and a photo is exactly the kind
+      // of ground where margin is the point.
+      color: Colors.black.withValues(alpha: .68),
       borderRadius: BorderRadius.circular(AppRadii.pill),
     ),
-    child: Text(label, style: const TextStyle(color: Colors.white)),
+    child: Text(
+      label,
+      style: Theme.of(
+        context,
+      ).textTheme.labelMedium?.copyWith(color: Colors.white),
+    ),
   );
 }

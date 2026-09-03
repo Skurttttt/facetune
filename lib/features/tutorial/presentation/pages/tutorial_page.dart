@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/widgets/app_ui.dart';
+import '../../../../theme/app_semantics.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../data/providers/tutorial_providers.dart';
 import '../../domain/catalog/tutorial_instruction_catalog.dart';
@@ -102,24 +103,27 @@ class _TutorialPageState extends ConsumerState<TutorialPage> {
       TutorialStatus.analyzingManifest => const LoadingState(
         label: TutorialLabels.preparingTutorial,
       ),
+      // A modelled outcome, not a fault: the preview legitimately contains a
+      // category the kit cannot reproduce. Same tone the Makeup Breakdown gives
+      // the identical situation, so the two screens agree about what it means.
       TutorialStatus.kitPreviewMismatch => StatusState(
+        tone: AppTone.warning,
         title: TutorialLabels.emptyTitle,
         message: state.message ?? TutorialLabels.emptyMessage,
         icon: Icons.info_outline,
       ),
-      TutorialStatus.failed when state.session == null => StatusState(
+      TutorialStatus.failed when state.session == null => StatusState.error(
         title: TutorialLabels.guidelineUnavailable,
         message: state.message ?? '',
-        icon: Icons.error_outline,
         actionLabel: state.retryable ? TutorialLabels.retry : null,
         onAction: state.retryable
             ? () => _controller.open(widget.preview)
             : null,
       ),
-      _ when state.stepCount == 0 => const StatusState(
+      // A look with no steps is an absence, not a failure.
+      _ when state.stepCount == 0 => const StatusState.empty(
         title: TutorialLabels.emptyTitle,
         message: TutorialLabels.emptyMessage,
-        icon: Icons.inbox_outlined,
       ),
       _ => _TutorialBody(
         state: state,
@@ -136,6 +140,25 @@ class _TutorialPageState extends ConsumerState<TutorialPage> {
       // navigator's black backing showed through in Light, Dark, and System.
       // This colour remains wholly owned by the active global ColorScheme.
       backgroundColor: Theme.of(context).colorScheme.surface,
+      // The way out. Until now a user on step 3 of 8 had no on-screen way to
+      // leave — the in-page Back button moves to the previous *step*, and on
+      // step 1 it is disabled, so the only exit was the Android system gesture.
+      //
+      // Deliberately a close cross rather than the default back arrow: an arrow
+      // in the corner next to a "Back" button in the page would be two
+      // retreats that mean different things wearing the same icon. This one
+      // leaves the tutorial; that one moves within it.
+      //
+      // `maybePop` is what the Finish button already calls, so leaving early
+      // and finishing exit by the identical path — and neither cancels,
+      // restarts, or regenerates anything.
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.close_rounded),
+          tooltip: TutorialLabels.closeTutorial,
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+      ),
       body: SafeArea(child: PageFrame(child: content)),
     );
   }
@@ -165,34 +188,25 @@ class _TutorialBody extends StatelessWidget {
     final instructions = TutorialInstructionCatalog.forCategory(category);
     return ListView(
       children: [
-        Semantics(
-          liveRegion: true,
-          child: Text(
-            TutorialLabels.stepProgress(state.stepNumber, state.stepCount),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: AppColors.muted(context),
-            ),
-          ),
+        // Where am I, and how far through. The counter and the bar say the same
+        // thing, so they sit together rather than straddling the title — which
+        // used to leave the bar reading as a divider under the heading instead
+        // of as progress through the tutorial.
+        _StepProgressHeader(
+          stepNumber: state.stepNumber,
+          stepCount: state.stepCount,
         ),
-        const SizedBox(height: AppSpacing.xxs),
+        const SizedBox(height: AppSpacing.sm),
         Text(
           TutorialLabels.categoryName(category),
           style: theme.textTheme.headlineMedium,
         ),
-        const SizedBox(height: AppSpacing.xs),
-        LinearProgressIndicator(
-          value: state.stepCount == 0 ? 0 : state.stepNumber / state.stepCount,
-          // Scheme-derived so the unfilled track stays a quiet surface in both
-          // themes; the fixed sand tint read as a light bar on a dark page.
-          backgroundColor: theme.colorScheme.surfaceContainerHighest,
-          semanticsLabel: TutorialLabels.stepProgress(
-            state.stepNumber,
-            state.stepCount,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.md),
         _GuidelineView(state: state, onRetry: onRetry),
-        const SizedBox(height: AppSpacing.sm),
+        // The key explains marks drawn on the image directly above it, so it is
+        // tucked tight against it rather than floating a full gap away where it
+        // read as an unrelated panel.
+        const SizedBox(height: AppSpacing.xs),
         TutorialGuideKey(types: instructions.referencedGuideTypes),
         // The final look sits immediately under the guideline, so the two
         // questions a step raises — where does this go, what should it end up
@@ -229,16 +243,21 @@ class _TutorialBody extends StatelessWidget {
         ],
         const SizedBox(height: AppSpacing.lg),
         _controls(context),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AppSpacing.sm),
         Center(
-          child: TextButton(
-            // Confirmed before it spends anything. This used to regenerate on
-            // a single tap, on a scrolling page, with no warning — which made
-            // an accidental brush against it cost a paid image.
+          // Confirmed before it spends anything. This used to regenerate on a
+          // single tap, on a scrolling page, with no warning — which made an
+          // accidental brush against it cost a paid image.
+          //
+          // Kept at the lowest emphasis the system has, and kept last: it is
+          // the one control on the page that costs money, so it should be
+          // findable when wanted and never the thing a thumb lands on first.
+          child: TertiaryButton(
+            label: TutorialLabels.redraw,
+            icon: Icons.refresh_rounded,
             onPressed: state.hasCurrentGuideline
                 ? () => _confirmRedraw(context)
                 : null,
-            child: const Text(TutorialLabels.redraw),
           ),
         ),
       ],
@@ -329,7 +348,7 @@ class _GuidelineView extends StatelessWidget {
       return AspectRatio(
         aspectRatio: 3 / 4,
         child: SingleChildScrollView(
-          child: StatusState(
+          child: StatusState.error(
             title: TutorialLabels.guidelineUnavailable,
             message: state.message ?? TutorialLabels.imageUnavailable,
             icon: Icons.image_not_supported_outlined,
@@ -349,7 +368,7 @@ class _GuidelineView extends StatelessWidget {
       return AspectRatio(
         aspectRatio: 3 / 4,
         child: SingleChildScrollView(
-          child: StatusState(
+          child: StatusState.error(
             title: TutorialLabels.guidelineUnavailable,
             message: state.message ?? TutorialLabels.imageUnavailable,
             icon: Icons.image_not_supported_outlined,
@@ -383,24 +402,177 @@ class _GuidelineView extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppRadii.lg),
           child: AspectRatio(
             aspectRatio: 3 / 4,
-            child: PrivateImage(
-              url: url,
-              semanticLabel: TutorialLabels.guidelineImageLabel(category),
-              errorChild: SingleChildScrollView(
-                child: StatusState(
-                  title: TutorialLabels.imageUnavailable,
-                  message: '',
-                  icon: Icons.image_not_supported_outlined,
-                  actionLabel: TutorialLabels.retry,
-                  onAction: () => onRetry(),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                PrivateImage(
+                  url: url,
+                  semanticLabel: TutorialLabels.guidelineImageLabel(category),
+                  errorChild: SingleChildScrollView(
+                    child: StatusState.error(
+                      title: TutorialLabels.imageUnavailable,
+                      message: '',
+                      actionLabel: TutorialLabels.retry,
+                      onAction: () => onRetry(),
+                    ),
+                  ),
                 ),
-              ),
+                // The viewer entry affordance. Tapping the guideline has always
+                // opened it full screen, but nothing on screen said so — the
+                // Final Look card beside it carries a zoom icon and the same
+                // words, so the more important image was the less discoverable
+                // one.
+                //
+                // Bottom-left, small, and over the scrim: the guides a user
+                // needs to read run across the face and down the right side of
+                // it, and a corner chip must not sit on top of the thing being
+                // taught.
+                const Positioned(
+                  left: AppSpacing.xs,
+                  bottom: AppSpacing.xs,
+                  child: _EnlargeHint(),
+                ),
+              ],
             ),
           ),
         ),
       ),
     );
   }
+}
+
+/// "Step 3 of 8" and the bar that shows the same thing.
+///
+/// Side by side at normal text sizes, stacked once the counter grows past what
+/// can share a line with a usable bar. The counter is not flexible — shrinking
+/// "Step 3 of 8" to fit would be the wrong sacrifice — so past that width the
+/// two go on separate lines instead of one of them overflowing.
+class _StepProgressHeader extends StatelessWidget {
+  const _StepProgressHeader({
+    required this.stepNumber,
+    required this.stepCount,
+  });
+
+  final int stepNumber;
+  final int stepCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = TutorialLabels.stepProgress(stepNumber, stepCount);
+
+    final counter = Semantics(
+      liveRegion: true,
+      child: Text(
+        label,
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: AppColors.muted(context),
+        ),
+      ),
+    );
+
+    final bar = ClipRRect(
+      borderRadius: BorderRadius.circular(AppRadii.pill),
+      child: LinearProgressIndicator(
+        value: stepCount == 0 ? 0 : stepNumber / stepCount,
+        // Scheme-derived so the unfilled track stays a quiet surface in both
+        // themes; the fixed sand tint read as a light bar on a dark page.
+        backgroundColor: theme.colorScheme.surfaceContainerHighest,
+        // The bar keeps its own spoken label. The counter beside it is a live
+        // region — announced when it *changes* — which is a different job from
+        // telling someone what this bar is when they land on it.
+        semanticsLabel: label,
+      ),
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final counterWidth = _counterWidth(context, label, theme);
+        // Leave the bar a width where it still reads as a bar rather than a
+        // dash. Below that the pair stacks.
+        final fitsOneLine =
+            constraints.maxWidth - counterWidth - AppSpacing.sm >= 96;
+        if (fitsOneLine) {
+          return Row(
+            children: [
+              counter,
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(child: bar),
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            counter,
+            const SizedBox(height: AppSpacing.xs),
+            bar,
+          ],
+        );
+      },
+    );
+  }
+
+  /// How wide the counter wants to be at the reader's current text size.
+  static double _counterWidth(
+    BuildContext context,
+    String label,
+    ThemeData theme,
+  ) {
+    final painter = TextPainter(
+      text: TextSpan(text: label, style: theme.textTheme.labelMedium),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    return painter.width;
+  }
+}
+
+/// The "tap to enlarge" chip drawn over the guideline image.
+///
+/// Excluded from semantics on purpose: it sits inside the guideline's own
+/// `Semantics(button: true, excludeSemantics: true)` node, whose label already
+/// ends with "Tap to enlarge". Announcing it again would repeat the phrase to a
+/// screen-reader user while telling a sighted user something new.
+///
+/// The scrim is what makes it legible: it floats over a generated portrait
+/// whose brightness at that corner is unknowable, so the chip carries its own
+/// ground rather than trusting the image beneath it.
+class _EnlargeHint extends StatelessWidget {
+  const _EnlargeHint();
+
+  @override
+  Widget build(BuildContext context) => ExcludeSemantics(
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: .68),
+        borderRadius: BorderRadius.circular(AppRadii.pill),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xs,
+          vertical: AppSpacing.xxs,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.zoom_out_map,
+              size: AppIconSizes.sm,
+              color: Colors.white,
+            ),
+            const SizedBox(width: AppSpacing.xxs),
+            Text(
+              TutorialLabels.tapToEnlarge,
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: Colors.white),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 // The canonical final preview is rendered by TutorialFinalLookCard, which

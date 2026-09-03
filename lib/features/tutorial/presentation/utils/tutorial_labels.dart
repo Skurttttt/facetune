@@ -58,6 +58,11 @@ abstract final class TutorialLabels {
   static const finalLookHint = 'The finished result you are working toward';
   static const viewFinalLook = 'View your final look';
   static const close = 'Close';
+
+  /// Leaving the tutorial entirely, as opposed to [back], which steps within
+  /// it. Two different retreats needed two different words: a single "Back"
+  /// doing both is the ambiguity this names away.
+  static const closeTutorial = 'Close tutorial';
   static const resetView = 'Reset view';
   static const viewerHint = 'Pinch to zoom. Double-tap to reset.';
   static const tapToEnlarge = 'Tap to enlarge';

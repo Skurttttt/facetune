@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../shared/widgets/app_ui.dart';
+import '../../../../theme/app_semantics.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../domain/entities/look_product_snapshot.dart';
 import '../../domain/entities/standard_look_entry.dart';
@@ -22,7 +23,6 @@ class _ShadeChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final parsed = int.tryParse(hex.replaceFirst('#', ''), radix: 16);
     final color = parsed == null ? null : Color(0xFF000000 | parsed);
-    final scheme = Theme.of(context).colorScheme;
     return Semantics(
       // container + excludeSemantics so the swatch and the hex text read as one
       // node. Without it the label never forms its own node, and a screen
@@ -33,17 +33,12 @@ class _ShadeChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              // The fill is recommendation/snapshot data, not a UI theme
-              // colour. Only an invalid value falls back to a themed surface.
-              color: color ?? scheme.surfaceContainerHighest,
-              shape: BoxShape.circle,
-              border: Border.all(color: scheme.outlineVariant),
-            ),
-          ),
+          // The shared swatch. Same 28pt diameter and same outline it drew by
+          // hand, but now the one implementation the whole app uses — this was
+          // the best of the four the audit found, and it is the one the shared
+          // component was modelled on. The fill stays snapshot data; only an
+          // unparseable value falls back to a themed surface.
+          AppColorSwatch(color: color),
           const SizedBox(width: AppSpacing.xs),
           Text(hex, style: Theme.of(context).textTheme.bodySmall),
         ],
@@ -215,17 +210,24 @@ class MyMakeupKitProductCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) return const SizedBox.shrink();
+    // Tinted, because these are the user's own products rather than generic
+    // guidance and the distinction is worth seeing at a glance. Resolved through
+    // the info role rather than the fixed `AppColors.petal` it used to be, so
+    // the card is a dark tint in dark mode instead of a light block stranded on
+    // a dark page. `AppCard` derives its foreground from whichever surface it
+    // is handed, so the rows below stay readable either way.
+    final info = AppTone.info.resolve(context);
     return AppCard(
-      color: AppColors.petal,
+      color: info.surface,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.inventory_2_outlined,
-                size: 18,
-                color: AppColors.rose,
+                size: AppIconSizes.sm,
+                color: info.accent,
               ),
               const SizedBox(width: AppSpacing.xs),
               Text(

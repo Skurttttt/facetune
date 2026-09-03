@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
-import '../../../../shared/widgets/app_shell.dart';
 import '../../../../shared/widgets/app_ui.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../../analysis/presentation/controllers/face_analysis_controller.dart';
@@ -55,7 +54,7 @@ class HomePage extends ConsumerWidget {
                               'Welcome back, $name',
                               style: Theme.of(context).textTheme.headlineSmall,
                             ),
-                            const SizedBox(height: 4),
+                            const SizedBox(height: AppSpacing.xxs),
                             Text(
                               'What beauty mood are you in?',
                               style: Theme.of(context).textTheme.bodyMedium
@@ -65,6 +64,10 @@ class HomePage extends ConsumerWidget {
                         ),
                       ),
                       IconButton.filledTonal(
+                        // An icon-only control with no tooltip is unlabelled
+                        // for a screen reader and unguessable for everyone
+                        // else.
+                        tooltip: 'Settings',
                         onPressed: () =>
                             context.push(AppConstants.settingsRoute),
                         icon: const Icon(Icons.tune_rounded),
@@ -121,34 +124,17 @@ class HomePage extends ConsumerWidget {
                 const SliverToBoxAdapter(
                   child: SizedBox(height: AppSpacing.sm),
                 ),
-                SliverToBoxAdapter(
-                  child: AppCard(
-                    color: AppColors.petal,
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.auto_awesome_outlined,
-                          color: AppColors.gold,
-                          size: AppIconSizes.lg,
-                        ),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Ready when inspiration strikes',
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                              const SizedBox(height: 4),
-                              const Text(
-                                'Start with a clear selfie to receive a recommendation based on your current analysis.',
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                const SliverToBoxAdapter(
+                  // Was a hand-assembled petal card whose gold icon measured
+                  // 2.79:1 against that tint — under even the 3:1 minimum for
+                  // non-text graphics. The info role's accent clears 4.70:1,
+                  // and the notice stacks its own icon above the text at large
+                  // text sizes instead of squeezing the paragraph.
+                  child: AppNotice(
+                    title: 'Ready when inspiration strikes',
+                    message:
+                        'Start with a clear selfie to receive a recommendation '
+                        'based on your current analysis.',
                   ),
                 ),
                 const SliverToBoxAdapter(
@@ -186,7 +172,7 @@ class _RecentLooks extends StatelessWidget {
       );
     }
     if (state.status == HistoryLoadStatus.failure && state.items.isEmpty) {
-      return StatusState(
+      return StatusState.error(
         title: 'Recent looks unavailable',
         message: state.message == null
             ? 'Start Scan is still available. Try again to refresh your private history.'
@@ -194,19 +180,26 @@ class _RecentLooks extends StatelessWidget {
         icon: Icons.cloud_off_outlined,
         actionLabel: state.sessionExpired ? 'Sign in again' : 'Retry',
         onAction: state.sessionExpired ? onSessionExpired : onRetry,
-        liveRegion: true,
       );
     }
     if (state.items.isEmpty) {
-      return const StatusState(
+      // An empty history is the expected state for a new account, not a
+      // problem — so it stays neutral and stays quiet for a screen reader.
+      return const StatusState.empty(
         title: 'No recent looks yet',
         message: 'Your completed analyses and previews will appear here.',
         icon: Icons.history_rounded,
       );
     }
     final recent = state.items.take(2).toList(growable: false);
+    // A horizontal strip has to be given a height, and a fixed one clips its
+    // own caption the moment the user raises their text size. Only the caption
+    // grows, so only the caption's share is scaled: the thumbnail keeps its
+    // area and the card grows underneath it.
     return SizedBox(
-      height: 224,
+      height:
+          _RecentLookCard.thumbnailHeight +
+          _RecentLookCard.captionHeight(context),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: recent.length,
@@ -223,12 +216,34 @@ class _RecentLooks extends StatelessWidget {
 class _RecentLookCard extends StatelessWidget {
   const _RecentLookCard({required this.entry, required this.onTap});
 
+  /// The thumbnail's share of the card's height.
+  ///
+  /// Fixed on purpose: a picture does not get more informative when the text
+  /// beside it gets larger, so the caption grows and this does not.
+  static const double thumbnailHeight = 150;
+
+  static const double _cardWidth = 168;
+
+  /// Height the caption needs at the reader's current text size.
+  ///
+  /// Derived from the two line boxes it actually draws rather than guessed:
+  /// `titleSmall` at 14/1.35 and `bodySmall` at 12/1.45, inside `AppSpacing.sm`
+  /// padding, plus a point of slack so a fractional line height cannot round
+  /// into a one-pixel overflow.
+  static double captionHeight(BuildContext context) {
+    final scaler = MediaQuery.textScalerOf(context);
+    return AppSpacing.sm * 2 +
+        scaler.scale(14) * 1.35 +
+        scaler.scale(12) * 1.45 +
+        2;
+  }
+
   final HistoryEntry entry;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) => SizedBox(
-    width: 168,
+    width: _cardWidth,
     child: Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -236,11 +251,10 @@ class _RecentLookCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: SizedBox(
-                width: double.infinity,
-                child: PrivateImage(url: entry.thumbnailUrl),
-              ),
+            SizedBox(
+              height: thumbnailHeight,
+              width: double.infinity,
+              child: PrivateImage(url: entry.thumbnailUrl),
             ),
             Padding(
               padding: const EdgeInsets.all(AppSpacing.sm),
@@ -300,11 +314,14 @@ class _ScanHero extends StatelessWidget {
         end: Alignment.bottomRight,
       ),
       borderRadius: BorderRadius.circular(AppRadii.xl),
+      // The one genuinely floating surface on the screen, so the one place a
+      // shadow earns its keep. Tinted with the brand rather than black, which
+      // is what keeps it reading as a lift rather than as grime under the card.
       boxShadow: [
         BoxShadow(
           color: AppColors.rose.withValues(alpha: .24),
-          blurRadius: 30,
-          offset: const Offset(0, 14),
+          blurRadius: AppSpacing.xl,
+          offset: const Offset(0, AppSpacing.sm),
         ),
       ],
     ),
@@ -324,19 +341,26 @@ class _ScanHero extends StatelessWidget {
           ).textTheme.headlineMedium?.copyWith(color: Colors.white),
         ),
         const SizedBox(height: AppSpacing.sm),
-        const Text(
+        Text(
           'A personalized beauty analysis in a few simple steps.',
-          style: TextStyle(color: Colors.white70, height: 1.4),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
         ),
         const SizedBox(height: AppSpacing.lg),
-        FilledButton.icon(
-          style: FilledButton.styleFrom(
-            backgroundColor: Colors.white,
-            foregroundColor: AppColors.roseDark,
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            // Fixed colours because the gradient keeps its own brightness in
+            // both themes, so the button cannot inherit them from the scheme.
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: AppColors.roseDark,
+            ),
+            onPressed: onStart,
+            icon: const Icon(Icons.camera_alt_outlined),
+            label: const Text('Start Scan'),
           ),
-          onPressed: onStart,
-          icon: const Icon(Icons.camera_alt_outlined),
-          label: const Text('Start Scan'),
         ),
       ],
     ),

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../shared/widgets/app_ui.dart';
+import '../../../../theme/app_semantics.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../../analysis/presentation/controllers/face_analysis_controller.dart';
 import '../../../authentication/presentation/controllers/auth_controller.dart';
@@ -61,18 +62,16 @@ class MakeupKitRecommendationEntryPage extends ConsumerWidget {
         if (next.feedback == null || next.feedback == previous?.feedback) {
           return;
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(next.feedback!),
-            action: next.sessionExpired
-                ? SnackBarAction(
-                    label: 'Sign in again',
-                    onPressed: () => ref
-                        .read(authControllerProvider.notifier)
-                        .recoverExpiredSession(),
-                  )
-                : null,
-          ),
+        showAppSnackBar(
+          context,
+          message: next.feedback!,
+          tone: next.sessionExpired ? AppTone.danger : AppTone.success,
+          actionLabel: next.sessionExpired ? 'Sign in again' : null,
+          onAction: next.sessionExpired
+              ? () => ref
+                    .read(authControllerProvider.notifier)
+                    .recoverExpiredSession()
+              : null,
         );
         ref
             .read(makeupKitResultActionsControllerProvider.notifier)
@@ -171,7 +170,7 @@ class MakeupKitRecommendationEntryPage extends ConsumerWidget {
       },
     ),
     _ => Center(
-      child: StatusState(
+      child: StatusState.error(
         title: 'Kit preview unavailable',
         message:
             'This preview no longer matches the active analysis and style.',
@@ -228,7 +227,7 @@ class _NotReadyState extends ConsumerWidget {
     }
     if (kit.status == MakeupKitProductsStatus.failure) {
       return Center(
-        child: StatusState(
+        child: StatusState.error(
           title: 'Your kit could not be checked',
           message: kit.message ?? 'Please try again.',
           icon: Icons.cloud_off_outlined,
@@ -247,7 +246,10 @@ class _NotReadyState extends ConsumerWidget {
     }
     final journeyReady = analysisReady && styleReady;
     return Center(
-      child: StatusState(
+      // Neither branch is a failure. An empty kit is the starting state for a
+      // new account, and an incomplete scan is a missing precondition — both
+      // have a clear next step and neither is anyone's fault.
+      child: StatusState.info(
         title: kit.items.isEmpty
             ? 'Your kit is empty'
             : 'Your scan is not ready',
@@ -303,7 +305,8 @@ class _ReadyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-    child: StatusState(
+    // An invitation, not a completed outcome — so info rather than success.
+    child: StatusState.info(
       title: 'Your kit is ready',
       message:
           '$styleName will use the best honest combination from your $productCount owned product${productCount == 1 ? '' : 's'}. Missing categories are okay.',
@@ -340,7 +343,7 @@ class _FailureState extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          StatusState(
+          StatusState.error(
             title: inventoryChanged
                 ? 'Your kit changed'
                 : 'Kit preview generation paused',
@@ -419,19 +422,13 @@ class _KitPreviewContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.lg),
-        const AppCard(
-          color: AppColors.petal,
-          child: Row(
-            children: [
-              Icon(Icons.inventory_2_outlined, color: AppColors.rose),
-              SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Text(
-                  'Created only from products registered in My Makeup Kit.',
-                ),
-              ),
-            ],
-          ),
+        // The ownership guarantee — this look used nothing the user does not
+        // own. Stated as a confirmation rather than a neutral aside, because it
+        // is the whole promise of kit mode.
+        const AppNotice(
+          tone: AppTone.success,
+          icon: Icons.inventory_2_outlined,
+          message: 'Created only from products registered in My Makeup Kit.',
         ),
         const SizedBox(height: AppSpacing.md),
         BeforeAfterComparison(
@@ -565,7 +562,11 @@ class _RealizedKitBreakdownState extends ConsumerState<_RealizedKitBreakdown> {
       );
     }
     if (state.status == RealizedLookStatus.kitPreviewMismatch) {
+      // A modelled outcome, not a fault: the preview legitimately shows a
+      // category the kit cannot reproduce. Warning rather than danger — nothing
+      // failed, but the user does need to know why the breakdown stops here.
       return const StatusState(
+        tone: AppTone.warning,
         title: 'This look uses makeup that is not in your kit yet',
         message:
             'The preview shows a category no registered product can reproduce, '
@@ -574,7 +575,7 @@ class _RealizedKitBreakdownState extends ConsumerState<_RealizedKitBreakdown> {
       );
     }
     if (state.status != RealizedLookStatus.ready) {
-      return StatusState(
+      return StatusState.error(
         title: 'Breakdown unavailable',
         message:
             state.message ??

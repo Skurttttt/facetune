@@ -115,15 +115,20 @@ class _KitBadge extends StatelessWidget {
       vertical: AppSpacing.xxs,
     ),
     decoration: BoxDecoration(
+      // A fixed light-on-dark pair, so the badge stays legible whether it sits
+      // on the card or over the preview image behind it.
       color: AppColors.petal,
       borderRadius: BorderRadius.circular(AppRadii.pill),
     ),
-    child: const Text(
+    child: Text(
       'MY KIT',
-      style: TextStyle(
+      // Was `fontSize: 11` written inline — the app's only hardcoded font size,
+      // and the one label that ignored the reader's text-size setting entirely.
+      // `labelSmall` is 11 at default scale, so this looks identical and now
+      // scales like everything else.
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
         color: AppColors.roseDark,
         fontWeight: FontWeight.w800,
-        fontSize: 11,
       ),
     ),
   );

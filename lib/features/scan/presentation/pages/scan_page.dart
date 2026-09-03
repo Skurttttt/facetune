@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../shared/widgets/app_ui.dart';
+import '../../../../theme/app_semantics.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../../analysis/presentation/controllers/face_analysis_controller.dart';
 import '../../../analysis/presentation/controllers/face_analysis_state.dart';
@@ -84,19 +85,15 @@ class ScanPage extends ConsumerWidget {
               ],
               if (state.stage == ScanStage.readyForSecureValidation) ...[
                 const SizedBox(height: AppSpacing.md),
-                const AppCard(
-                  color: AppColors.petal,
-                  child: Row(
-                    children: [
-                      Icon(Icons.check_circle_outline, color: AppColors.rose),
-                      SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Text(
-                          'Local checks passed. Your selfie is ready for secure face, lighting, sharpness, visibility, and framing checks.',
-                        ),
-                      ),
-                    ],
-                  ),
+                // This is the one unambiguously good outcome on the screen, and
+                // it used to be drawn on the identical pink surface as the two
+                // failure states below it. A user could not tell "your photo
+                // passed" from "your photo was rejected" without reading.
+                const AppNotice(
+                  tone: AppTone.success,
+                  message:
+                      'Local checks passed. Your selfie is ready for secure '
+                      'face, lighting, sharpness, visibility, and framing checks.',
                 ),
               ],
               if (analysisState.message != null) ...[
@@ -247,47 +244,78 @@ class _SelfieFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selfie = state.selfie;
+    final info = AppTone.info.resolve(context);
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppRadii.xl),
-      child: Container(
-        height: 340,
-        decoration: BoxDecoration(
-          color: AppColors.petal,
-          borderRadius: BorderRadius.circular(AppRadii.xl),
-          border: Border.all(color: AppColors.blush, width: 2),
-        ),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (selfie == null)
-              const Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.face_rounded, size: 108, color: AppColors.rose),
-                  SizedBox(height: AppSpacing.md),
-                  Text('Center your face in the frame'),
-                ],
-              )
-            else
-              Image.file(
-                File(selfie.originalPath),
-                fit: BoxFit.cover,
-                // The on-device original can be 2048 px; the preview box is 340.
-                cacheWidth: decodeWidthForSize(context, 340),
-                errorBuilder: (context, error, stackTrace) => const Center(
-                  child: Text(
-                    'Preview unavailable. Please choose another image.',
+      child: AspectRatio(
+        // Was a fixed 340pt box. A selfie is portrait, so an aspect ratio
+        // frames it correctly on a 320pt phone and a 720pt tablet alike,
+        // instead of letterboxing on one and cropping on the other.
+        aspectRatio: 3 / 4,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: info.surface,
+            borderRadius: BorderRadius.circular(AppRadii.xl),
+            border: Border.all(color: info.border, width: AppBorders.emphasis),
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (selfie == null)
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.face_rounded,
+                      size: AppIconSizes.hero * 2,
+                      color: info.accent,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Text(
+                      'Center your face in the frame',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(color: info.onSurface),
+                    ),
+                  ],
+                )
+              else
+                LayoutBuilder(
+                  builder: (context, constraints) => Image.file(
+                    File(selfie.originalPath),
+                    fit: BoxFit.cover,
+                    // The on-device original can be 2048 px; the preview box is
+                    // now measured rather than assumed.
+                    cacheWidth: decodeWidthFor(context, constraints),
+                    errorBuilder: (context, error, stackTrace) => Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(AppSpacing.md),
+                        child: Text(
+                          'Preview unavailable. Please choose another image.',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: info.onSurface),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            if (state.isBusy)
-              ColoredBox(
-                color: Colors.black.withValues(alpha: 0.32),
-                child: const Center(
-                  child: CircularProgressIndicator(color: Colors.white),
+              if (state.isBusy)
+                ColoredBox(
+                  color: Colors.black.withValues(alpha: 0.32),
+                  child: const Center(
+                    // Fixed white: this sits on a scrim over the user's own
+                    // photo, whose brightness the theme knows nothing about.
+                    child: AppProgress(
+                      size: AppProgressSize.large,
+                      color: Colors.white,
+                      semanticLabel: 'Preparing your selfie',
+                    ),
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -298,14 +326,23 @@ class _GuidanceCard extends StatelessWidget {
   const _GuidanceCard();
 
   @override
-  Widget build(BuildContext context) => const AppCard(
+  Widget build(BuildContext context) => AppCard(
     child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _TipRow(Icons.person_outline_rounded, 'One person only'),
-        _TipRow(Icons.face_outlined, 'Face fully visible'),
-        _TipRow(Icons.light_mode_outlined, 'Good, even lighting'),
-        _TipRow(Icons.blur_off_rounded, 'Avoid heavy blur'),
-        _TipRow(Icons.screen_rotation_outlined, 'Avoid extreme angles'),
+        // A heading, because five icon rows with no label read as decoration.
+        // These are the checks the selfie is about to be measured against, and
+        // saying so turns a list into an explanation.
+        Text(
+          'For the best result',
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        const _TipRow(Icons.person_outline_rounded, 'One person only'),
+        const _TipRow(Icons.face_outlined, 'Face fully visible'),
+        const _TipRow(Icons.light_mode_outlined, 'Good, even lighting'),
+        const _TipRow(Icons.blur_off_rounded, 'Avoid heavy blur'),
+        const _TipRow(Icons.screen_rotation_outlined, 'Avoid extreme angles'),
       ],
     ),
   );
@@ -331,41 +368,32 @@ class _ScanError extends StatelessWidget {
   final VoidCallback onReselect;
 
   @override
-  Widget build(BuildContext context) => Semantics(
+  Widget build(BuildContext context) => AppNotice(
+    // Was the success tint. Every recovery action and every condition below is
+    // unchanged — only which surface the failure is drawn on.
+    tone: AppTone.danger,
+    message: message,
     liveRegion: true,
-    child: AppCard(
-      color: AppColors.petal,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(message),
-          if (canOpenSettings) ...[
-            const SizedBox(height: AppSpacing.xs),
-            TextButton.icon(
-              onPressed: onOpenSettings,
-              icon: const Icon(Icons.settings_outlined),
-              label: const Text('Open Settings'),
-            ),
-          ],
-          if (canRetryValidation) ...[
-            const SizedBox(height: AppSpacing.xs),
-            TextButton.icon(
-              onPressed: onRetryValidation,
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Retry validation'),
-            ),
-          ],
-          if (canReselect) ...[
-            const SizedBox(height: AppSpacing.xs),
-            TextButton.icon(
-              onPressed: onReselect,
-              icon: const Icon(Icons.photo_library_outlined),
-              label: const Text('Choose another photo'),
-            ),
-          ],
-        ],
-      ),
-    ),
+    actions: [
+      if (canOpenSettings)
+        TertiaryButton(
+          label: 'Open Settings',
+          icon: Icons.settings_outlined,
+          onPressed: onOpenSettings,
+        ),
+      if (canRetryValidation)
+        TertiaryButton(
+          label: 'Retry validation',
+          icon: Icons.refresh_rounded,
+          onPressed: onRetryValidation,
+        ),
+      if (canReselect)
+        TertiaryButton(
+          label: 'Choose another photo',
+          icon: Icons.photo_library_outlined,
+          onPressed: onReselect,
+        ),
+    ],
   );
 }
 
@@ -389,44 +417,34 @@ class _AnalysisError extends StatelessWidget {
     final needsAnotherPhoto =
         state.status == FaceAnalysisStatus.validationFailure ||
         (state.status == FaceAnalysisStatus.geminiFailure && !state.retryable);
-    return Semantics(
+    return AppNotice(
+      tone: AppTone.danger,
+      title: 'Analysis paused',
+      message: state.message ?? 'Please try again.',
       liveRegion: true,
-      child: AppCard(
-        color: AppColors.petal,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Analysis paused',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(state.message ?? 'Please try again.'),
-            if (state.retryable && onRetry != null) ...[
-              const SizedBox(height: AppSpacing.xs),
-              TextButton.icon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Retry analysis'),
-              ),
-            ] else if (needsSignIn) ...[
-              const SizedBox(height: AppSpacing.xs),
-              TextButton.icon(
-                onPressed: onSignIn,
-                icon: const Icon(Icons.login_rounded),
-                label: const Text('Sign in again'),
-              ),
-            ] else if (needsAnotherPhoto) ...[
-              const SizedBox(height: AppSpacing.xs),
-              TextButton.icon(
-                onPressed: onReselect,
-                icon: const Icon(Icons.photo_library_outlined),
-                label: const Text('Choose another photo'),
-              ),
-            ],
-          ],
-        ),
-      ),
+      // The same three-way choice as before, in the same order and under the
+      // same conditions: retry if the failure is retryable, otherwise sign in,
+      // otherwise choose another photo.
+      actions: [
+        if (state.retryable && onRetry != null)
+          TertiaryButton(
+            label: 'Retry analysis',
+            icon: Icons.refresh_rounded,
+            onPressed: onRetry,
+          )
+        else if (needsSignIn)
+          TertiaryButton(
+            label: 'Sign in again',
+            icon: Icons.login_rounded,
+            onPressed: onSignIn,
+          )
+        else if (needsAnotherPhoto)
+          TertiaryButton(
+            label: 'Choose another photo',
+            icon: Icons.photo_library_outlined,
+            onPressed: onReselect,
+          ),
+      ],
     );
   }
 }
@@ -438,12 +456,15 @@ class _TipRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 6),
+    padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs + 2),
     child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: AppColors.rose, size: 20),
+        Icon(icon, color: AppColors.rose, size: AppIconSizes.sm),
         const SizedBox(width: AppSpacing.sm),
-        Text(label),
+        // Expanded so a tip wraps instead of overflowing once the reader
+        // raises their text size.
+        Expanded(child: Text(label)),
       ],
     ),
   );

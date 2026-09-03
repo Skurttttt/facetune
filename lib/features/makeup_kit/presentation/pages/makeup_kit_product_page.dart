@@ -67,10 +67,10 @@ class MakeupKitProductPage extends ConsumerWidget {
 
   Widget _missingContent(BuildContext context, MakeupKitProductsState state) {
     if (state.status == MakeupKitProductsStatus.loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: LoadingState(label: 'Loading this product…'));
     }
     return Center(
-      child: StatusState(
+      child: StatusState.error(
         title: 'Product unavailable',
         message: state.status == MakeupKitProductsStatus.failure
             ? state.message ?? 'Your makeup kit could not be loaded.'
@@ -159,28 +159,16 @@ class MakeupKitProductPage extends ConsumerWidget {
     WidgetRef ref,
     MakeupKitProduct product,
   ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete product?'),
-        content: const Text(
-          'This removes the product from your makeup kit. This action cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => dialogContext.pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.error,
-              foregroundColor: AppColors.onAccent(AppColors.error),
-            ),
-            onPressed: () => dialogContext.pop(true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    // The shared destructive confirmation. Same title, same warning, same
+    // outcome — but the danger styling and the "Delete" label now come from one
+    // place, so every irreversible action in the app looks alike.
+    final confirmed = await showConfirmationDialog(
+      context,
+      title: 'Delete product?',
+      message:
+          'This removes the product from your makeup kit. This action cannot '
+          'be undone.',
+      isDestructive: true,
     );
     if (confirmed != true || !context.mounted) return;
     final succeeded = await ref
@@ -190,6 +178,13 @@ class MakeupKitProductPage extends ConsumerWidget {
   }
 }
 
+/// A product attribute, in the shared two-column reading layout.
+///
+/// Was a local widget with a hardcoded 100pt label column — one of four
+/// separate implementations of the same row in the app, and the one that
+/// squeezed its value into a few characters per line at large text sizes.
+/// [DetailRow] keeps the column at normal sizes and falls back to inline text
+/// once it stops fitting.
 class _Detail extends StatelessWidget {
   const _Detail({required this.label, required this.value});
 
@@ -197,17 +192,6 @@ class _Detail extends StatelessWidget {
   final String value;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 100,
-          child: Text(label, style: Theme.of(context).textTheme.labelLarge),
-        ),
-        Expanded(child: Text(value)),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) =>
+      DetailRow(label: label, value: value, layout: DetailRowLayout.columns);
 }

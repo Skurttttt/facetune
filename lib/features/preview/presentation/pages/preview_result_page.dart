@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../shared/widgets/app_ui.dart';
+import '../../../../theme/app_semantics.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../../analysis/presentation/controllers/face_analysis_controller.dart';
 import '../../../analysis/domain/entities/face_analysis.dart';
@@ -63,25 +64,29 @@ class PreviewResultPage extends ConsumerWidget {
           !next.sessionExpired &&
           currentPreview != null &&
           next.failedPreviewIds.contains(currentPreview.id);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(next.feedback!),
-          action: next.sessionExpired
-              ? SnackBarAction(
-                  label: 'Sign in again',
-                  onPressed: () => ref
-                      .read(authControllerProvider.notifier)
-                      .recoverExpiredSession(),
-                )
-              : canRetrySavedStatus
-              ? SnackBarAction(
-                  label: 'Retry',
-                  onPressed: () => ref
-                      .read(resultActionsControllerProvider.notifier)
-                      .retrySavedStatus(currentPreview),
-                )
-              : null,
-        ),
+      // Same message, same two recovery actions, same conditions. The tone is
+      // read from state the controller already publishes rather than derived
+      // from the text: an expired session or a failed saved-status lookup is a
+      // failure, and everything else here is a confirmation.
+      final isFailure = next.sessionExpired || canRetrySavedStatus;
+      showAppSnackBar(
+        context,
+        message: next.feedback!,
+        tone: isFailure ? AppTone.danger : AppTone.success,
+        actionLabel: next.sessionExpired
+            ? 'Sign in again'
+            : canRetrySavedStatus
+            ? 'Retry'
+            : null,
+        onAction: next.sessionExpired
+            ? () => ref
+                  .read(authControllerProvider.notifier)
+                  .recoverExpiredSession()
+            : canRetrySavedStatus
+            ? () => ref
+                  .read(resultActionsControllerProvider.notifier)
+                  .retrySavedStatus(currentPreview)
+            : null,
       );
       ref.read(resultActionsControllerProvider.notifier).clearFeedback();
     });
@@ -90,20 +95,26 @@ class PreviewResultPage extends ConsumerWidget {
       appBar: AppBar(title: const Text('Your FaceTune result')),
       body: SafeArea(
         child: PageFrame(
+          // Wider than the 720 default so the side-by-side branch below can
+          // actually engage. It never could: `PageFrame` capped this page's
+          // child at 720, and the layout asked for 900 — dead code that read
+          // like a working tablet layout. This is the only screen that earns
+          // the extra width, because it is the only one with two things worth
+          // reading at once.
+          maxWidth: 1000,
           child: switch (previewState.status) {
             MakeupPreviewStatus.generating => const Center(
               child: LoadingState(
                 label: 'Creating another identity-conscious variation…',
               ),
             ),
-            MakeupPreviewStatus.failure => Center(
+            MakeupPreviewStatus.failure => _ScrollableStateRegion(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  StatusState(
+                  StatusState.error(
                     title: 'Preview generation paused',
                     message: previewState.message ?? 'Please try again.',
-                    icon: Icons.error_outline_rounded,
                     actionLabel:
                         previewState.failureType ==
                             PreviewFailureType.authentication
@@ -135,12 +146,12 @@ class PreviewResultPage extends ConsumerWidget {
                   ),
                   if (previewState.previousPreview != null) ...[
                     const SizedBox(height: AppSpacing.sm),
-                    TextButton.icon(
+                    TertiaryButton(
+                      label: 'View previous result',
+                      icon: Icons.undo_rounded,
                       onPressed: () => ref
                           .read(makeupPreviewControllerProvider.notifier)
                           .showPreviousResult(),
-                      icon: const Icon(Icons.undo_rounded),
-                      label: const Text('View previous result'),
                     ),
                   ],
                 ],
@@ -181,8 +192,11 @@ class PreviewResultPage extends ConsumerWidget {
                   context.go(AppConstants.homeRoute);
                 },
               ),
-            MakeupPreviewStatus.success => Center(
-              child: StatusState(
+            MakeupPreviewStatus.success => _ScrollableStateRegion(
+              // A broken referential chain between analysis, plan and preview
+              // is a failure, not an absence — the guard above rejected a
+              // result that had actually been generated.
+              child: StatusState.error(
                 title: 'Result links unavailable',
                 message:
                     'This preview no longer matches the active analysis and makeup plan.',
@@ -191,12 +205,13 @@ class PreviewResultPage extends ConsumerWidget {
                 onAction: () => context.go(AppConstants.recommendationRoute),
               ),
             ),
-            _ => Center(
-              child: StatusState(
+            _ => _ScrollableStateRegion(
+              // Reaching this screen with nothing generated yet is a missing
+              // precondition, not a fault, so it stays neutral and quiet.
+              child: StatusState.info(
                 title: 'Result unavailable',
                 message:
                     'Complete analysis, recommendation, and preview generation to view your result.',
-                icon: Icons.info_outline_rounded,
                 actionLabel: 'Return to makeup plan',
                 onAction: () => context.go(AppConstants.recommendationRoute),
               ),
@@ -206,6 +221,24 @@ class PreviewResultPage extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Keeps compact page states centred while allowing them to scroll when large
+/// text makes them taller than the viewport.
+class _ScrollableStateRegion extends StatelessWidget {
+  const _ScrollableStateRegion({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => SingleChildScrollView(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+        child: Center(child: child),
+      ),
+    ),
+  );
 }
 
 class _ResultContent extends StatelessWidget {
@@ -481,12 +514,11 @@ class _RealizedBreakdownState extends ConsumerState<_RealizedBreakdown> {
     if (state.status != RealizedLookStatus.ready) {
       // Never falls back to the full recommendation: that is exactly the
       // second, weaker category authority this phase removed.
-      return StatusState(
+      return StatusState.error(
         title: 'Breakdown unavailable',
         message:
             state.message ??
             'This look could not be checked against your final preview.',
-        icon: Icons.info_outline_rounded,
         actionLabel: state.retryable ? 'Try again' : null,
         onAction: state.retryable
             ? () => ref.read(realizedLookControllerProvider.notifier).retry()

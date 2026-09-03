@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:facetune/shared/widgets/app_ui.dart';
 import 'package:facetune/features/makeup_kit/domain/entities/kit_makeup_recommendation.dart';
 import 'package:facetune/features/recommendation/domain/entities/makeup_recommendation.dart';
@@ -21,6 +23,7 @@ import 'package:facetune/features/tutorial/presentation/utils/tutorial_labels.da
 import 'package:facetune/features/tutorial/presentation/widgets/tutorial_final_look_card.dart';
 import 'package:facetune/features/tutorial/presentation/widgets/tutorial_image_viewer.dart';
 import 'package:facetune/features/tutorial/presentation/widgets/tutorial_product_cards.dart';
+import 'package:facetune/theme/app_semantics.dart';
 import 'package:facetune/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -273,6 +276,7 @@ Future<_Steps> _pump(
   Brightness systemBrightness = Brightness.light,
   Size size = const Size(1200, 4000),
   double textScale = 1,
+  bool pushTutorialRoute = false,
 }) async {
   // A tall surface so the whole step fits: the page is a lazily-built ListView,
   // and an off-screen product card is simply not in the tree to find.
@@ -285,6 +289,12 @@ Future<_Steps> _pump(
 
   final session = _session(present: present, plan: plan, steps: steps);
   final stepRepo = stepRepository ?? _Steps();
+  final tutorialPage = TutorialPage(
+    preview: plan.sourceMode == RecommendationSourceMode.standard
+        ? const CanonicalPreviewRef.standard('preview-1')
+        : const CanonicalPreviewRef.myMakeupKit('preview-1'),
+    finalPreviewUrl: finalPreviewUrl,
+  );
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -305,15 +315,21 @@ Future<_Steps> _pump(
           ).copyWith(textScaler: TextScaler.linear(textScale)),
           child: child!,
         ),
-        home: TutorialPage(
-          preview: plan.sourceMode == RecommendationSourceMode.standard
-              ? const CanonicalPreviewRef.standard('preview-1')
-              : const CanonicalPreviewRef.myMakeupKit('preview-1'),
-          finalPreviewUrl: finalPreviewUrl,
-        ),
+        home: pushTutorialRoute
+            ? const Scaffold(body: Text('Tutorial closed'))
+            : tutorialPage,
       ),
     ),
   );
+  if (pushTutorialRoute) {
+    await tester.pumpAndSettle();
+    final routeContext = tester.element(find.text('Tutorial closed'));
+    unawaited(
+      Navigator.of(
+        routeContext,
+      ).push<void>(MaterialPageRoute<void>(builder: (_) => tutorialPage)),
+    );
+  }
   await tester.pumpAndSettle();
   return stepRepo;
 }
@@ -1087,5 +1103,206 @@ void main() {
         );
       });
     }
+  });
+
+  // UI-P5 — presentation only. Every assertion below is about what the step
+  // looks like and how it is reached; none of it may change what the tutorial
+  // does, which is what the first group here checks first.
+  group('presentation polish leaves behaviour alone', () {
+    testWidgets('the close control exits without generating anything', (
+      tester,
+    ) async {
+      // The exit affordance the tutorial did not have. It must leave — not
+      // cancel, restart, or redraw — so the generation count is the assertion
+      // that matters as much as the pop.
+      final steps = await _pump(
+        tester,
+        present: const <TutorialCategory>[
+          TutorialCategory.blush,
+          TutorialCategory.lips,
+        ],
+        plan: _standardPlan(),
+        steps: <TutorialStep>[
+          _step(TutorialCategory.blush, 1),
+          _step(TutorialCategory.lips, 2),
+        ],
+        pushTutorialRoute: true,
+      );
+
+      expect(find.byTooltip(TutorialLabels.closeTutorial), findsOneWidget);
+      expect(steps.generateCalls, 0);
+
+      await tester.tap(find.byTooltip(TutorialLabels.closeTutorial));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TutorialPage), findsNothing);
+      expect(find.text('Tutorial closed'), findsOneWidget);
+      expect(steps.generateCalls, 0, reason: 'leaving must cost nothing');
+    });
+
+    testWidgets('close is distinct from the in-page step Back button', (
+      tester,
+    ) async {
+      // Two retreats that mean different things. If they ever wear the same
+      // icon or the same word, one of them is lying.
+      await _pump(
+        tester,
+        present: const <TutorialCategory>[
+          TutorialCategory.blush,
+          TutorialCategory.lips,
+        ],
+        plan: _standardPlan(),
+        steps: <TutorialStep>[
+          _step(TutorialCategory.blush, 1),
+          _step(TutorialCategory.lips, 2),
+        ],
+      );
+
+      expect(find.byIcon(Icons.close_rounded), findsOneWidget);
+      expect(find.text(TutorialLabels.back), findsOneWidget);
+      expect(
+        find.byIcon(Icons.arrow_back),
+        findsNothing,
+        reason: 'a back arrow beside a Back button is two meanings, one icon',
+      );
+    });
+
+    testWidgets('the guideline advertises that it opens', (tester) async {
+      // Tapping the guideline has always opened the viewer; nothing on screen
+      // said so, while the smaller Final Look card beside it did.
+      await _pump(
+        tester,
+        present: const <TutorialCategory>[TutorialCategory.blush],
+        plan: _standardPlan(),
+        steps: <TutorialStep>[_step(TutorialCategory.blush, 1)],
+      );
+
+      expect(find.text(TutorialLabels.tapToEnlarge), findsWidgets);
+      expect(find.byIcon(Icons.zoom_out_map), findsWidgets);
+    });
+
+    testWidgets('the viewer still opens from the guideline', (tester) async {
+      final steps = await _pump(
+        tester,
+        present: const <TutorialCategory>[TutorialCategory.blush],
+        plan: _standardPlan(),
+        steps: <TutorialStep>[_step(TutorialCategory.blush, 1)],
+      );
+
+      await tester.tap(find.byKey(guidelineViewerTapKey));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TutorialImageViewer), findsOneWidget);
+      // Viewing an artifact already on screen draws nothing new.
+      expect(steps.generateCalls, 0);
+    });
+
+    testWidgets('redraw still requires explicit confirmation', (tester) async {
+      // The cost gate. Presentation moved this control to the shared tertiary
+      // button; it must still be a two-step action.
+      final steps = await _pump(
+        tester,
+        present: const <TutorialCategory>[TutorialCategory.blush],
+        plan: _standardPlan(),
+        steps: <TutorialStep>[_step(TutorialCategory.blush, 1)],
+      );
+
+      await tester.tap(find.text(TutorialLabels.redraw));
+      await tester.pumpAndSettle();
+
+      // The sheet is up and nothing has been spent yet.
+      expect(steps.generateCalls, 0);
+
+      // Dismissing costs nothing.
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+      expect(steps.generateCalls, 0);
+    });
+
+    testWidgets('the step header keeps both the count and the bar', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        present: const <TutorialCategory>[
+          TutorialCategory.blush,
+          TutorialCategory.lips,
+        ],
+        plan: _standardPlan(),
+      );
+
+      expect(find.text('Step 1 of 2'), findsOneWidget);
+      final bar = tester.widget<LinearProgressIndicator>(
+        find.byType(LinearProgressIndicator),
+      );
+      expect(bar.value, 0.5);
+      // The bar keeps its own spoken label: a reader landing on it hears what
+      // it is, which is a different job from the counter's live announcement.
+      expect(bar.semanticsLabel, 'Step 1 of 2');
+    });
+
+    testWidgets('the header stacks rather than overflowing at large text', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        present: const <TutorialCategory>[TutorialCategory.blush],
+        plan: _standardPlan(),
+        steps: <TutorialStep>[_step(TutorialCategory.blush, 1)],
+        size: const Size(320, 2400),
+        textScale: 2,
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Step 1 of 1'), findsOneWidget);
+      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    });
+
+    testWidgets('instruction order and shade metadata are untouched', (
+      tester,
+    ) async {
+      // The polish reordered nothing and renamed nothing.
+      await _pump(
+        tester,
+        present: const <TutorialCategory>[TutorialCategory.blush],
+        plan: _standardPlan(),
+        steps: <TutorialStep>[_step(TutorialCategory.blush, 1)],
+      );
+
+      expect(find.text(TutorialLabels.howToApply), findsOneWidget);
+      expect(find.text(TutorialLabels.suggestedShades), findsOneWidget);
+      expect(find.text(TutorialLabels.shade), findsOneWidget);
+      expect(find.text(TutorialLabels.hex), findsOneWidget);
+      expect(find.text(TutorialLabels.intensity), findsOneWidget);
+      expect(find.text('Warm peach'), findsOneWidget);
+      expect(find.text('#E8A08C'), findsOneWidget);
+      expect(find.text(TutorialLabels.guideKey), findsOneWidget);
+    });
+
+    testWidgets('the kit card tints with the theme in both modes', (
+      tester,
+    ) async {
+      // Was the fixed `AppColors.petal`: a light block on a dark page.
+      final items = _kitPlan().productSnapshot.itemsFor(
+        TutorialCategory.foundation,
+      );
+      for (final mode in [ThemeMode.light, ThemeMode.dark]) {
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.lightTheme,
+            darkTheme: AppTheme.darkTheme,
+            themeMode: mode,
+            home: Scaffold(body: MyMakeupKitProductCard(items: items)),
+          ),
+        );
+        await tester.pump();
+
+        final card = tester.widget<AppCard>(find.byType(AppCard));
+        final cardContext = tester.element(find.byType(MyMakeupKitProductCard));
+
+        expect(card.color, AppTone.info.resolve(cardContext).surface);
+        expect(tester.takeException(), isNull);
+      }
+    });
   });
 }

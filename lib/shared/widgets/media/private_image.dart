@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'image_states.dart';
+
 /// Displays a private FaceTune image at the resolution the layout actually
 /// needs.
 ///
@@ -59,18 +61,9 @@ class PrivateImage extends StatelessWidget {
       frameBuilder: (context, child, frame, synchronouslyLoaded) =>
           synchronouslyLoaded || frame != null
           ? child
-          : ColoredBox(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: const Center(
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
+          : const ImagePlaceholder(),
       errorBuilder: (context, error, stackTrace) =>
-          errorChild ??
-          ColoredBox(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            child: const Center(child: Icon(Icons.broken_image_outlined)),
-          ),
+          errorChild ?? const ImageUnavailable(),
     ),
   );
 }

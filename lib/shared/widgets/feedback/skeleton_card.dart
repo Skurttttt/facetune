@@ -21,7 +21,7 @@ class _SkeletonCardState extends State<SkeletonCard>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: AppDurations.shimmer,
     )..repeat(reverse: true);
   }
 
@@ -47,13 +47,23 @@ class _SkeletonCardState extends State<SkeletonCard>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(height: widget.imageHeight, decoration: _box(color)),
-                const SizedBox(height: 16),
+                // Omitted entirely at zero rather than drawn as a zero-height
+                // box, so a caller previewing rows that have no image does not
+                // also inherit the gap where one would have been. A skeleton
+                // that promises a picture and then resolves to text is a small
+                // lie about what is coming.
+                if (widget.imageHeight > 0) ...[
+                  Container(
+                    height: widget.imageHeight,
+                    decoration: _box(color),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                ],
                 FractionallySizedBox(
                   widthFactor: .6,
                   child: Container(height: 16, decoration: _box(color)),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: AppSpacing.xs + 2),
                 FractionallySizedBox(
                   widthFactor: .85,
                   child: Container(height: 12, decoration: _box(color)),

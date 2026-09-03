@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
-import '../../../../shared/widgets/app_shell.dart';
 import '../../../../shared/widgets/app_ui.dart';
+import '../../../../theme/app_semantics.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../../analysis/presentation/controllers/face_analysis_controller.dart';
 import '../../../authentication/presentation/controllers/auth_controller.dart';
@@ -69,18 +69,18 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     );
     ref.listen<HistoryState>(historyControllerProvider, (previous, next) {
       if (next.feedback == null || next.feedback == previous?.feedback) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(next.feedback!),
-          action: next.sessionExpired
-              ? SnackBarAction(
-                  label: 'Sign in again',
-                  onPressed: () => ref
-                      .read(authControllerProvider.notifier)
-                      .recoverExpiredSession(),
-                )
-              : null,
-        ),
+      // An expired session is the only failure this listener reports; the rest
+      // are confirmations of a delete or a favourite.
+      showAppSnackBar(
+        context,
+        message: next.feedback!,
+        tone: next.sessionExpired ? AppTone.danger : AppTone.success,
+        actionLabel: next.sessionExpired ? 'Sign in again' : null,
+        onAction: next.sessionExpired
+            ? () => ref
+                  .read(authControllerProvider.notifier)
+                  .recoverExpiredSession()
+            : null,
       );
       ref.read(historyControllerProvider.notifier).clearFeedback();
     });
@@ -89,9 +89,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       next,
     ) {
       if (next.feedback == null || next.feedback == previous?.feedback) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(next.feedback!)));
+      showAppSnackBar(context, message: next.feedback!);
       ref.read(makeupKitHistoryControllerProvider.notifier).clearFeedback();
     });
     ref.listen<int>(savedLooksRevisionProvider, (previous, next) {
@@ -152,7 +150,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: const [
-          SizedBox(height: 180),
+          SizedBox(height: AppSpacing.xxl * 2),
           Center(child: LoadingState(label: 'Loading your history…')),
         ],
       );
@@ -163,8 +161,8 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          const SizedBox(height: 120),
-          StatusState(
+          const SizedBox(height: AppSpacing.xxl),
+          StatusState.error(
             title: 'History unavailable',
             message: state.message ?? 'Please try again.',
             icon: Icons.history_toggle_off_rounded,
@@ -236,11 +234,11 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
         if (isGuest) ...[
           const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.md)),
           const SliverToBoxAdapter(
-            child: AppCard(
-              color: AppColors.petal,
-              child: Text(
-                'Guest history belongs to this temporary account and may be lost after signing out or clearing app data.',
-              ),
+            child: AppNotice(
+              tone: AppTone.warning,
+              message:
+                  'Guest history belongs to this temporary account and may be '
+                  'lost after signing out or clearing app data.',
             ),
           ),
         ],
@@ -285,10 +283,9 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
             state.items.isNotEmpty) ...[
           const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.md)),
           SliverToBoxAdapter(
-            child: StatusState(
+            child: StatusState.error(
               title: 'Could not load more history',
               message: state.message ?? 'Pull to refresh and try again.',
-              icon: Icons.error_outline_rounded,
               actionLabel: state.sessionExpired ? 'Sign in again' : 'Retry',
               onAction: state.sessionExpired
                   ? () => ref
@@ -334,7 +331,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
           const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
         ] else if (kitState.status == MakeupKitLibraryStatus.failure)
           SliverToBoxAdapter(
-            child: StatusState(
+            child: StatusState.error(
               title: 'My Makeup Kit history unavailable',
               message: kitState.message ?? 'Pull to refresh and try again.',
               icon: Icons.inventory_2_outlined,
@@ -362,7 +359,10 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
         if (visibleItems.isEmpty && visibleKitItems.isEmpty)
           SliverFillRemaining(
             hasScrollBody: false,
-            child: StatusState(
+            // Both branches are absences, not failures: either nothing has been
+            // created yet, or a filter matched nothing. Neither should announce
+            // itself or wear an error tone.
+            child: StatusState.empty(
               title: state.items.isEmpty && kitState.items.isEmpty
                   ? 'No FaceTune history yet'
                   : 'No matching sessions',
@@ -401,14 +401,14 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
           const SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.all(AppSpacing.lg),
-              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              child: Center(child: AppProgress()),
             ),
           ),
         if (kitState.status == MakeupKitLibraryStatus.loadingMore)
           const SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.all(AppSpacing.lg),
-              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              child: Center(child: AppProgress()),
             ),
           ),
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xl)),
@@ -512,24 +512,18 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   }
 
   Future<void> _confirmDelete(HistoryEntry entry) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete this history session?'),
-        content: const Text(
-          'This permanently removes the original selfie, every generated preview, recommendations, and any saved or favorited looks in this session.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete permanently'),
-          ),
-        ],
-      ),
+    // Irreversible, and it was styled exactly like an ordinary confirmation —
+    // a plain filled button next to Cancel. `isDestructive` gives it the danger
+    // treatment every other permanent deletion in the app now shares.
+    final confirmed = await showConfirmationDialog(
+      context,
+      title: 'Delete this history session?',
+      message:
+          'This permanently removes the original selfie, every generated '
+          'preview, recommendations, and any saved or favorited looks in this '
+          'session.',
+      confirmLabel: 'Delete permanently',
+      isDestructive: true,
     );
     if (confirmed != true || !mounted) return;
     final deleted = await ref
@@ -546,24 +540,14 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   }
 
   Future<void> _confirmDeleteKit(KitHistoryEntry entry) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete this history session?'),
-        content: const Text(
-          'This permanently removes the original selfie, standard and My Makeup Kit previews, recommendations, and saved looks in this session.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete permanently'),
-          ),
-        ],
-      ),
+    final confirmed = await showConfirmationDialog(
+      context,
+      title: 'Delete this history session?',
+      message:
+          'This permanently removes the original selfie, standard and My Makeup '
+          'Kit previews, recommendations, and saved looks in this session.',
+      confirmLabel: 'Delete permanently',
+      isDestructive: true,
     );
     if (confirmed != true || !mounted) return;
     final deleted = await ref

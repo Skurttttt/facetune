@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../shared/widgets/app_ui.dart';
+import '../../../../theme/app_semantics.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../../authentication/presentation/controllers/auth_controller.dart';
 import '../../domain/entities/makeup_kit_category.dart';
@@ -67,8 +68,10 @@ class MakeupKitOverviewPage extends ConsumerWidget {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          const SizedBox(height: 120),
-          StatusState(
+          // Was `SizedBox(height: 120)` used as vertical centring, which put the
+          // message at a different height here than on every other screen.
+          const SizedBox(height: AppSpacing.xxl),
+          StatusState.error(
             title: 'My Makeup Kit unavailable',
             message: state.message ?? 'Please try again.',
             icon: Icons.cloud_off_outlined,
@@ -102,16 +105,19 @@ class MakeupKitOverviewPage extends ConsumerWidget {
         const Text('Products you already own, organized by category.'),
         if (isGuest) ...[
           const SizedBox(height: AppSpacing.md),
-          const AppCard(
-            color: AppColors.petal,
-            child: Text(
-              'Guest kits are private to this temporary account and may be lost after signing out or clearing app data.',
-            ),
+          // A temporary account whose data can vanish is a caution, not a hint.
+          const AppNotice(
+            tone: AppTone.warning,
+            message:
+                'Guest kits are private to this temporary account and may be '
+                'lost after signing out or clearing app data.',
           ),
         ],
         const SizedBox(height: AppSpacing.lg),
         if (isEmpty)
-          StatusState(
+          // A new kit is empty by definition. Nothing has gone wrong, so this
+          // stays neutral and does not announce itself.
+          StatusState.empty(
             title: 'Your kit is empty',
             message:
                 'Add the makeup products you own to build personalized looks from them.',
@@ -120,22 +126,14 @@ class MakeupKitOverviewPage extends ConsumerWidget {
             onAction: () => context.push(AppConstants.makeupKitAddProductRoute),
           )
         else ...[
-          AppCard(
-            color: AppColors.petal,
-            child: Row(
-              children: [
-                const Icon(Icons.auto_awesome_rounded, color: AppColors.rose),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    '${state.items.length} product${state.items.length == 1 ? '' : 's'} across '
-                    '$populatedCategoryCount '
-                    'categor${populatedCategoryCount == 1 ? 'y' : 'ies'}. '
-                    'Incomplete kits are welcome.',
-                  ),
-                ),
-              ],
-            ),
+          AppNotice(
+            tone: AppTone.success,
+            icon: Icons.auto_awesome_rounded,
+            message:
+                '${state.items.length} product${state.items.length == 1 ? '' : 's'} across '
+                '$populatedCategoryCount '
+                'categor${populatedCategoryCount == 1 ? 'y' : 'ies'}. '
+                'Incomplete kits are welcome.',
           ),
           const SizedBox(height: AppSpacing.md),
           AppCard(

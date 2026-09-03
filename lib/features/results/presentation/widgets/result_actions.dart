@@ -53,11 +53,10 @@ class ResultActions extends StatelessWidget {
           Expanded(
             child: OutlinedButton.icon(
               onPressed: isSharing ? null : onShare,
+              // The shared spinner, so this matches every other in-flight
+              // control in the app instead of being a fourth hand-rolled one.
               icon: isSharing
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
+                  ? const ButtonProgress()
                   : const Icon(Icons.share_outlined),
               label: Text(isSharing ? 'Preparing' : 'Share'),
             ),
@@ -70,11 +69,12 @@ class ResultActions extends StatelessWidget {
         icon: Icons.refresh_rounded,
         onPressed: onGenerateAnother,
       ),
-      const SizedBox(height: AppSpacing.sm),
-      TextButton.icon(
+      const SizedBox(height: AppSpacing.xs),
+      TertiaryButton(
+        label: 'Return home',
+        icon: Icons.home_outlined,
+        expand: true,
         onPressed: onReturnHome,
-        icon: const Icon(Icons.home_outlined),
-        label: const Text('Return home'),
       ),
     ],
   );

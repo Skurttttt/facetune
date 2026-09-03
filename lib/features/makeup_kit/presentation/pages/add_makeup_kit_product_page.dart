@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../shared/widgets/app_ui.dart';
+import '../../../../theme/app_semantics.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../../authentication/presentation/controllers/auth_controller.dart';
 import '../../domain/catalog/makeup_kit_finish_catalog.dart';
@@ -89,20 +90,19 @@ class _AddMakeupKitProductPageState
       next,
     ) {
       if (next.feedback == null || next.feedback == previous?.feedback) return;
-      final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(next.feedback!),
-          backgroundColor: next.feedbackIsError ? AppColors.error : null,
-          action: next.sessionExpired
-              ? SnackBarAction(
-                  label: 'Sign in again',
-                  onPressed: () => ref
-                      .read(authControllerProvider.notifier)
-                      .recoverExpiredSession(),
-                )
-              : null,
-        ),
+      // `feedbackIsError` is the controller's own classification, so the tone
+      // reads it rather than re-deriving one. A save that worked now looks
+      // different from one that failed, instead of both being grey.
+      showAppSnackBar(
+        context,
+        message: next.feedback!,
+        tone: next.feedbackIsError ? AppTone.danger : AppTone.success,
+        actionLabel: next.sessionExpired ? 'Sign in again' : null,
+        onAction: next.sessionExpired
+            ? () => ref
+                  .read(authControllerProvider.notifier)
+                  .recoverExpiredSession()
+            : null,
       );
       ref.read(makeupKitProductsControllerProvider.notifier).clearFeedback();
     });
@@ -117,29 +117,24 @@ class _AddMakeupKitProductPageState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const AppCard(
-                  color: AppColors.petal,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.palette_outlined, color: AppColors.rose),
-                      SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Text(
-                          'Choose the closest visual shade first. You can fine-tune it only if you need to.',
-                        ),
-                      ),
-                    ],
-                  ),
+                const AppNotice(
+                  icon: Icons.palette_outlined,
+                  message:
+                      'Choose the closest visual shade first. You can fine-tune '
+                      'it only if you need to.',
                 ),
                 const SizedBox(height: AppSpacing.lg),
-                Text('Category', style: Theme.of(context).textTheme.titleSmall),
-                const SizedBox(height: AppSpacing.xs),
                 DropdownButtonFormField<MakeupKitCategory>(
                   initialValue: _category,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                  ),
+                  // The two `border: OutlineInputBorder()` overrides that used
+                  // to be on this page and the field below were the app's only
+                  // second input style: Material's default 4pt radius and
+                  // outline, against the shared 18pt filled field every auth
+                  // form uses. Two screens, two input systems. Dropping the
+                  // overrides lets both inherit `inputDecorationTheme`, which
+                  // also gives them the error and disabled states the local
+                  // decoration never defined.
+                  decoration: const InputDecoration(labelText: 'Category'),
                   items: [
                     for (final category in MakeupKitCategory.values)
                       DropdownMenuItem(
@@ -163,7 +158,6 @@ class _AddMakeupKitProductPageState
                   controller: _nameController,
                   decoration: const InputDecoration(
                     labelText: 'Product name (optional)',
-                    border: OutlineInputBorder(),
                   ),
                   textCapitalization: TextCapitalization.words,
                 ),

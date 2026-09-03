@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
-import '../../../../shared/widgets/app_shell.dart';
 import '../../../../shared/widgets/app_ui.dart';
+import '../../../../theme/app_semantics.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../../analysis/presentation/controllers/face_analysis_controller.dart';
 import '../../../authentication/presentation/controllers/auth_controller.dart';
@@ -61,18 +61,16 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
     final isGuest = ref.watch(authControllerProvider).user?.isAnonymous == true;
     ref.listen<SavedLooksState>(savedLooksControllerProvider, (previous, next) {
       if (next.feedback == null || next.feedback == previous?.feedback) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(next.feedback!),
-          action: next.sessionExpired
-              ? SnackBarAction(
-                  label: 'Sign in again',
-                  onPressed: () => ref
-                      .read(authControllerProvider.notifier)
-                      .recoverExpiredSession(),
-                )
-              : null,
-        ),
+      showAppSnackBar(
+        context,
+        message: next.feedback!,
+        tone: next.sessionExpired ? AppTone.danger : AppTone.success,
+        actionLabel: next.sessionExpired ? 'Sign in again' : null,
+        onAction: next.sessionExpired
+            ? () => ref
+                  .read(authControllerProvider.notifier)
+                  .recoverExpiredSession()
+            : null,
       );
       ref.read(savedLooksControllerProvider.notifier).clearFeedback();
     });
@@ -81,9 +79,7 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
       next,
     ) {
       if (next.feedback == null || next.feedback == previous?.feedback) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(next.feedback!)));
+      showAppSnackBar(context, message: next.feedback!);
       ref.read(makeupKitSavedControllerProvider.notifier).clearFeedback();
     });
     return AppShell(
@@ -116,7 +112,7 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          const SizedBox(height: 180),
+          const SizedBox(height: AppSpacing.xxl * 2),
           Center(child: LoadingState(label: 'Loading your saved looks…')),
         ],
       );
@@ -127,8 +123,8 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          const SizedBox(height: 120),
-          StatusState(
+          const SizedBox(height: AppSpacing.xxl),
+          StatusState.error(
             title: 'Saved looks unavailable',
             message: state.message ?? 'Please try again.',
             icon: Icons.cloud_off_outlined,
@@ -161,11 +157,11 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
         if (isGuest) ...[
           const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.md)),
           const SliverToBoxAdapter(
-            child: AppCard(
-              color: AppColors.petal,
-              child: Text(
-                'Guest looks are private to this temporary account and may be lost after signing out or clearing app data.',
-              ),
+            child: AppNotice(
+              tone: AppTone.warning,
+              message:
+                  'Guest looks are private to this temporary account and may be '
+                  'lost after signing out or clearing app data.',
             ),
           ),
         ],
@@ -173,7 +169,7 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
             state.items.isNotEmpty) ...[
           const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.md)),
           SliverToBoxAdapter(
-            child: StatusState(
+            child: StatusState.error(
               title: 'Could not finish updating',
               message: state.message ?? 'Pull to refresh and try again.',
               icon: Icons.error_outline_rounded,
@@ -239,7 +235,7 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
           const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
         ] else if (kitState.status == MakeupKitLibraryStatus.failure)
           SliverToBoxAdapter(
-            child: StatusState(
+            child: StatusState.error(
               title: 'My Makeup Kit looks unavailable',
               message: kitState.message ?? 'Pull to refresh and try again.',
               icon: Icons.inventory_2_outlined,
@@ -267,7 +263,8 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
         if (state.items.isEmpty && kitState.items.isEmpty)
           const SliverFillRemaining(
             hasScrollBody: false,
-            child: StatusState(
+            // An absence, not a failure: nobody has saved anything yet.
+            child: StatusState.empty(
               title: 'No saved looks yet',
               message:
                   'Generate a makeup preview and choose Save Look to build your collection.',
@@ -307,14 +304,14 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
           const SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.all(AppSpacing.lg),
-              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              child: Center(child: AppProgress()),
             ),
           ),
         if (kitState.status == MakeupKitLibraryStatus.loadingMore)
           const SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.all(AppSpacing.lg),
-              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              child: Center(child: AppProgress()),
             ),
           ),
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xl)),
@@ -371,24 +368,17 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
   }
 
   Future<void> _confirmRemove(SavedLook look) async {
-    final remove = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Remove saved look?'),
-        content: Text(
-          '${look.style.name} will be removed from your saved collection. The generated preview remains in your private history.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
+    // Not marked destructive: the copy is explicit that the preview survives in
+    // history, so this is a removal from a collection rather than a permanent
+    // deletion. Reserving the danger treatment for what is actually
+    // irreversible is what keeps it meaningful when it does appear.
+    final remove = await showConfirmationDialog(
+      context,
+      title: 'Remove saved look?',
+      message:
+          '${look.style.name} will be removed from your saved collection. The '
+          'generated preview remains in your private history.',
+      confirmLabel: 'Remove',
     );
     if (remove == true) {
       await ref.read(savedLooksControllerProvider.notifier).remove(look);
@@ -405,24 +395,13 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
   }
 
   Future<void> _confirmRemoveKit(KitSavedLook look) async {
-    final remove = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Remove saved kit look?'),
-        content: Text(
-          '${look.result.style.name} will be removed from Saved Looks. Its product snapshot and preview remain in private history.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
+    final remove = await showConfirmationDialog(
+      context,
+      title: 'Remove saved kit look?',
+      message:
+          '${look.result.style.name} will be removed from Saved Looks. Its '
+          'product snapshot and preview remain in private history.',
+      confirmLabel: 'Remove',
     );
     if (remove == true) {
       await ref.read(makeupKitSavedControllerProvider.notifier).remove(look);
