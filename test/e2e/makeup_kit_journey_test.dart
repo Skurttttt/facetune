@@ -407,6 +407,12 @@ class _KitJourneyHarness {
 }
 
 class _FakeSelfieRepository implements SelfieRepository {
+  // Unused here: this journey exercises the OS-picker path. The in-app
+  // camera's capture path is covered by live_capture_controller_test.dart.
+  @override
+  Future<PreparedSelfie> prepareCaptured(String path) =>
+      throw UnimplementedError();
+
   @override
   Future<PreparedSelfie?> acquire(SelfieSource source) async => PreparedSelfie(
     originalPath: 'original.jpg',

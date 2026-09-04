@@ -1,6 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:facetune/features/analysis/domain/repositories/face_analysis_repository.dart';
+import 'package:facetune/features/analysis/domain/usecases/analyze_face.dart';
+import 'package:facetune/features/analysis/domain/entities/face_analysis.dart';
+import 'package:facetune/features/analysis/presentation/controllers/face_analysis_controller.dart';
 import 'package:facetune/features/scan/domain/entities/local_image_validation.dart';
 import 'package:facetune/features/scan/domain/entities/prepared_selfie.dart';
 import 'package:facetune/features/scan/domain/entities/selfie_source.dart';
@@ -195,6 +199,7 @@ void main() {
       final controller = ScanController(
         selfieRepository: repository,
         validationRepository: validationRepository,
+        analysis: _analysisController(),
       );
       await controller.chooseFromGallery();
 
@@ -217,6 +222,7 @@ ScanController _controller(
 }) {
   return ScanController(
     selfieRepository: repository,
+    analysis: _analysisController(),
     validationRepository: _FakeImageValidationRepository(
       result:
           validationResult ??
@@ -245,6 +251,12 @@ class _FakeSelfieRepository implements SelfieRepository {
   Object? discardFailure;
   Completer<PreparedSelfie?>? acquireCompleter;
   final discarded = <PreparedSelfie>[];
+
+  // Unused here: these tests exercise the OS-picker path. The in-app camera's
+  // capture path is covered by live_capture_controller_test.dart.
+  @override
+  Future<PreparedSelfie> prepareCaptured(String path) =>
+      throw UnimplementedError();
 
   @override
   Future<PreparedSelfie?> acquire(SelfieSource source) async {
@@ -287,4 +299,23 @@ class _FakeImageValidationRepository implements ImageValidationRepository {
     if (currentCompleter != null) return currentCompleter.future;
     return result;
   }
+}
+
+/// A face-analysis controller that would fail loudly if reached.
+///
+/// These tests exercise the manual acquire/validate steps, none of which may
+/// reach a paid call. The gallery one-shot sequence — the only path that does —
+/// has its own coverage in gallery_one_shot_test.dart.
+FaceAnalysisController _analysisController() =>
+    FaceAnalysisController(const AnalyzeFace(_UnreachableAnalysis()));
+
+class _UnreachableAnalysis implements FaceAnalysisRepository {
+  const _UnreachableAnalysis();
+
+  @override
+  Future<FaceAnalysis> analyze({
+    required PreparedSelfie selfie,
+    required LocalImageValidation localValidation,
+    required void Function(AnalysisProgress progress) onProgress,
+  }) => throw StateError('no analysis may originate from these paths');
 }

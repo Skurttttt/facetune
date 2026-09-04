@@ -73,16 +73,20 @@ class _AnalysisContent extends StatelessWidget {
     return ListView(
       children: [
         const SizedBox(height: AppSpacing.md),
-        // The result of the secure checks, stated as the success it is. The
-        // confidence figures below are the model's own, unchanged — this screen
-        // reports state, it does not invent a step or a percentage.
-        const AppNotice(
-          tone: AppTone.success,
-          title: 'Analysis complete',
-          message:
-              'Your selfie passed secure visibility, lighting, sharpness, and '
-              'framing checks.',
-        ),
+        // The outcome, and only the outcome.
+        //
+        // This used to carry a second line enumerating the checks the selfie
+        // had passed — visibility, lighting, sharpness, framing. By the time
+        // this screen is reached those checks are settled history: the user
+        // already saw guidance about them while framing the shot, and a photo
+        // that failed them never got here. Restating the checklist made the
+        // first thing on the beauty profile a summary of a problem the user no
+        // longer has, above the attributes they actually came to read.
+        //
+        // The tone and icon still say this went well, so the meaning survives
+        // without the paragraph. Every confidence figure below is the model's
+        // own, unchanged and unaggregated.
+        const AppNotice(tone: AppTone.success, message: 'Analysis complete'),
         const SizedBox(height: AppSpacing.lg),
         const SectionHeader('Detected attributes'),
         const SizedBox(height: AppSpacing.sm),

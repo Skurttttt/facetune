@@ -1,4 +1,5 @@
 import type {
+  RecommendationEducation,
   RecommendationItem,
   RecommendationPlan,
 } from "./types.ts";
@@ -26,7 +27,9 @@ const allowedItemKeys = new Set([
   "finish",
   "intensity",
   "reasoning",
+  "education",
 ]);
+const allowedEducationKeys = new Set(["features", "effect", "style"]);
 
 function record(value: unknown): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -57,6 +60,33 @@ function text(
   return value.trim();
 }
 
+/** The three education strings, validated exactly as strictly as every other
+ * generated field.
+ *
+ * Strict rather than tolerant on purpose. This parses a *fresh* v3 response, so
+ * a missing or malformed education object means the model did not honour the
+ * schema — the same class of failure as a malformed HEX, and treated the same
+ * way. Historical rows that predate education are a different problem, handled
+ * where they are actually read: the Flutter DTO decodes education as optional,
+ * so a stored v2 plan still opens.
+ *
+ * The 240-character ceiling matches `reasoning` and the JSON schema. Enforcing
+ * it here as well means a model that ignores the schema cannot quietly inflate
+ * one response past the output-token budget.
+ */
+function education(value: unknown): RecommendationEducation {
+  const input = record(value);
+  if (
+    Object.keys(input).length !== allowedEducationKeys.size ||
+    Object.keys(input).some((key) => !allowedEducationKeys.has(key))
+  ) throw invalidResponse();
+  return {
+    features: text(input, "features", 240),
+    effect: text(input, "effect", 240),
+    style: text(input, "style", 240),
+  };
+}
+
 function item(value: unknown): RecommendationItem {
   const input = record(value);
   if (
@@ -79,6 +109,7 @@ function item(value: unknown): RecommendationItem {
     finish: text(input, "finish", 80),
     intensity,
     reasoning: text(input, "reasoning", 240),
+    education: education(input.education),
   };
 }
 

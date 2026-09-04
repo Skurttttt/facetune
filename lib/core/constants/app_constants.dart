@@ -17,6 +17,7 @@ class AppConstants {
   static const String forgotPasswordRoute = '/auth/forgot-password';
   static const String resetPasswordRoute = '/auth/reset-password';
   static const String scanRoute = '/scan';
+  static const String liveScanRoute = '/scan/live';
   static const String stylesRoute = '/styles';
   static const String recommendationModeRoute = '/recommendation-mode';
   static const String recommendationRoute = '/recommendation';

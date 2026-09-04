@@ -46,7 +46,14 @@ export async function requestGeminiRecommendation(
     generationConfig: {
       responseMimeType: "application/json",
       responseJsonSchema: MAKEUP_RECOMMENDATION_SCHEMA,
-      maxOutputTokens: 4096,
+      // Raised from 4096 when v3 added three education strings to each of the
+      // ten categories. A plan whose fields all sit near their schema maxima
+      // now exceeds 4096 output tokens, and the failure mode is the expensive
+      // one: the JSON truncates mid-object, `malformed_ai_json` fires, and the
+      // bounded retry spends a second call on a request that was never going
+      // to fit. Output is billed per token generated, not per token allowed,
+      // so a headroom-only increase costs nothing on a typical plan.
+      maxOutputTokens: 8192,
       // Low enough to keep shade names, HEX values, and intensity coherent
       // across a plan, but not so low that every style reads identically.
       temperature: 0.4,

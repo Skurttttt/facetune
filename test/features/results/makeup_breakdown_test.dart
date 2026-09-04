@@ -1,5 +1,3 @@
-import 'dart:ui' show SemanticsFlag;
-
 import 'package:facetune/features/recommendation/domain/entities/makeup_recommendation.dart';
 import 'package:facetune/features/results/presentation/widgets/makeup_breakdown.dart';
 import 'package:facetune/features/tutorial/domain/catalog/realized_look_filter.dart';
@@ -241,10 +239,24 @@ void main() {
         ),
       );
 
-      final expansion = find.bySemanticsLabel('Blush makeup details');
+      // Located through the `Semantics` widget rather than
+      // `find.bySemanticsLabel`, which matches a node's final *merged* label
+      // and so misses a container whose label is combined with its children's.
+      // Read through `flagsCollection` rather than the deprecated `hasFlag`.
+      // Both were silent behaviour changes in the Flutter SDK: the assertions
+      // below are the same ones, expressed in the API that still works.
+      final expansion = find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics &&
+            widget.properties.label == 'Blush makeup details',
+      );
       expect(expansion, findsOneWidget);
       expect(
-        tester.getSemantics(expansion).hasFlag(SemanticsFlag.isExpanded),
+        tester
+            .getSemantics(expansion)
+            .flagsCollection
+            .isExpanded
+            .toBoolOrNull(),
         isFalse,
       );
 
@@ -254,7 +266,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        tester.getSemantics(expansion).hasFlag(SemanticsFlag.isExpanded),
+        tester
+            .getSemantics(expansion)
+            .flagsCollection
+            .isExpanded
+            .toBoolOrNull(),
         isTrue,
       );
       expect(find.textContaining('Warm Rose placement'), findsOneWidget);

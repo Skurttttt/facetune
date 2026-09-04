@@ -246,7 +246,11 @@ void main() {
         contains('export const MAKEUP_RECOMMENDATION_PROMPT_VERSION ='),
       );
       expect(kitPrompt, contains('"kit_makeup_recommendation_v2"'));
-      expect(standardPrompt, contains('"makeup_recommendation_v2"'));
+      // Standard moved to v3 in LSEP-1, when every item gained the education
+      // object. The kit stayed at v2 and its contract is byte-for-byte
+      // unchanged — which is exactly the isolation this test exists to prove,
+      // so the bump is asserted here rather than relaxed away.
+      expect(standardPrompt, contains('"makeup_recommendation_v3"'));
       expect(
         standardPrompt,
         isNot(contains('KIT_MAKEUP_RECOMMENDATION_PROMPT_VERSION')),

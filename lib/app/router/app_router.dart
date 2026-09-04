@@ -24,6 +24,7 @@ import '../../features/preview/presentation/pages/preview_result_page.dart';
 import '../../features/recommendation/presentation/pages/makeup_recommendation_page.dart';
 import '../../features/profile/presentation/pages/profile_page.dart';
 import '../../features/saved_looks/presentation/pages/saved_looks_page.dart';
+import '../../features/scan/presentation/pages/live_camera_page.dart';
 import '../../features/scan/presentation/pages/scan_page.dart';
 import '../../features/tutorial/presentation/pages/tutorial_page.dart';
 import '../../features/settings/presentation/pages/settings_page.dart';
@@ -106,6 +107,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: AppConstants.scanRoute,
         name: 'scan',
         builder: (context, state) => const ScanPage(),
+      ),
+      GoRoute(
+        path: AppConstants.liveScanRoute,
+        name: 'liveScan',
+        builder: (context, state) => const LiveCameraPage(),
       ),
       GoRoute(
         path: AppConstants.stylesRoute,

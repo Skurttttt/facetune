@@ -25,6 +25,13 @@ class ScanPage extends ConsumerWidget {
     final analysisState = ref.watch(faceAnalysisControllerProvider);
     final selfie = state.selfie;
     final isBusy = state.isBusy || analysisState.isBusy;
+    // Described, never quantified: nothing here knows what fraction of an
+    // upload or a model call has elapsed, so nothing claims to.
+    final progressLabel = switch (state.stage) {
+      ScanStage.acquiring => 'Opening your photos…',
+      ScanStage.validatingLocal => 'Checking photo…',
+      _ => analysisState.isBusy ? 'Analyzing your features…' : null,
+    };
     ref.listen<FaceAnalysisState>(faceAnalysisControllerProvider, (
       previous,
       next,
@@ -68,32 +75,22 @@ class ScanPage extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: AppSpacing.lg),
-              _SelfieFrame(state: state),
+              _SelfieFrame(state: state, progressLabel: progressLabel),
               const SizedBox(height: AppSpacing.lg),
               const _GuidanceCard(),
               if (state.errorMessage != null) ...[
                 const SizedBox(height: AppSpacing.md),
                 _ScanError(
                   message: state.errorMessage!,
+                  title: state.stage == ScanStage.validationFailed
+                      ? 'This photo needs another try'
+                      : null,
                   canOpenSettings: state.canOpenSettings,
                   canRetryValidation: state.canRetryValidation,
                   canReselect: state.canReselect,
                   onOpenSettings: controller.openSettings,
                   onRetryValidation: controller.validateForAnalysis,
-                  onReselect: () => _acquire(ref, SelfieSource.gallery),
-                ),
-              ],
-              if (state.stage == ScanStage.readyForSecureValidation) ...[
-                const SizedBox(height: AppSpacing.md),
-                // This is the one unambiguously good outcome on the screen, and
-                // it used to be drawn on the identical pink surface as the two
-                // failure states below it. A user could not tell "your photo
-                // passed" from "your photo was rejected" without reading.
-                const AppNotice(
-                  tone: AppTone.success,
-                  message:
-                      'Local checks passed. Your selfie is ready for secure '
-                      'face, lighting, sharpness, visibility, and framing checks.',
+                  onReselect: () => _chooseFromGallery(ref),
                 ),
               ],
               if (analysisState.message != null) ...[
@@ -108,72 +105,40 @@ class ScanPage extends ConsumerWidget {
                               localValidation: state.localValidation!,
                             )
                       : null,
-                  onReselect: () => _acquire(ref, SelfieSource.gallery),
+                  onReselect: () => _chooseFromGallery(ref),
                   onSignIn: () => _recoverExpiredSession(ref),
                 ),
               ],
               const SizedBox(height: AppSpacing.lg),
-              if (selfie == null) ...[
+              // Choosing a photo is now the whole gallery interaction. It used
+              // to be the first of three taps — choose, then "Validate selfie",
+              // then "Analyze selfie" — and neither of the other two offered a
+              // decision. Selection is the intent; the app acts on it.
+              if (analysisState.status == FaceAnalysisStatus.success) ...[
                 PrimaryButton(
-                  label: _cameraLabel(state),
-                  icon: Icons.camera_alt_outlined,
-                  onPressed: state.isBusy
+                  label: 'View analysis',
+                  icon: Icons.visibility_outlined,
+                  onPressed: isBusy
                       ? null
-                      : () => _acquire(ref, SelfieSource.camera),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                SecondaryButton(
-                  label: _galleryLabel(state),
-                  icon: Icons.photo_library_outlined,
-                  onPressed: state.isBusy
-                      ? null
-                      : () => _acquire(ref, SelfieSource.gallery),
+                      : () => context.push(AppConstants.analysisRoute),
                 ),
               ] else ...[
                 PrimaryButton(
-                  label: _primaryLabel(state, analysisState),
-                  icon: analysisState.status == FaceAnalysisStatus.success
-                      ? Icons.visibility_outlined
-                      : Icons.arrow_forward_rounded,
-                  onPressed:
-                      isBusy ||
-                          analysisState.hasFailure ||
-                          state.stage == ScanStage.validationFailed
+                  label: 'Take a photo',
+                  icon: Icons.camera_alt_outlined,
+                  // Opens the in-app live camera rather than handing off to
+                  // the OS picker. Local guidance can only exist where the
+                  // frames are, and the OS camera never gave us any.
+                  onPressed: isBusy
                       ? null
-                      : analysisState.status == FaceAnalysisStatus.success
-                      ? () => context.push(AppConstants.analysisRoute)
-                      : state.stage == ScanStage.readyForSecureValidation
-                      ? () => ref
-                            .read(faceAnalysisControllerProvider.notifier)
-                            .analyze(
-                              selfie: selfie,
-                              localValidation: state.localValidation!,
-                            )
-                      : controller.validateForAnalysis,
+                      : () => context.push(AppConstants.liveScanRoute),
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                Row(
-                  children: [
-                    Expanded(
-                      child: SecondaryButton(
-                        label: 'Retake',
-                        icon: Icons.camera_alt_outlined,
-                        onPressed: isBusy
-                            ? null
-                            : () => _acquire(ref, SelfieSource.camera),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: SecondaryButton(
-                        label: 'Reselect',
-                        icon: Icons.photo_library_outlined,
-                        onPressed: isBusy
-                            ? null
-                            : () => _acquire(ref, SelfieSource.gallery),
-                      ),
-                    ),
-                  ],
+                SecondaryButton(
+                  key: const ValueKey('gallery-choose'),
+                  label: _galleryLabel(state, selfie != null),
+                  icon: Icons.photo_library_outlined,
+                  onPressed: isBusy ? null : () => _chooseFromGallery(ref),
                 ),
               ],
             ],
@@ -183,47 +148,22 @@ class ScanPage extends ConsumerWidget {
     );
   }
 
-  String _cameraLabel(ScanState state) {
-    return state.isBusy && state.activeSource == SelfieSource.camera
-        ? 'Preparing selfie...'
-        : 'Take a photo';
+  String _galleryLabel(ScanState state, bool hasSelfie) {
+    if (state.isBusy && state.activeSource == SelfieSource.gallery) {
+      return 'Preparing selfie...';
+    }
+    return hasSelfie ? 'Choose another photo' : 'Choose from gallery';
   }
 
-  String _galleryLabel(ScanState state) {
-    return state.isBusy && state.activeSource == SelfieSource.gallery
-        ? 'Preparing selfie...'
-        : 'Choose from gallery';
-  }
-
-  String _primaryLabel(ScanState scanState, FaceAnalysisState analysisState) {
-    if (analysisState.status == FaceAnalysisStatus.uploading) {
-      return 'Uploading securely...';
-    }
-    if (analysisState.status == FaceAnalysisStatus.secureProcessing) {
-      return 'Analyzing securely...';
-    }
-    if (analysisState.status == FaceAnalysisStatus.success) {
-      return 'View analysis';
-    }
-    if (analysisState.hasFailure) {
-      return 'Analysis paused';
-    }
-    return switch (scanState.stage) {
-      ScanStage.validatingLocal => 'Validating image...',
-      ScanStage.validationFailed => 'Choose another photo',
-      ScanStage.readyForSecureValidation => 'Analyze selfie',
-      _ => 'Validate selfie',
-    };
-  }
-
-  Future<void> _acquire(WidgetRef ref, SelfieSource source) async {
-    final controller = ref.read(scanControllerProvider.notifier);
-    final changed = source == SelfieSource.camera
-        ? await controller.takePhoto()
-        : await controller.chooseFromGallery();
-    if (changed) {
-      ref.read(faceAnalysisControllerProvider.notifier).clear();
-    }
+  /// Picks a photo and runs the whole sequence.
+  ///
+  /// Any previous analysis is cleared first, so a new photo can never be
+  /// confused with the result of the last one.
+  Future<void> _chooseFromGallery(WidgetRef ref) async {
+    ref.read(faceAnalysisControllerProvider.notifier).clear();
+    await ref
+        .read(scanControllerProvider.notifier)
+        .chooseFromGalleryAndAnalyze();
   }
 
   Future<void> _beginNewScan(WidgetRef ref) async {
@@ -237,9 +177,15 @@ class ScanPage extends ConsumerWidget {
 }
 
 class _SelfieFrame extends StatelessWidget {
-  const _SelfieFrame({required this.state});
+  const _SelfieFrame({required this.state, this.progressLabel});
 
   final ScanState state;
+
+  /// What the app is doing right now, or null when it is waiting on the user.
+  ///
+  /// Drives both the scrim and what a screen reader announces, so the two can
+  /// never disagree about whether anything is happening.
+  final String? progressLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -301,16 +247,16 @@ class _SelfieFrame extends StatelessWidget {
                     ),
                   ),
                 ),
-              if (state.isBusy)
+              if (progressLabel != null)
                 ColoredBox(
                   color: Colors.black.withValues(alpha: 0.32),
-                  child: const Center(
-                    // Fixed white: this sits on a scrim over the user's own
+                  child: Center(
+                    // Fixed white: this sits on a scrim over the user own
                     // photo, whose brightness the theme knows nothing about.
                     child: AppProgress(
                       size: AppProgressSize.large,
                       color: Colors.white,
-                      semanticLabel: 'Preparing your selfie',
+                      semanticLabel: progressLabel,
                     ),
                   ),
                 ),
@@ -357,9 +303,19 @@ class _ScanError extends StatelessWidget {
     required this.onOpenSettings,
     required this.onRetryValidation,
     required this.onReselect,
+    this.title,
   });
 
   final String message;
+
+  /// A heading for the failure, when one adds something.
+  ///
+  /// A rejected photo gets one, because "This photo needs another try" frames
+  /// what follows as a fixable property of the image rather than as an error
+  /// the user caused. The message beneath it is the validator's own words —
+  /// never a substitute reason invented to sound friendlier.
+  final String? title;
+
   final bool canOpenSettings;
   final bool canRetryValidation;
   final bool canReselect;
@@ -372,6 +328,7 @@ class _ScanError extends StatelessWidget {
     // Was the success tint. Every recovery action and every condition below is
     // unchanged — only which surface the failure is drawn on.
     tone: AppTone.danger,
+    title: title,
     message: message,
     liveRegion: true,
     actions: [

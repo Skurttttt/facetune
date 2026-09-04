@@ -154,13 +154,11 @@ class _RecommendationContent extends StatelessWidget {
           ],
         ),
         const SizedBox(height: AppSpacing.md),
-        const StatusState(
-          title: 'Ready for your preview',
-          message:
-              'Identity preservation is prioritized, but AI results can vary. You can generate another variation if needed.',
-          icon: Icons.auto_awesome_rounded,
-        ),
-        const SizedBox(height: AppSpacing.md),
+        // The palette used to end with a full status panel repeating that AI
+        // results vary and that another variation can be generated. It was the
+        // largest element on the screen and it explained the *next* screen,
+        // where regenerating is an action the user can actually take. The
+        // palette now ends where it should: with the one thing to do next.
         PrimaryButton(
           label: previewIsGenerating
               ? 'Creating your preview…'

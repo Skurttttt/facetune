@@ -24,6 +24,7 @@ import 'package:facetune/features/recommendation/data/providers/recommendation_p
 import 'package:facetune/features/recommendation/data/repositories/unavailable_makeup_recommendation_repository.dart';
 import 'package:facetune/features/saved_looks/data/providers/saved_looks_providers.dart';
 import 'package:facetune/features/saved_looks/data/repositories/unavailable_saved_looks_repository.dart';
+import 'package:facetune/features/scan/presentation/pages/live_camera_page.dart';
 import 'package:facetune/features/scan/presentation/pages/scan_page.dart';
 import 'package:facetune/features/settings/data/providers/settings_providers.dart';
 import 'package:facetune/theme/app_theme.dart';
@@ -102,6 +103,11 @@ final _screens = <_ScreenCase>[
   _ScreenCase('auth / entry', AuthenticationPage.new, 'Meet the look'),
   _ScreenCase('home / start', HomePage.new, 'Start Scan'),
   _ScreenCase('selfie', ScanPage.new, 'New scan'),
+  // Landmarked on the app bar rather than a guidance string: with no camera
+  // plugin behind a widget test the screen settles into a startup or
+  // unavailable state, and which one is not the point here. What the matrix
+  // checks is that the page renders and scrolls safely in every theme.
+  _ScreenCase('live camera', LiveCameraPage.new, 'New scan'),
   _ScreenCase('analysis', AnalysisResultPage.new, 'Analysis unavailable'),
   _ScreenCase(
     'style selection',

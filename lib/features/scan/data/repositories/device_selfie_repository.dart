@@ -37,7 +37,7 @@ class DeviceSelfieRepository implements SelfieRepository {
         requestFullMetadata: false,
       );
       if (selected == null) return null;
-      return _prepare(selected, source);
+      return _prepare(selected.path, source);
     } on SelfieFailure {
       rethrow;
     } on PlatformException catch (error) {
@@ -55,8 +55,15 @@ class DeviceSelfieRepository implements SelfieRepository {
     }
   }
 
-  Future<PreparedSelfie> _prepare(XFile selected, SelfieSource source) async {
-    final sourceFile = File(selected.path);
+  @override
+  Future<PreparedSelfie> prepareCaptured(String path) =>
+      _prepare(path, SelfieSource.camera);
+
+  Future<PreparedSelfie> _prepare(
+    String selectedPath,
+    SelfieSource source,
+  ) async {
+    final sourceFile = File(selectedPath);
     final size = await sourceFile.length();
     final randomAccessFile = await sourceFile.open();
     late final Uint8List header;
@@ -65,7 +72,7 @@ class DeviceSelfieRepository implements SelfieRepository {
     } finally {
       await randomAccessFile.close();
     }
-    _validator.validate(path: selected.path, size: size, header: header);
+    _validator.validate(path: selectedPath, size: size, header: header);
 
     final sessionDirectory = Directory(
       path.join((await getTemporaryDirectory()).path, 'facetune', 'selfies'),
@@ -73,7 +80,7 @@ class DeviceSelfieRepository implements SelfieRepository {
     await sessionDirectory.create(recursive: true);
     final id =
         '${DateTime.now().microsecondsSinceEpoch}_${size.hashCode.abs()}';
-    final extension = path.extension(selected.path).toLowerCase();
+    final extension = path.extension(selectedPath).toLowerCase();
     final originalPath = path.join(
       sessionDirectory.path,
       '${id}_original$extension',
