@@ -28,6 +28,7 @@ import '../../../tutorial/presentation/pages/tutorial_page.dart';
 import '../../../tutorial/presentation/utils/tutorial_labels.dart';
 import '../../../results/presentation/widgets/recommended_palette.dart';
 import '../../../results/presentation/widgets/result_actions.dart';
+import '../../../results/presentation/widgets/result_shell.dart';
 import '../../domain/entities/generated_preview.dart';
 import '../../domain/errors/preview_failure.dart';
 import '../controllers/makeup_preview_controller.dart';
@@ -127,9 +128,10 @@ class PreviewResultPage extends ConsumerWidget {
       // the body is measured against what is left after the bar, so nothing
       // can ever be scrolled to a position the bar is covering.
       bottomNavigationBar: hasResult
-          ? _PrimaryResultActions(
+          ? ResultBottomCta(
               key: const ValueKey('result-primary-actions'),
-              onShowTutorial: () => context.push(
+              label: TutorialLabels.startTutorial,
+              onPressed: () => context.push(
                 AppConstants.tutorialRoute,
                 extra: TutorialPageArgs(
                   preview: CanonicalPreviewRef.standard(result.preview.id),
@@ -377,19 +379,32 @@ class _ResultContent extends StatelessWidget {
       originalImageUrl: preview.originalImageUrl,
       generatedImageUrl: preview.generatedImageUrl,
     );
-    final details = _ResultDetails(
-      analysis: result.analysis,
-      recommendation: recommendation,
-      actionState: actionState,
-      previewId: preview.id,
-      onFavorite: onFavorite,
-      onShare: onShare,
-      onGenerateAnother: onGenerateAnother,
+    // The shared section shell, filled with Standard's own content. My Makeup
+    // Kit builds the identical shell from its own authorities, which is what
+    // makes the two modes read as one product without either borrowing the
+    // other's data.
+    final details = ResultSections(
+      overview: _OverviewSection(
+        actionState: actionState,
+        previewId: preview.id,
+        recommendation: recommendation,
+        onFavorite: onFavorite,
+        onShare: onShare,
+        onGenerateAnother: onGenerateAnother,
+      ),
+      makeup: _MakeupSection(
+        previewId: preview.id,
+        recommendation: recommendation,
+      ),
+      profile: _ProfileSection(analysis: result.analysis),
     );
-    final header = _ResultHeader(
+    // No mode badge. Standard is the default experience, and labelling the
+    // default only adds a line to read.
+    final header = ResultHeader(
       styleName: result.style.name,
-      intensity: recommendation.overallIntensity,
-      undertone: result.analysis.attributes.undertone.name,
+      metadata:
+          '${ResultFormatters.label(recommendation.overallIntensity)} intensity · '
+          '${ResultFormatters.label(result.analysis.attributes.undertone.name)} undertone',
     );
     // Just the scroll view now. The committing actions moved out to the
     // Scaffold's own bottom slot, so this no longer has to share a column with
@@ -445,129 +460,6 @@ class _ResultContent extends StatelessWidget {
 /// a fact about the look, and it remains on the state and in History, where it
 /// distinguishes one saved result from another. The comparison instruction now
 /// sits on the image it describes.
-class _ResultHeader extends StatelessWidget {
-  const _ResultHeader({
-    required this.styleName,
-    required this.intensity,
-    required this.undertone,
-  });
-
-  final String styleName;
-  final String intensity;
-  final String undertone;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(
-        styleName,
-        style: Theme.of(
-          context,
-        ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
-      ),
-      const SizedBox(height: AppSpacing.xxs),
-      Text(
-        '${ResultFormatters.label(intensity)} intensity · '
-        '${ResultFormatters.label(undertone)} undertone',
-        style: Theme.of(
-          context,
-        ).textTheme.bodyMedium?.copyWith(color: AppColors.muted(context)),
-      ),
-    ],
-  );
-}
-
-enum _ResultSection { overview, makeup, profile }
-
-class _ResultDetails extends StatefulWidget {
-  const _ResultDetails({
-    required this.analysis,
-    required this.recommendation,
-    required this.actionState,
-    required this.previewId,
-    required this.onFavorite,
-    required this.onShare,
-    required this.onGenerateAnother,
-  });
-
-  final FaceAnalysis analysis;
-  final MakeupRecommendation recommendation;
-  final ResultActionsState actionState;
-  final String previewId;
-  final VoidCallback onFavorite;
-  final VoidCallback onShare;
-  final VoidCallback onGenerateAnother;
-
-  @override
-  State<_ResultDetails> createState() => _ResultDetailsState();
-}
-
-class _ResultDetailsState extends State<_ResultDetails> {
-  _ResultSection _section = _ResultSection.overview;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    key: const ValueKey('result-progressive-details'),
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      SizedBox(
-        width: double.infinity,
-        child: SegmentedButton<_ResultSection>(
-          key: const ValueKey('result-section-tabs'),
-          showSelectedIcon: false,
-          segments: [
-            for (final section in _ResultSection.values)
-              ButtonSegment<_ResultSection>(
-                value: section,
-                label: Semantics(
-                  container: true,
-                  excludeSemantics: true,
-                  selected: _section == section,
-                  label: '${_sectionLabel(section)} tab',
-                  child: Text(_sectionLabel(section)),
-                ),
-              ),
-          ],
-          selected: <_ResultSection>{_section},
-          onSelectionChanged: (selection) {
-            if (selection.isEmpty) return;
-            setState(() => _section = selection.single);
-          },
-        ),
-      ),
-      const SizedBox(height: AppSpacing.md),
-      if (_section == _ResultSection.overview)
-        _OverviewSection(
-          actionState: widget.actionState,
-          previewId: widget.previewId,
-          recommendation: widget.recommendation,
-          onFavorite: widget.onFavorite,
-          onShare: widget.onShare,
-          onGenerateAnother: widget.onGenerateAnother,
-        ),
-      // The realized look stays mounted even while another section is shown.
-      // Its initState is the only presentation lifecycle point allowed to
-      // ensure the accepted manifest, so tab switching can never restart it.
-      Offstage(
-        offstage: _section != _ResultSection.makeup,
-        child: _MakeupSection(
-          previewId: widget.previewId,
-          recommendation: widget.recommendation,
-        ),
-      ),
-      if (_section == _ResultSection.profile)
-        _ProfileSection(analysis: widget.analysis),
-    ],
-  );
-
-  static String _sectionLabel(_ResultSection section) => switch (section) {
-    _ResultSection.overview => 'Overview',
-    _ResultSection.makeup => 'Makeup',
-    _ResultSection.profile => 'Profile',
-  };
-}
-
 class _OverviewSection extends StatelessWidget {
   const _OverviewSection({
     required this.actionState,
@@ -646,75 +538,6 @@ class _ProfileSection extends StatelessWidget {
       BeautyProfileCard(analysis: analysis),
     ],
   );
-}
-
-/// The screen's one committing action, in the space the Scaffold reserves.
-///
-/// This strip has held two full-width buttons and asked the user to choose
-/// between them. It holds one now, and its height is the height of that one
-/// button — the bar sizes to its content, so removing the second did not leave
-/// a gap where it used to be.
-///
-/// Saving a look is still a first-class feature; it is reached from Saved Looks
-/// and from History rather than from a second large button competing with the
-/// reason the user generated the result in the first place.
-class _PrimaryResultActions extends StatelessWidget {
-  const _PrimaryResultActions({required this.onShowTutorial, super.key});
-
-  final VoidCallback onShowTutorial;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Material(
-      color: theme.scaffoldBackgroundColor,
-      child: DecoratedBox(
-        // Drawn outside the safe area and outside the gutter, so the rule runs
-        // edge to edge and reads as the boundary of the screen rather than as
-        // the top of a floating card.
-        decoration: BoxDecoration(
-          border: Border(
-            top: BorderSide(
-              color: theme.dividerTheme.color ?? theme.dividerColor,
-            ),
-          ),
-        ),
-        child: SafeArea(
-          top: false,
-          // The same readable column and gutter the body uses, so the buttons
-          // line up with the content above them.
-          //
-          // Not `PageFrame`: its `Center` expands to whatever height it is
-          // offered, which in a `bottomNavigationBar` slot is the whole screen
-          // — the bar would eat the body. `heightFactor: 1` makes this hug its
-          // children and take only the height it needs, which is the entire
-          // point of putting it in the Scaffold's slot.
-          child: Align(
-            alignment: Alignment.topCenter,
-            heightFactor: 1,
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 1000),
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.gutter,
-                AppSpacing.sm,
-                AppSpacing.gutter,
-                AppSpacing.sm,
-              ),
-              // The button alone, with no column of one and no leftover
-              // spacer: the gap under the CTA used to belong to the button
-              // beneath it, and it left with that button.
-              child: PrimaryButton(
-                key: const ValueKey('result-show-tutorial'),
-                label: TutorialLabels.startTutorial,
-                icon: Icons.auto_stories_outlined,
-                onPressed: onShowTutorial,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 /// The Makeup Breakdown, filtered to what the canonical preview actually shows.

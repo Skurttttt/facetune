@@ -182,13 +182,65 @@ void main() {
     expect(harness.recommendation.calls, 0);
     expect(harness.kitLook.recommendationCalls, 1);
     expect(harness.kitLook.previewCalls, 1);
-    expect(find.text('Your My Makeup Kit look'), findsOneWidget);
-    await tester.scrollUntilVisible(
-      find.text('My lipstick'),
-      500,
-      scrollable: find.byType(Scrollable).last,
+
+    // The kit result is the shared result header and nothing else: the style's
+    // own name, with no mode label above it and no kit-only chrome.
+    expect(find.text('Your My Makeup Kit look'), findsNothing);
+    expect(find.text('My Makeup Kit'), findsNothing);
+    expect(find.text('Change mode'), findsNothing);
+    expect(find.byKey(const ValueKey('kit-change-mode')), findsNothing);
+
+    // The one bottom CTA, shared with Standard.
+    expect(find.byKey(const ValueKey('result-show-tutorial')), findsOneWidget);
+    expect(find.text('Save look'), findsNothing);
+    expect(find.text('Return home'), findsNothing);
+
+    // The immutable snapshot is still what renders, and it renders in the
+    // shared shell's Overview and Makeup sections.
+    final resultScroll = find.byKey(const ValueKey('result-content-scroll'));
+
+    /// Brings [finder] inside the result viewport, scrolling either way.
+    Future<void> reveal(Finder finder) async {
+      for (var attempt = 0; attempt < 20; attempt++) {
+        if (finder.evaluate().isNotEmpty) {
+          final viewport = tester.getRect(resultScroll);
+          final target = tester.getRect(finder.first);
+          if (target.top >= viewport.top && target.bottom <= viewport.bottom) {
+            return;
+          }
+        }
+        await tester.drag(resultScroll, const Offset(0, -160));
+        await tester.pumpAndSettle();
+      }
+    }
+
+    // The owned product appears in the shared Overview palette.
+    await reveal(find.text('My lipstick'));
+    expect(find.text('My lipstick'), findsWidgets);
+
+    // The utility row the kit can currently offer. Share is absent because the
+    // kit has no share service for its previews — see the hotfix report — and a
+    // control that did nothing would be worse than its absence.
+    // The same three-action row Standard renders, in the same order.
+    await reveal(find.text('Favorite'));
+    expect(find.text('Favorite'), findsOneWidget);
+    expect(find.text('Share'), findsOneWidget);
+    expect(find.text('Try another'), findsOneWidget);
+    expect(
+      tester.getCenter(find.text('Favorite')).dx,
+      lessThan(tester.getCenter(find.text('Share')).dx),
     );
-    expect(find.text('My lipstick'), findsOneWidget);
+    expect(
+      tester.getCenter(find.text('Share')).dx,
+      lessThan(tester.getCenter(find.text('Try another')).dx),
+    );
+
+    // The registered shade lives in the Makeup section, which is now a tab
+    // rather than a run of the page.
+    await reveal(find.text('Makeup'));
+    await tester.tap(find.text('Makeup'));
+    await tester.pumpAndSettle();
+    await reveal(find.textContaining('#B86F72'));
     expect(find.textContaining('#B86F72'), findsOneWidget);
   });
 

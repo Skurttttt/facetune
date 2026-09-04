@@ -7,6 +7,7 @@ import 'package:facetune/features/makeup_kit/presentation/controllers/makeup_kit
 import 'package:facetune/features/makeup_kit/presentation/controllers/makeup_kit_library_state.dart';
 import 'package:facetune/features/makeup_kit/presentation/controllers/makeup_kit_result_actions_controller.dart';
 import 'package:facetune/features/makeup_kit/presentation/controllers/makeup_kit_saved_controller.dart';
+import 'package:facetune/features/results/domain/services/result_share_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -50,6 +51,7 @@ void main() {
       final controller = MakeupKitResultActionsController(
         repository,
         () {},
+        shareService: _UnusedShareService(),
         timeout: const Duration(milliseconds: 1),
       );
       addTearDown(controller.dispose);
@@ -64,7 +66,11 @@ void main() {
   test('duplicate save taps issue one repository mutation', () async {
     final pending = Completer<KitSavedLook>();
     final repository = _ResilienceRepository(pendingSave: pending);
-    final controller = MakeupKitResultActionsController(repository, () {});
+    final controller = MakeupKitResultActionsController(
+      repository,
+      () {},
+      shareService: _UnusedShareService(),
+    );
 
     final first = controller.toggleSaved(_preview);
     final second = controller.toggleSaved(_preview);
@@ -136,4 +142,16 @@ class _ResilienceRepository implements MakeupKitLibraryRepository {
   @override
   Future<KitSavedLook> setFavorite(KitSavedLook look, bool isFavorite) async =>
       look;
+}
+
+/// Sharing plays no part in these save/favorite resilience cases, and calling
+/// it here would mean the controller had confused two unrelated operations.
+class _UnusedShareService implements ResultShareService {
+  @override
+  Future<void> share({
+    required String imageUrl,
+    required String storagePath,
+    required String previewId,
+    required String styleName,
+  }) async => throw StateError('Share must not run in this test.');
 }

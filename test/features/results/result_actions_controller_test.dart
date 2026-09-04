@@ -195,13 +195,15 @@ class _FakeShareService implements ResultShareService {
 
   @override
   Future<void> share({
-    required GeneratedPreview preview,
+    required String imageUrl,
+    required String storagePath,
+    required String previewId,
     required String styleName,
   }) async {
     if (shouldFail) {
       throw const ResultShareFailure('Sharing failed safely.');
     }
-    previewId = preview.id;
+    this.previewId = previewId;
     this.styleName = styleName;
   }
 }
@@ -209,7 +211,9 @@ class _FakeShareService implements ResultShareService {
 class _UnexpectedShareService implements ResultShareService {
   @override
   Future<void> share({
-    required GeneratedPreview preview,
+    required String imageUrl,
+    required String storagePath,
+    required String previewId,
     required String styleName,
   }) => Future.error(StateError('platform detail'));
 }

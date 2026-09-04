@@ -4,7 +4,6 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../../../preview/domain/entities/generated_preview.dart';
 import '../../domain/services/result_share_service.dart';
 
 class NativeResultShareService implements ResultShareService {
@@ -16,10 +15,12 @@ class NativeResultShareService implements ResultShareService {
 
   @override
   Future<void> share({
-    required GeneratedPreview preview,
+    required String imageUrl,
+    required String storagePath,
+    required String previewId,
     required String styleName,
   }) async {
-    final uri = Uri.tryParse(preview.generatedImageUrl);
+    final uri = Uri.tryParse(imageUrl);
     if (uri == null || uri.scheme != 'https') {
       throw const ResultShareFailure('The private preview link is invalid.');
     }
@@ -47,9 +48,9 @@ class NativeResultShareService implements ResultShareService {
         );
       }
       final directory = await getTemporaryDirectory();
-      final extension = _safeExtension(preview.generatedImagePath);
+      final extension = _safeExtension(storagePath);
       temporaryFile = File(
-        path.join(directory.path, 'facetune_${preview.id}.$extension'),
+        path.join(directory.path, 'facetune_$previewId.$extension'),
       );
       final sink = temporaryFile.openWrite();
       var byteCount = 0;

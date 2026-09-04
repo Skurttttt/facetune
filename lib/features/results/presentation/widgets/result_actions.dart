@@ -19,22 +19,27 @@ import '../../../../theme/app_tokens.dart';
 /// Home used to sit at the bottom of this group as a quiet text action. It is
 /// gone from here, not disabled: the same destination is now the top-right
 /// utility, and two Home controls on one screen was one too many.
+///
+/// [onShare] is nullable because sharing is a capability one mode has and the
+/// other does not. My Makeup Kit has no share service for its previews, so it
+/// omits the control rather than showing one that would do nothing — a button
+/// that lies is worse than a row of two.
 class ResultActions extends StatelessWidget {
   const ResultActions({
     required this.isFavorite,
     required this.isSharing,
     required this.isMutating,
     required this.onFavorite,
-    required this.onShare,
     required this.onGenerateAnother,
     super.key,
+    this.onShare,
   });
 
   final bool isFavorite;
   final bool isSharing;
   final bool isMutating;
   final VoidCallback onFavorite;
-  final VoidCallback onShare;
+  final VoidCallback? onShare;
   final VoidCallback onGenerateAnother;
 
   @override
@@ -55,16 +60,17 @@ class ResultActions extends StatelessWidget {
               semanticsLabel: isFavorite ? 'Remove from favorites' : 'Favorite',
               onPressed: isMutating ? null : onFavorite,
             ),
-            _CompactAction(
-              controlKey: const ValueKey('result-action-share'),
-              icon: Icons.share_outlined,
-              label: isSharing ? 'Preparing' : 'Share',
-              semanticsLabel: 'Share look',
-              // The shared spinner, so this matches every other in-flight
-              // control in the app instead of being a fourth hand-rolled one.
-              isLoading: isSharing,
-              onPressed: isSharing ? null : onShare,
-            ),
+            if (onShare != null)
+              _CompactAction(
+                controlKey: const ValueKey('result-action-share'),
+                icon: Icons.share_outlined,
+                label: isSharing ? 'Preparing' : 'Share',
+                semanticsLabel: 'Share look',
+                // The shared spinner, so this matches every other in-flight
+                // control in the app instead of being a fourth hand-rolled one.
+                isLoading: isSharing,
+                onPressed: isSharing ? null : onShare,
+              ),
             _CompactAction(
               controlKey: const ValueKey('result-action-try-another'),
               icon: Icons.refresh_rounded,

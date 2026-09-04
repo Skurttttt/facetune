@@ -1369,7 +1369,9 @@ class _Share implements ResultShareService {
 
   @override
   Future<void> share({
-    required GeneratedPreview preview,
+    required String imageUrl,
+    required String storagePath,
+    required String previewId,
     required String styleName,
   }) async {
     calls += 1;

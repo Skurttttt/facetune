@@ -10,7 +10,12 @@ import '../../../analysis/presentation/controllers/face_analysis_controller.dart
 import '../../../authentication/presentation/controllers/auth_controller.dart';
 import '../../../makeup_styles/presentation/controllers/makeup_style_selection_controller.dart';
 import '../../../preview/domain/errors/preview_failure.dart';
+import '../../../analysis/domain/entities/face_analysis.dart';
+import '../../../results/presentation/widgets/beauty_profile_card.dart';
 import '../../../results/presentation/widgets/before_after_comparison.dart';
+import '../../../results/presentation/widgets/result_actions.dart';
+import '../../../results/presentation/widgets/result_shell.dart';
+import '../widgets/kit_product_palette.dart';
 import '../controllers/makeup_kit_look_controller.dart';
 import '../controllers/makeup_kit_look_state.dart';
 import '../controllers/makeup_kit_products_controller.dart';
@@ -80,28 +85,63 @@ class MakeupKitRecommendationEntryPage extends ConsumerWidget {
     );
 
     return Scaffold(
-      appBar: const FaceTuneTopBar(title: 'My Makeup Kit look'),
+      // No page title, exactly as Standard has none: the look's own name is the
+      // title and it is the first thing under this bar. "My Makeup Kit look" up
+      // here was a third heading saying what two others already said.
+      //
+      // Home is the same top-right utility Standard uses, and it replaces the
+      // "Return home" text action that used to sit at the bottom of the button
+      // stack. One Home per screen.
+      appBar: FaceTuneTopBar(
+        actions: resultReady
+            ? <Widget>[
+                _KitHomeAction(
+                  onPressed: () => context.go(AppConstants.homeRoute),
+                ),
+              ]
+            : null,
+      ),
+      // The same reserved bottom strip Standard uses, carrying the same single
+      // CTA. The tutorial it opens is the kit's own: a My Makeup Kit canonical
+      // preview reference, which is what carries the source mode through to the
+      // tutorial's manifest and steps. No Standard crossover.
+      bottomNavigationBar: resultReady
+          ? ResultBottomCta(
+              key: const ValueKey('result-primary-actions'),
+              label: TutorialLabels.startTutorial,
+              onPressed: () => context.push(
+                AppConstants.tutorialRoute,
+                extra: TutorialPageArgs(
+                  preview: CanonicalPreviewRef.myMakeupKit(preview!.id),
+                  finalPreviewUrl: preview.generatedImageUrl,
+                ),
+              ),
+            )
+          : null,
       body: SafeArea(
         child: PageFrame(
+          maxWidth: 1000,
+          // The bottom bar already provides the navigation-bar clearance
+          // `PageFrame`'s tail exists for, so keeping both would reserve the
+          // same space twice. Dropped only while the bar is there.
+          padding: resultReady
+              ? PageFrame.defaultPadding.copyWith(bottom: 0)
+              : PageFrame.defaultPadding,
           child: resultReady
               ? _KitPreviewContent(
                   state: look,
                   styleName: style.name,
+                  analysis: analysis,
                   actions: actions,
-                  onSave: () => ref
-                      .read(makeupKitResultActionsControllerProvider.notifier)
-                      .toggleSaved(preview!),
                   onFavorite: () => ref
                       .read(makeupKitResultActionsControllerProvider.notifier)
                       .toggleFavorite(preview!),
+                  onShare: () => ref
+                      .read(makeupKitResultActionsControllerProvider.notifier)
+                      .share(preview: preview!, styleName: style.name),
                   onGenerateAnother: () => ref
                       .read(makeupKitLookControllerProvider.notifier)
                       .generateVariation(),
-                  onChangeMode: () {
-                    ref.read(makeupKitLookControllerProvider.notifier).clear();
-                    context.pop();
-                  },
-                  onReturnHome: () => context.go(AppConstants.homeRoute),
                 )
               : !kitReady
               ? _NotReadyState(
@@ -382,122 +422,203 @@ class _FailureState extends ConsumerWidget {
   }
 }
 
+/// The kit result, in the same shell Standard uses.
+///
+/// This screen used to be a scrolling stack: two headings that said the same
+/// thing, a full-width tinted notice, the hero, a paragraph of summary, the
+/// breakdown, and then six full-width buttons in a column. It was not a worse
+/// design so much as a different product — a user arriving from Standard had to
+/// re-learn where everything was.
+///
+/// It now composes [ResultHeader], [ResultSections] and [ResultBottomCta] — the
+/// same widgets Standard composes, in the same order, with the same spacing.
+/// Every piece of data still comes from kit authorities: the validated
+/// recommendation and its immutable product snapshots. Nothing here reads a
+/// Standard recommendation, and nothing falls back to one.
 class _KitPreviewContent extends StatelessWidget {
   const _KitPreviewContent({
     required this.state,
     required this.styleName,
+    required this.analysis,
     required this.actions,
-    required this.onSave,
     required this.onFavorite,
+    required this.onShare,
     required this.onGenerateAnother,
-    required this.onChangeMode,
-    required this.onReturnHome,
   });
 
   final MakeupKitLookState state;
   final String styleName;
+  final FaceAnalysis analysis;
   final MakeupKitResultActionsState actions;
-  final VoidCallback onSave;
   final VoidCallback onFavorite;
+  final VoidCallback onShare;
   final VoidCallback onGenerateAnother;
-  final VoidCallback onChangeMode;
-  final VoidCallback onReturnHome;
 
   @override
   Widget build(BuildContext context) {
     final preview = state.preview!;
     final recommendation = state.recommendation!;
+    final productCount = recommendation.selections.length;
     return ListView(
+      key: const ValueKey('result-content-scroll'),
       children: [
-        Text(
-          'Your My Makeup Kit look',
-          style: Theme.of(context).textTheme.headlineMedium,
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          '$styleName · Variation ${preview.generationNumber}',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            color: AppColors.rose,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        // The ownership guarantee — this look used nothing the user does not
-        // own. Stated as a confirmation rather than a neutral aside, because it
-        // is the whole promise of kit mode.
-        const AppNotice(
-          tone: AppTone.success,
-          icon: Icons.inventory_2_outlined,
-          message: 'Created only from products registered in My Makeup Kit.',
+        // Provenance as a label, not a card. The old full-width success notice
+        // said "Created only from products registered in My Makeup Kit" in a
+        // paragraph that outweighed the look it described; the badge says the
+        // same thing in the place a user looks for what they are reading.
+        //
+        // The variation number is gone from the hero for the same reason it
+        // left Standard's: it is bookkeeping about how the image was produced.
+        // It remains on the preview and in kit history, where it distinguishes
+        // one saved look from another.
+        // No mode label. The metadata line already says the look was built from
+        // owned products, and a badge above the title made the kit result read
+        // as a labelled variant of the app rather than the same result screen
+        // with a different source.
+        ResultHeader(
+          styleName: styleName,
+          metadata:
+              '$productCount owned product${productCount == 1 ? '' : 's'} · '
+              '${_label(recommendation.overallIntensity)} intensity',
         ),
         const SizedBox(height: AppSpacing.md),
+        // The same hero component Standard uses, given kit artifacts. Same
+        // aspect ratio, same radius, same labels, same drag behaviour — one
+        // renderer, two authoritative image pairs.
         BeforeAfterComparison(
           originalImageUrl: preview.originalImageUrl,
           generatedImageUrl: preview.generatedImageUrl,
         ),
-        const SizedBox(height: AppSpacing.lg),
-        Text(
-          recommendation.summary,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          '${recommendation.selections.length} owned product${recommendation.selections.length == 1 ? '' : 's'} selected · ${recommendation.overallIntensity} intensity',
-        ),
         const SizedBox(height: AppSpacing.md),
-        _RealizedKitBreakdown(
-          preview: CanonicalPreviewRef.myMakeupKit(preview.id),
-          recommendation: recommendation,
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        // The kit-mode tutorial entry. The same screen and the same controller
-        // as Standard Mode — only the preview reference differs, which is what
-        // carries the source mode through.
-        SecondaryButton(
-          label: TutorialLabels.startTutorial,
-          icon: Icons.auto_stories_outlined,
-          onPressed: () => context.push(
-            AppConstants.tutorialRoute,
-            extra: TutorialPageArgs(
-              preview: CanonicalPreviewRef.myMakeupKit(preview.id),
-              finalPreviewUrl: preview.generatedImageUrl,
-            ),
+        ResultSections(
+          overview: _KitOverviewSection(
+            recommendation: recommendation,
+            actions: actions,
+            previewId: preview.id,
+            onFavorite: onFavorite,
+            onShare: onShare,
+            onGenerateAnother: onGenerateAnother,
           ),
+          makeup: _KitMakeupSection(
+            previewId: preview.id,
+            recommendation: recommendation,
+          ),
+          profile: _KitProfileSection(analysis: analysis),
         ),
-        const SizedBox(height: AppSpacing.sm),
-        PrimaryButton(
-          label: actions.isSaved(preview.id) ? 'Saved' : 'Save look',
-          icon: actions.isSaved(preview.id)
-              ? Icons.bookmark_rounded
-              : Icons.bookmark_border_rounded,
-          onPressed: actions.isMutating ? null : onSave,
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        SecondaryButton(
-          label: actions.isFavorite(preview.id) ? 'Favorited' : 'Favorite',
-          icon: actions.isFavorite(preview.id)
-              ? Icons.favorite_rounded
-              : Icons.favorite_border_rounded,
-          onPressed: actions.isMutating ? null : onFavorite,
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        SecondaryButton(
-          label: 'Generate another variation',
-          icon: Icons.refresh_rounded,
-          onPressed: onGenerateAnother,
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        SecondaryButton(label: 'Change mode', onPressed: onChangeMode),
-        const SizedBox(height: AppSpacing.sm),
-        TextButton.icon(
-          onPressed: onReturnHome,
-          icon: const Icon(Icons.home_outlined),
-          label: const Text('Return home'),
-        ),
-        const SizedBox(height: AppSpacing.xl),
+        const SizedBox(height: AppSpacing.lg),
       ],
     );
   }
+
+  static String _label(String value) {
+    final words = value.replaceAll('_', ' ');
+    return words.isEmpty
+        ? words
+        : '${words[0].toUpperCase()}${words.substring(1)}';
+  }
+}
+
+/// Overview, kit-side: the owned products, then the same utility row.
+class _KitOverviewSection extends StatelessWidget {
+  const _KitOverviewSection({
+    required this.recommendation,
+    required this.actions,
+    required this.previewId,
+    required this.onFavorite,
+    required this.onShare,
+    required this.onGenerateAnother,
+  });
+
+  final KitMakeupRecommendation recommendation;
+  final MakeupKitResultActionsState actions;
+  final String previewId;
+  final VoidCallback onFavorite;
+  final VoidCallback onShare;
+  final VoidCallback onGenerateAnother;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    key: const ValueKey('result-section-overview'),
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      // Where Standard says "Recommended palette". Same slot, same component
+      // language, different truth: these are products the user owns.
+      const SectionHeader('Products from your kit'),
+      const SizedBox(height: AppSpacing.sm),
+      KitProductPalette(recommendation: recommendation),
+      const SizedBox(height: AppSpacing.md),
+      // The same three-action row Standard renders, from the same component.
+      // Share reaches the app's one share service through the kit controller,
+      // carrying the kit's own canonical preview.
+      ResultActions(
+        isFavorite: actions.isFavorite(previewId),
+        isSharing: actions.isSharing,
+        isMutating: actions.isMutating,
+        onFavorite: onFavorite,
+        onShare: onShare,
+        onGenerateAnother: onGenerateAnother,
+      ),
+      // Nothing after the utility row. Leaving this mode is what the global
+      // back control is for, and a kit-only action here was the last piece of
+      // chrome making this screen look unlike the Standard result.
+    ],
+  );
+}
+
+/// Makeup, kit-side: the same section header, the owned-product breakdown.
+class _KitMakeupSection extends StatelessWidget {
+  const _KitMakeupSection({
+    required this.previewId,
+    required this.recommendation,
+  });
+
+  final String previewId;
+  final KitMakeupRecommendation recommendation;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    key: const ValueKey('result-section-makeup'),
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      SectionHeader(
+        'Makeup breakdown',
+        action: '${_label(recommendation.overallIntensity)} intensity',
+      ),
+      const SizedBox(height: AppSpacing.sm),
+      _RealizedKitBreakdown(
+        preview: CanonicalPreviewRef.myMakeupKit(previewId),
+        recommendation: recommendation,
+      ),
+    ],
+  );
+
+  static String _label(String value) {
+    final words = value.replaceAll('_', ' ');
+    return words.isEmpty
+        ? words
+        : '${words[0].toUpperCase()}${words.substring(1)}';
+  }
+}
+
+/// Profile, kit-side: the identical component Standard uses.
+///
+/// Both modes analyse the same face, so there is nothing mode-specific to
+/// present. The confidences stay separate and unaggregated, as they are there.
+class _KitProfileSection extends StatelessWidget {
+  const _KitProfileSection({required this.analysis});
+
+  final FaceAnalysis analysis;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    key: const ValueKey('result-section-profile'),
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const SectionHeader('Detected beauty profile'),
+      const SizedBox(height: AppSpacing.sm),
+      BeautyProfileCard(analysis: analysis),
+    ],
+  );
 }
 
 /// The owned-product breakdown, filtered to what the canonical preview shows.
@@ -616,4 +737,28 @@ class _RealizedKitBreakdownState extends ConsumerState<_RealizedKitBreakdown> {
       ],
     );
   }
+}
+
+/// Home, as a top-bar utility.
+///
+/// The same presentation Standard's Home uses, over this screen's own existing
+/// destination — the `go` to the home route that the removed "Return home" text
+/// action called. Presentation only: no route was added, renamed or rerouted.
+class _KitHomeAction extends StatelessWidget {
+  const _KitHomeAction({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => MergeSemantics(
+    child: Semantics(
+      button: true,
+      label: 'Home',
+      child: IconButton(
+        key: const ValueKey('result-home'),
+        onPressed: onPressed,
+        icon: const Icon(Icons.home_outlined),
+      ),
+    ),
+  );
 }

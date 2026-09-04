@@ -8,6 +8,8 @@ import '../../domain/entities/kit_generated_preview.dart';
 import '../../domain/entities/kit_look_result.dart';
 import '../../domain/errors/makeup_kit_library_failure.dart';
 import '../../domain/repositories/makeup_kit_library_repository.dart';
+import '../../../results/data/providers/result_providers.dart';
+import '../../../results/domain/services/result_share_service.dart';
 import 'makeup_kit_result_actions_state.dart';
 
 final makeupKitResultActionsControllerProvider =
@@ -19,6 +21,9 @@ final makeupKitResultActionsControllerProvider =
       return MakeupKitResultActionsController(
         ref.watch(makeupKitLibraryRepositoryProvider),
         () => ref.read(makeupKitLibraryRevisionProvider.notifier).state++,
+        // The app's one share authority, the same instance Standard uses. Kit
+        // mode reuses that operation rather than owning a second copy of it.
+        shareService: ref.watch(resultShareServiceProvider),
       );
     });
 
@@ -27,12 +32,15 @@ class MakeupKitResultActionsController
   MakeupKitResultActionsController(
     this._repository,
     this._notifyChanged, {
+    required ResultShareService shareService,
     Duration timeout = const Duration(seconds: 30),
-  }) : _timeout = timeout,
+  }) : _shareService = shareService,
+       _timeout = timeout,
        super(const MakeupKitResultActionsState());
 
   final MakeupKitLibraryRepository _repository;
   final void Function() _notifyChanged;
+  final ResultShareService _shareService;
   final Duration _timeout;
   final Set<String> _loading = {};
 
@@ -138,6 +146,47 @@ class MakeupKitResultActionsController
     }
   }
 
+  /// Shares the kit look's already-generated canonical preview.
+  ///
+  /// A read-only operation on a result that already exists: it hands the
+  /// preview's signed URL to the shared share service, which downloads that one
+  /// object and opens the system sheet. Nothing here consults the product
+  /// library, the immutable snapshot, the manifest or any generator, so a share
+  /// can neither re-run nor re-decide the look it is sharing.
+  ///
+  /// Mirrors [ResultActionsController.share] deliberately — same guard, same
+  /// states, same messages — because a user should not be able to tell which
+  /// mode they are in from how sharing behaves.
+  Future<void> share({
+    required KitGeneratedPreview preview,
+    required String styleName,
+  }) async {
+    if (state.isSharing) return;
+    state = _copy(isSharing: true);
+    try {
+      await _shareService.share(
+        imageUrl: preview.generatedImageUrl,
+        storagePath: preview.generatedImagePath,
+        previewId: preview.id,
+        styleName: styleName,
+      );
+      if (mounted) {
+        state = _copy(isSharing: false, feedback: 'Share sheet opened.');
+      }
+    } on ResultShareFailure catch (failure) {
+      if (mounted) {
+        state = _copy(isSharing: false, feedback: failure.message);
+      }
+    } catch (_) {
+      if (mounted) {
+        state = _copy(
+          isSharing: false,
+          feedback: 'Sharing is unavailable right now. Please try again.',
+        );
+      }
+    }
+  }
+
   void restoreSavedLook(KitSavedLook look) {
     state = _copy(
       savedByPreviewId: Map.unmodifiable({
@@ -166,12 +215,14 @@ class MakeupKitResultActionsController
     Map<String, KitSavedLook>? savedByPreviewId,
     Set<String>? loadedPreviewIds,
     bool? isMutating,
+    bool? isSharing,
     String? feedback,
     bool sessionExpired = false,
   }) => MakeupKitResultActionsState(
     savedByPreviewId: savedByPreviewId ?? state.savedByPreviewId,
     loadedPreviewIds: loadedPreviewIds ?? state.loadedPreviewIds,
     isMutating: isMutating ?? state.isMutating,
+    isSharing: isSharing ?? state.isSharing,
     feedback: feedback,
     sessionExpired: sessionExpired,
   );

@@ -251,7 +251,15 @@ class ResultActionsController extends StateNotifier<ResultActionsState> {
     if (state.isSharing) return;
     state = _copy(isSharing: true);
     try {
-      await _shareService.share(preview: preview, styleName: styleName);
+      // Unpacked here rather than in the service, which no longer needs to know
+      // what a Standard preview is. This controller's own signature is
+      // unchanged, so every Standard caller and test is untouched.
+      await _shareService.share(
+        imageUrl: preview.generatedImageUrl,
+        storagePath: preview.generatedImagePath,
+        previewId: preview.id,
+        styleName: styleName,
+      );
       if (mounted) {
         state = _copy(isSharing: false, feedback: 'Share sheet opened.');
       }
