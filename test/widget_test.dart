@@ -58,7 +58,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('New scan'), findsOneWidget);
-    expect(find.text('Center your face in the frame'), findsOneWidget);
+    expect(find.text('Center your face in the guide'), findsOneWidget);
     await repository.dispose();
   });
 }

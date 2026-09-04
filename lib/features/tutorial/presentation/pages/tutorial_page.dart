@@ -12,6 +12,7 @@ import '../controllers/tutorial_controller.dart';
 import '../controllers/tutorial_state.dart';
 import '../utils/tutorial_image_focus.dart';
 import '../utils/tutorial_labels.dart';
+import '../widgets/tutorial_bottom_navigation.dart';
 import '../widgets/tutorial_final_look_card.dart';
 import '../widgets/tutorial_guide_key.dart';
 import '../widgets/tutorial_image_viewer.dart';
@@ -97,41 +98,67 @@ class _TutorialPageState extends ConsumerState<TutorialPage> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(tutorialControllerProvider);
-    final content = switch (state.status) {
+    // Body and footer are decided by one switch rather than two, so there is no
+    // way for the page to show a step without its navigation, or navigation
+    // over a loading spinner. A null footer means "this is not a step".
+    final (Widget content, Widget? footer) = switch (state.status) {
       TutorialStatus.idle ||
       TutorialStatus.opening ||
-      TutorialStatus.analyzingManifest => const LoadingState(
-        label: TutorialLabels.preparingTutorial,
+      TutorialStatus.analyzingManifest => (
+        const LoadingState(label: TutorialLabels.preparingTutorial),
+        null,
       ),
       // A modelled outcome, not a fault: the preview legitimately contains a
       // category the kit cannot reproduce. Same tone the Makeup Breakdown gives
       // the identical situation, so the two screens agree about what it means.
-      TutorialStatus.kitPreviewMismatch => StatusState(
-        tone: AppTone.warning,
-        title: TutorialLabels.emptyTitle,
-        message: state.message ?? TutorialLabels.emptyMessage,
-        icon: Icons.info_outline,
+      TutorialStatus.kitPreviewMismatch => (
+        StatusState(
+          tone: AppTone.warning,
+          title: TutorialLabels.emptyTitle,
+          message: state.message ?? TutorialLabels.emptyMessage,
+          icon: Icons.info_outline,
+        ),
+        null,
       ),
-      TutorialStatus.failed when state.session == null => StatusState.error(
-        title: TutorialLabels.guidelineUnavailable,
-        message: state.message ?? '',
-        actionLabel: state.retryable ? TutorialLabels.retry : null,
-        onAction: state.retryable
-            ? () => _controller.open(widget.preview)
-            : null,
+      TutorialStatus.failed when state.session == null => (
+        StatusState.error(
+          title: TutorialLabels.guidelineUnavailable,
+          message: state.message ?? '',
+          actionLabel: state.retryable ? TutorialLabels.retry : null,
+          onAction: state.retryable
+              ? () => _controller.open(widget.preview)
+              : null,
+        ),
+        null,
       ),
       // A look with no steps is an absence, not a failure.
-      _ when state.stepCount == 0 => const StatusState.empty(
-        title: TutorialLabels.emptyTitle,
-        message: TutorialLabels.emptyMessage,
+      _ when state.stepCount == 0 => (
+        const StatusState.empty(
+          title: TutorialLabels.emptyTitle,
+          message: TutorialLabels.emptyMessage,
+        ),
+        null,
       ),
-      _ => _TutorialBody(
-        state: state,
-        finalPreviewUrl: widget.finalPreviewUrl,
-        onNext: _next,
-        onPrevious: _controller.previous,
-        onRetry: _controller.generateCurrentStep,
-        onRedraw: _controller.regenerateCurrentStep,
+      _ => (
+        _TutorialBody(
+          state: state,
+          finalPreviewUrl: widget.finalPreviewUrl,
+          onRetry: _controller.generateCurrentStep,
+          onRedraw: _controller.regenerateCurrentStep,
+        ),
+        TutorialBottomNavigation(
+          // Both flags come from the accepted manifest's own category list, by
+          // way of the view state. Neither the footer nor this page counts
+          // steps for itself, and neither knows which category is last.
+          isLastStep: state.isLastStep,
+          canGoBack: state.currentIndex > 0,
+          onBack: () => _controller.previous(),
+          onNext: () => _next(),
+          // The same `maybePop` Finish has always called, so finishing and
+          // closing leave by one path — and neither cancels, restarts, or
+          // regenerates anything.
+          onFinish: () => Navigator.of(context).maybePop(),
+        ),
       ),
     };
     return Scaffold(
@@ -153,31 +180,56 @@ class _TutorialPageState extends ConsumerState<TutorialPage> {
       // and finishing exit by the identical path — and neither cancels,
       // restarts, or regenerates anything.
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.close_rounded),
-          tooltip: TutorialLabels.closeTutorial,
-          onPressed: () => Navigator.of(context).maybePop(),
+        leading: Semantics(
+          button: true,
+          label: TutorialLabels.closeTutorial,
+          excludeSemantics: true,
+          child: IconButton(
+            icon: const Icon(Icons.close_rounded),
+            tooltip: TutorialLabels.closeTutorial,
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
         ),
       ),
-      body: SafeArea(child: PageFrame(child: content)),
+      body: SafeArea(
+        child: PageFrame(
+          // `PageFrame`'s generous bottom tail exists, by its own account, so a
+          // screen's last element clears the navigation bar and the gesture
+          // area. The footer's own `SafeArea` now does that job, and keeping
+          // both would reserve the same space twice. A normal gap remains, so
+          // the last content still stands off the strip's rule rather than
+          // butting against it.
+          padding: footer == null
+              ? PageFrame.defaultPadding
+              : PageFrame.defaultPadding.copyWith(bottom: AppSpacing.md),
+          child: content,
+        ),
+      ),
+      // Persistent, in reserved layout space, and outside the scroll view. The
+      // body is measured against what is left after this, so there is no scroll
+      // position at which content hides underneath it.
+      bottomNavigationBar: footer,
     );
   }
 }
 
+/// The scrollable part of a step.
+///
+/// Step navigation is deliberately not here any more: it lives in the
+/// Scaffold's bottom slot as [TutorialBottomNavigation], so this list is only
+/// ever about the content of the step. Redraw stays in this content beside the
+/// guide it replaces rather than sitting permanently under the user's thumb
+/// next to Next.
 class _TutorialBody extends StatelessWidget {
   const _TutorialBody({
     required this.state,
     required this.finalPreviewUrl,
-    required this.onNext,
-    required this.onPrevious,
     required this.onRetry,
     required this.onRedraw,
   });
 
   final TutorialViewState state;
   final String? finalPreviewUrl;
-  final Future<void> Function() onNext;
-  final Future<void> Function() onPrevious;
   final Future<void> Function() onRetry;
   final Future<void> Function() onRedraw;
 
@@ -197,9 +249,12 @@ class _TutorialBody extends StatelessWidget {
           stepCount: state.stepCount,
         ),
         const SizedBox(height: AppSpacing.sm),
-        Text(
-          TutorialLabels.categoryName(category),
-          style: theme.textTheme.headlineMedium,
+        Semantics(
+          header: true,
+          child: Text(
+            TutorialLabels.categoryName(category),
+            style: theme.textTheme.headlineMedium,
+          ),
         ),
         const SizedBox(height: AppSpacing.md),
         _GuidelineView(state: state, onRetry: onRetry),
@@ -208,11 +263,25 @@ class _TutorialBody extends StatelessWidget {
         // read as an unrelated panel.
         const SizedBox(height: AppSpacing.xs),
         TutorialGuideKey(types: instructions.referencedGuideTypes),
+        const SizedBox(height: AppSpacing.xxs),
+        Align(
+          alignment: Alignment.centerLeft,
+          // Confirmed before it spends anything. Keeping this beside the guide
+          // makes the object of the action clear, while tertiary emphasis keeps
+          // it distinct from the free tutorial navigation in the footer.
+          child: TertiaryButton(
+            label: TutorialLabels.redrawGuide,
+            icon: Icons.refresh_rounded,
+            onPressed: state.hasCurrentGuideline
+                ? () => _confirmRedraw(context)
+                : null,
+          ),
+        ),
         // The final look sits immediately under the guideline, so the two
         // questions a step raises — where does this go, what should it end up
         // looking like — are answered next to each other rather than one of
         // them being five steps away.
-        if (finalPreviewUrl != null && !state.isLastStep) ...[
+        if (finalPreviewUrl != null) ...[
           const SizedBox(height: AppSpacing.sm),
           TutorialFinalLookCard(url: finalPreviewUrl!),
         ],
@@ -234,32 +303,6 @@ class _TutorialBody extends StatelessWidget {
           StandardProductCard(
             entries: state.session!.lookPlan.standardEntriesFor(category),
           ),
-        // The last step keeps the full-size presentation it has always had:
-        // there is nothing left to apply, so the finished look is the content
-        // of the step rather than a reference beside it.
-        if (state.isLastStep && finalPreviewUrl != null) ...[
-          const SizedBox(height: AppSpacing.lg),
-          TutorialFinalLookCard(url: finalPreviewUrl!, expanded: true),
-        ],
-        const SizedBox(height: AppSpacing.lg),
-        _controls(context),
-        const SizedBox(height: AppSpacing.sm),
-        Center(
-          // Confirmed before it spends anything. This used to regenerate on a
-          // single tap, on a scrolling page, with no warning — which made an
-          // accidental brush against it cost a paid image.
-          //
-          // Kept at the lowest emphasis the system has, and kept last: it is
-          // the one control on the page that costs money, so it should be
-          // findable when wanted and never the thing a thumb lands on first.
-          child: TertiaryButton(
-            label: TutorialLabels.redraw,
-            icon: Icons.refresh_rounded,
-            onPressed: state.hasCurrentGuideline
-                ? () => _confirmRedraw(context)
-                : null,
-          ),
-        ),
       ],
     );
   }
@@ -294,38 +337,6 @@ class _TutorialBody extends StatelessWidget {
     }
     return null;
   }
-
-  Widget _controls(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) {
-      final back = SecondaryButton(
-        label: TutorialLabels.back,
-        onPressed: state.currentIndex == 0 ? null : () => onPrevious(),
-      );
-      final next = PrimaryButton(
-        label: state.isLastStep ? TutorialLabels.finish_ : TutorialLabels.next,
-        onPressed: state.isLastStep
-            ? () => Navigator.of(context).maybePop()
-            : () => onNext(),
-      );
-      final scaledBodySize = MediaQuery.textScalerOf(context).scale(14);
-      if (constraints.maxWidth < 360 || scaledBodySize > 20) {
-        return Column(
-          children: [
-            back,
-            const SizedBox(height: AppSpacing.xs),
-            next,
-          ],
-        );
-      }
-      return Row(
-        children: [
-          Expanded(child: back),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(child: next),
-        ],
-      );
-    },
-  );
 }
 
 /// The 1K guideline image, with its loading, error, and retry states.

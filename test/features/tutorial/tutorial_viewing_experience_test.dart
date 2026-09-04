@@ -292,46 +292,44 @@ void main() {
       );
 
       expect(find.text('Your final look'), findsOneWidget);
-      expect(
-        find.text('The finished result you are working toward'),
-        findsOneWidget,
-      );
+      expect(find.text('View your target'), findsOneWidget);
       expect(
         tester.widget<PrivateImage>(find.byType(PrivateImage)).url,
         'https://example.invalid/final.png',
       );
     });
 
-    testWidgets('the expanded form shows the same single artifact', (
+    testWidgets('the canonical component has no giant inline image', (
       tester,
     ) async {
       await _pumpViewer(
         tester,
-        const TutorialFinalLookCard(
-          url: 'https://example.invalid/final.png',
-          expanded: true,
-        ),
+        const TutorialFinalLookCard(url: 'https://example.invalid/final.png'),
       );
 
-      expect(find.text('Your final look'), findsOneWidget);
       final images = tester.widgetList<PrivateImage>(find.byType(PrivateImage));
       expect(images.length, 1, reason: 'one canonical preview, rendered once');
       expect(images.first.url, 'https://example.invalid/final.png');
+      expect(
+        find.descendant(
+          of: find.byType(TutorialFinalLookCard),
+          matching: find.byType(AspectRatio),
+        ),
+        findsNothing,
+        reason: 'the removed full-size 3:4 final image must not return',
+      );
     });
 
-    testWidgets('both forms fit a narrow screen at large text', (tester) async {
-      for (final expanded in <bool>[false, true]) {
-        await _pumpViewer(
-          tester,
-          TutorialFinalLookCard(
-            url: 'https://example.invalid/final.png',
-            expanded: expanded,
-          ),
-          size: const Size(320, 640),
-          textScale: 2,
-        );
-        expect(tester.takeException(), isNull);
-      }
+    testWidgets('the compact component fits a narrow screen at large text', (
+      tester,
+    ) async {
+      await _pumpViewer(
+        tester,
+        const TutorialFinalLookCard(url: 'https://example.invalid/final.png'),
+        size: const Size(320, 640),
+        textScale: 2,
+      );
+      expect(tester.takeException(), isNull);
     });
   });
 

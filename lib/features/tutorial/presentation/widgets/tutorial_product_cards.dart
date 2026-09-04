@@ -1,128 +1,20 @@
 import 'package:flutter/material.dart';
 
-import '../../../../shared/widgets/app_ui.dart';
-import '../../../../theme/app_semantics.dart';
-import '../../../../theme/app_tokens.dart';
 import '../../domain/entities/look_product_snapshot.dart';
 import '../../domain/entities/standard_look_entry.dart';
 import '../../domain/entities/tutorial_shade_details.dart';
 import '../utils/tutorial_labels.dart';
+import 'tutorial_recommendation_section.dart';
 
-/// A colour chip showing an exact stored shade.
-///
-/// The hex is displayed as text as well as colour, because colour alone is not
-/// an accessible way to convey a value and a user comparing against a physical
-/// product needs the code.
-class _ShadeChip extends StatelessWidget {
-  const _ShadeChip({required this.hex, this.label});
+export 'tutorial_recommendation_section.dart';
 
-  final String hex;
-  final String? label;
-
-  @override
-  Widget build(BuildContext context) {
-    final parsed = int.tryParse(hex.replaceFirst('#', ''), radix: 16);
-    final color = parsed == null ? null : Color(0xFF000000 | parsed);
-    return Semantics(
-      // container + excludeSemantics so the swatch and the hex text read as one
-      // node. Without it the label never forms its own node, and a screen
-      // reader announces a bare hex string with no indication it is a colour.
-      container: true,
-      excludeSemantics: true,
-      label: label == null ? 'Shade $hex' : 'Shade $label, hex code $hex',
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // The shared swatch. Same 28pt diameter and same outline it drew by
-          // hand, but now the one implementation the whole app uses — this was
-          // the best of the four the audit found, and it is the one the shared
-          // component was modelled on. The fill stays snapshot data; only an
-          // unparseable value falls back to a themed surface.
-          AppColorSwatch(color: color),
-          const SizedBox(width: AppSpacing.xs),
-          Text(hex, style: Theme.of(context).textTheme.bodySmall),
-        ],
-      ),
-    );
-  }
+Color? _colorFromHex(String? hex) {
+  if (hex == null) return null;
+  final parsed = int.tryParse(hex.replaceFirst('#', ''), radix: 16);
+  return parsed == null ? null : Color(0xFF000000 | parsed);
 }
 
-Widget _detailRow(BuildContext context, String label, String value) {
-  final body = Theme.of(context).textTheme.bodySmall;
-  // Derived from the effective body colour rather than a fixed token, because
-  // these rows appear on two different surfaces: the default card, and the
-  // petal card whose foreground AppCard has already overridden. A global muted
-  // token is correct on one and wrong on the other; a softened version of
-  // whatever colour is actually in force is correct on both.
-  final labelColor = body?.color?.withValues(alpha: 0.72);
-  return Padding(
-    padding: const EdgeInsets.only(top: AppSpacing.xxs),
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        final useStack =
-            constraints.maxWidth < 220 ||
-            MediaQuery.textScalerOf(context).scale(12) > 18;
-        final labelWidget = Text(
-          label,
-          style: body?.copyWith(color: labelColor),
-        );
-        final valueWidget = Text(value, style: body);
-        if (useStack) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [labelWidget, const SizedBox(height: 2), valueWidget],
-          );
-        }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(width: 92, child: labelWidget),
-            Expanded(child: valueWidget),
-          ],
-        );
-      },
-    ),
-  );
-}
-
-Widget _hexDetailRow(BuildContext context, String hex, {String? shadeLabel}) {
-  final body = Theme.of(context).textTheme.bodySmall;
-  final labelColor = body?.color?.withValues(alpha: 0.72);
-  return Padding(
-    padding: const EdgeInsets.only(top: AppSpacing.xxs),
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        final useStack =
-            constraints.maxWidth < 220 ||
-            MediaQuery.textScalerOf(context).scale(12) > 18;
-        final labelWidget = Text(
-          TutorialLabels.hex,
-          style: body?.copyWith(color: labelColor),
-        );
-        final valueWidget = _ShadeChip(hex: hex, label: shadeLabel);
-        if (useStack) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [labelWidget, const SizedBox(height: 2), valueWidget],
-          );
-        }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            SizedBox(width: 92, child: labelWidget),
-            Expanded(child: valueWidget),
-          ],
-        );
-      },
-    ),
-  );
-}
-
-/// Standard Mode: brand-neutral colour guidance.
-///
-/// Shows a shade description such as "warm peach" and never a product to buy —
-/// the upstream recommendation carries no brand, retailer, or price, and this
-/// card adds none.
+/// Standard Mode adapter: brand-neutral recommendation authority only.
 class StandardProductCard extends StatelessWidget {
   const StandardProductCard({required this.entries, super.key});
 
@@ -130,78 +22,25 @@ class StandardProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (entries.isEmpty) return const SizedBox.shrink();
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            TutorialLabels.suggestedShades,
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          for (final entry in entries) ...[
-            const SizedBox(height: AppSpacing.sm),
-            _detailRow(context, TutorialLabels.shade, entry.shadeName),
-            if (entry.colorHex != null)
-              _hexDetailRow(
-                context,
-                entry.colorHex!,
-                shadeLabel: entry.shadeName,
-              ),
-            if (entry.finish.isNotEmpty)
-              _detailRow(context, TutorialLabels.finish, entry.finish),
-            // Routed through the controlled vocabulary rather than printed raw.
-            // A value outside the validated set is shown as nothing at all —
-            // displaying an unrecognised strength would be a guess.
-            ?switch (TutorialIntensity.fromCode(entry.intensity)) {
-              final intensity? => _detailRow(
-                context,
-                TutorialLabels.intensity,
-                TutorialLabels.intensityName(intensity),
-              ),
+    return TutorialRecommendationSection(
+      sectionLabel: TutorialLabels.suggestedShades,
+      items: [
+        for (final entry in entries)
+          TutorialRecommendationItem(
+            displayName: entry.shadeName,
+            swatch: _colorFromHex(entry.colorHex),
+            finish: entry.finish.trim().isEmpty ? null : entry.finish,
+            intensity: switch (TutorialIntensity.fromCode(entry.intensity)) {
+              final intensity? => TutorialLabels.intensityName(intensity),
               null => null,
             },
-            // The recommendation's own placement and technique wording. It is
-            // look-specific and authoritative, so it belongs with the rest of
-            // the recommendation metadata — not in the numbered instructions,
-            // which describe the drawn guides and must reference a symbol.
-            if (entry.placement.trim().isNotEmpty) ...[
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                TutorialLabels.whereToApply,
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-              const SizedBox(height: AppSpacing.xxs),
-              Text(
-                entry.placement,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-            if (entry.technique.trim().isNotEmpty) ...[
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                TutorialLabels.technique,
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-              const SizedBox(height: AppSpacing.xxs),
-              Text(
-                entry.technique,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ],
-        ],
-      ),
+          ),
+      ],
     );
   }
 }
 
-/// My Makeup Kit: the user's own products, exactly as captured.
-///
-/// Every value comes from the immutable snapshot taken when the look was
-/// validated, so a product edited or deleted since then still displays as it
-/// was used. Nothing is substituted for a missing field — an unnamed product
-/// shows its category instead of an invented name.
+/// My Makeup Kit adapter: immutable owned-product snapshot authority only.
 class MyMakeupKitProductCard extends StatelessWidget {
   const MyMakeupKitProductCard({required this.items, super.key});
 
@@ -209,71 +48,22 @@ class MyMakeupKitProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (items.isEmpty) return const SizedBox.shrink();
-    // Tinted, because these are the user's own products rather than generic
-    // guidance and the distinction is worth seeing at a glance. Resolved through
-    // the info role rather than the fixed `AppColors.petal` it used to be, so
-    // the card is a dark tint in dark mode instead of a light block stranded on
-    // a dark page. `AppCard` derives its foreground from whichever surface it
-    // is handed, so the rows below stay readable either way.
-    final info = AppTone.info.resolve(context);
-    return AppCard(
-      color: info.surface,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.inventory_2_outlined,
-                size: AppIconSizes.sm,
-                color: info.accent,
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Text(
-                items.length == 1
-                    ? TutorialLabels.fromYourKit
-                    : TutorialLabels.fromYourKitPlural(items.length),
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-            ],
+    return TutorialRecommendationSection(
+      sectionLabel: TutorialLabels.fromYourKit,
+      items: [
+        for (final item in items)
+          TutorialRecommendationItem(
+            // An unnamed product is described by its authoritative inventory
+            // category, never by Standard data or an invented product name.
+            displayName:
+                item.productName ??
+                TutorialLabels.inventoryCategory(item.kitCategory),
+            swatch: _colorFromHex(item.color.value),
+            finish: TutorialLabels.finishName(item.finish),
+            // The immutable snapshot has no brand or per-product intensity.
+            // Leaving both absent is the only truthful presentation.
           ),
-          for (final item in items) ...[
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              // An unnamed product is described by what it is, never by an
-              // invented name.
-              item.productName ??
-                  TutorialLabels.inventoryCategory(item.kitCategory),
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            if (item.colorLabel != null)
-              _detailRow(context, TutorialLabels.shade, item.colorLabel!),
-            _hexDetailRow(
-              context,
-              item.color.value,
-              shadeLabel: item.colorLabel,
-            ),
-            _detailRow(
-              context,
-              TutorialLabels.finish,
-              TutorialLabels.finishName(item.finish),
-            ),
-            if (item.foundationDepth != null)
-              _detailRow(
-                context,
-                TutorialLabels.depth,
-                TutorialLabels.depthName(item.foundationDepth!),
-              ),
-            if (item.foundationUndertone != null)
-              _detailRow(
-                context,
-                TutorialLabels.undertone,
-                TutorialLabels.undertoneName(item.foundationUndertone!),
-              ),
-          ],
-        ],
-      ),
+      ],
     );
   }
 }

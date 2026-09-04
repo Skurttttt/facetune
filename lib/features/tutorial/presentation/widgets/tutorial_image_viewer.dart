@@ -146,10 +146,15 @@ class _TutorialImageViewerState extends State<TutorialImageViewer> {
       backgroundColor: theme.colorScheme.surface,
       appBar: AppBar(
         title: Text(widget.title),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          tooltip: TutorialLabels.close,
-          onPressed: () => Navigator.of(context).maybePop(),
+        leading: Semantics(
+          button: true,
+          label: TutorialLabels.close,
+          excludeSemantics: true,
+          child: IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: TutorialLabels.close,
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
         ),
         actions: [
           if (_moved)

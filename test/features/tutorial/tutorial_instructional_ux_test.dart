@@ -5,6 +5,7 @@ import 'package:facetune/features/tutorial/domain/entities/tutorial_instruction.
 import 'package:facetune/features/tutorial/presentation/utils/tutorial_labels.dart';
 import 'package:facetune/features/tutorial/presentation/widgets/tutorial_guide_key.dart';
 import 'package:facetune/features/tutorial/presentation/widgets/tutorial_instructions_card.dart';
+import 'package:facetune/shared/widgets/app_ui.dart';
 import 'package:facetune/theme/app_theme.dart';
 import 'package:facetune/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
@@ -120,10 +121,61 @@ void main() {
 
         expect(find.text(TutorialLabels.howToApply), findsOneWidget);
         for (final step in instructions.steps) {
-          expect(find.text('${step.sequence}'), findsOneWidget);
+          expect(
+            find.text(step.sequence.toString().padLeft(2, '0')),
+            findsOneWidget,
+          );
           expect(find.text(step.shortTitle), findsOneWidget);
           expect(find.text(step.instruction), findsOneWidget);
+
+          final title = tester.widget<Text>(find.text(step.shortTitle));
+          final body = tester.widget<Text>(find.text(step.instruction));
+          expect(title.data, step.shortTitle);
+          expect(body.data, step.instruction);
+          expect(title.maxLines, isNull);
+          expect(body.maxLines, isNull);
+          expect(title.overflow, isNull);
+          expect(body.overflow, isNull);
         }
+      }
+    });
+
+    testWidgets('the rail preserves source order and uses no outer card', (
+      tester,
+    ) async {
+      final instructions = TutorialInstructionCatalog.forCategory(
+        TutorialCategory.eyeshadow,
+      );
+      await pump(tester, TutorialInstructionsCard(instructions: instructions));
+
+      expect(
+        find.descendant(
+          of: find.byType(TutorialInstructionsCard),
+          matching: find.byType(AppCard),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(TutorialInstructionsCard),
+          matching: find.byType(VerticalDivider),
+        ),
+        findsNWidgets(instructions.length - 1),
+      );
+
+      var previousTop = tester
+          .getTopLeft(find.text(TutorialLabels.howToApply))
+          .dy;
+      for (final step in instructions.steps) {
+        final numberTop = tester
+            .getTopLeft(find.text(step.sequence.toString().padLeft(2, '0')))
+            .dy;
+        final titleTop = tester.getTopLeft(find.text(step.shortTitle)).dy;
+        final bodyTop = tester.getTopLeft(find.text(step.instruction)).dy;
+        expect(numberTop, greaterThan(previousTop));
+        expect(titleTop, greaterThan(previousTop));
+        expect(bodyTop, greaterThan(titleTop));
+        previousTop = bodyTop;
       }
     });
 
@@ -178,6 +230,21 @@ void main() {
       expect(
         find.text('Adds warmth while visually lifting the face.'),
         findsOneWidget,
+      );
+      expect(
+        find.bySemanticsLabel(
+          '${TutorialLabels.yourGoal}. '
+          'Adds warmth while visually lifting the face.',
+        ),
+        findsOneWidget,
+      );
+
+      final section = tester.widget<Text>(find.text(TutorialLabels.howToApply));
+      final goalLabel = tester.widget<Text>(find.text(TutorialLabels.yourGoal));
+      expect(
+        section.style?.fontSize,
+        greaterThan(goalLabel.style?.fontSize ?? 0),
+        reason: 'the goal is a restrained callout, not the dominant section',
       );
     });
 
@@ -432,10 +499,52 @@ void main() {
     testWidgets('it fits a 320-wide phone', (tester) async {
       await pump(
         tester,
-        const TutorialGuideKey(types: TutorialGuideType.values),
+        TutorialInstructionsCard(
+          instructions: TutorialInstructionSequence.from(
+            const <TutorialInstructionStep>[
+              TutorialInstructionStep(
+                sequence: 1,
+                guideType: TutorialGuideType.placementBoundary,
+                shortTitle:
+                    'Identify the complete placement boundary before starting',
+                instruction:
+                    'Follow the entire solid guide around the visible region '
+                    'without shortening this authoritative instruction or '
+                    'hiding any words when the display becomes narrow.',
+              ),
+              TutorialInstructionStep(
+                sequence: 2,
+                guideType: TutorialGuideType.blendZone,
+                shortTitle: 'Blend across the complete transition area',
+                instruction:
+                    'Work across the dashed guide until every marked edge is '
+                    'soft while preserving the full instruction exactly.',
+              ),
+            ],
+          ),
+          goal:
+              'Keep the complete target readable even when this authoritative '
+              'goal wraps across several lines.',
+        ),
         size: const Size(320, 640),
+        textScale: 2,
       );
       expect(tester.takeException(), isNull);
+      expect(
+        find.text(
+          'Follow the entire solid guide around the visible region without '
+          'shortening this authoritative instruction or hiding any words when '
+          'the display becomes narrow.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'Keep the complete target readable even when this authoritative '
+          'goal wraps across several lines.',
+        ),
+        findsOneWidget,
+      );
     });
   });
 }

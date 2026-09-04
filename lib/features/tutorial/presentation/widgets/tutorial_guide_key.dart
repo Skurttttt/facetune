@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 
 import '../../../../theme/app_tokens.dart';
 import '../../domain/entities/tutorial_guide_type.dart';
@@ -24,47 +25,46 @@ class TutorialGuideKey extends StatelessWidget {
     final theme = Theme.of(context);
     return Semantics(
       container: true,
-      label: TutorialLabels.guideKeySemantics,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md,
-          vertical: AppSpacing.sm,
-        ),
-        decoration: BoxDecoration(
-          // Derived from the active scheme rather than a fixed tint, so the key
-          // reads as a quiet panel in both themes instead of a light card
-          // stranded on a dark page.
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(AppRadii.sm),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
+      explicitChildNodes: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            header: true,
+            sortKey: const OrdinalSortKey(0),
+            excludeSemantics: true,
+            label:
+                '${TutorialLabels.guideKey}. '
+                '${TutorialLabels.guideKeySemantics}',
+            child: Text(
               TutorialLabels.guideKey,
               style: theme.textTheme.labelLarge?.copyWith(
                 color: AppColors.muted(context),
               ),
             ),
-            const SizedBox(height: AppSpacing.xs),
-            // Wrap rather than Row: at large text scales four entries cannot
-            // share one line, and a Row would overflow rather than reflow.
-            Wrap(
-              spacing: AppSpacing.md,
-              runSpacing: AppSpacing.xs,
-              children: [for (final type in types) _GuideKeyEntry(type: type)],
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          // Wrap rather than Row: at large text scales four entries cannot
+          // share one line, and a Row would overflow rather than reflow.
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.xxs,
+            children: [
+              for (var index = 0; index < types.length; index += 1)
+                _GuideKeyEntry(type: types[index], order: index + 1),
+            ],
+          ),
+        ],
       ),
     );
   }
 }
 
 class _GuideKeyEntry extends StatelessWidget {
-  const _GuideKeyEntry({required this.type});
+  const _GuideKeyEntry({required this.type, required this.order});
 
   final TutorialGuideType type;
+  final int order;
 
   @override
   Widget build(BuildContext context) {
@@ -74,6 +74,7 @@ class _GuideKeyEntry extends StatelessWidget {
       // glyph would be announced as its own unhelpful node first.
       container: true,
       excludeSemantics: true,
+      sortKey: OrdinalSortKey(order.toDouble()),
       label: TutorialLabels.guideTypeSemantics(type),
       child: Row(
         mainAxisSize: MainAxisSize.min,

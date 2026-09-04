@@ -470,19 +470,22 @@ void main() {
       expect(validation, contains('technique: text(input, "technique"'));
     });
 
-    test('the tutorial still consumes both', () {
-      expect(
-        source(
-          'lib/features/tutorial/domain/catalog/look_plan_convergence.dart',
-        ),
-        contains('placement: item.placement'),
+    test('the tutorial preserves both outside its primary shade UI', () {
+      final convergence = source(
+        'lib/features/tutorial/domain/catalog/look_plan_convergence.dart',
       );
-      expect(
+      expect(convergence, contains('placement: item.placement'));
+      expect(convergence, contains('technique: item.technique'));
+
+      final primaryShadeUi = executable(
         source(
           'lib/features/tutorial/presentation/widgets/tutorial_product_cards.dart',
         ),
-        contains('entry.technique'),
       );
+      expect(primaryShadeUi, isNot(contains('entry.placement')));
+      expect(primaryShadeUi, isNot(contains('entry.technique')));
+      expect(primaryShadeUi, isNot(contains('TutorialLabels.whereToApply')));
+      expect(primaryShadeUi, isNot(contains('TutorialLabels.technique')));
     });
 
     test('the Makeup Breakdown still presents both', () {

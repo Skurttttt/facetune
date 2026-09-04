@@ -16,7 +16,7 @@ import 'tutorial_redraw_reason.dart';
 abstract final class TutorialLabels {
   static const tutorialTitle = 'Step-by-step tutorial';
   static const suggestedShades = 'Suggested shades';
-  static const fromYourKit = 'From your kit';
+  static const fromYourKit = 'From your makeup kit';
   static const shade = 'Shade';
   static const hex = 'Hex';
   static const finish = 'Finish';
@@ -25,9 +25,9 @@ abstract final class TutorialLabels {
   static const undertone = 'Undertone';
   static const howToApply = 'How to apply';
   static const whereToApply = 'Where to apply';
-  static const guideKey = 'What the guides mean';
+  static const guideKey = 'Guide key';
   static const technique = 'Technique';
-  static const yourGoal = 'Your goal';
+  static const yourGoal = 'YOUR GOAL';
   static const guideKeySemantics =
       'Key explaining the marks drawn on the guideline image';
   static const back = 'Back';
@@ -35,6 +35,7 @@ abstract final class TutorialLabels {
   static const finish_ = 'Finish';
   static const retry = 'Try again';
   static const redraw = 'Draw this step again';
+  static const redrawGuide = 'Redraw guide';
   static const redrawExplanation =
       'This creates a new guideline image for this step. The one you have now '
       'is replaced.';
@@ -55,7 +56,7 @@ abstract final class TutorialLabels {
   static const completeMessage =
       'You have been through every step this look needs.';
   static const yourFinalLook = 'Your final look';
-  static const finalLookHint = 'The finished result you are working toward';
+  static const finalLookHint = 'View your target';
   static const viewFinalLook = 'View your final look';
   static const close = 'Close';
 
@@ -70,9 +71,6 @@ abstract final class TutorialLabels {
   static const emptyTitle = 'No steps for this look';
   static const emptyMessage =
       'This look does not have any makeup steps to show.';
-
-  static String fromYourKitPlural(int count) =>
-      'From your kit ($count products)';
 
   static String stepProgress(int step, int total) => 'Step $step of $total';
 
@@ -133,7 +131,7 @@ abstract final class TutorialLabels {
   static String guideTypeName(TutorialGuideType type) => switch (type) {
     TutorialGuideType.startAnchor => 'Start',
     TutorialGuideType.placementBoundary => 'Placement',
-    TutorialGuideType.blendZone => 'Blend zone',
+    TutorialGuideType.blendZone => 'Blend Zone',
     TutorialGuideType.direction => 'Direction',
   };
 

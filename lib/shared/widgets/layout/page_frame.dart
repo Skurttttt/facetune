@@ -15,9 +15,17 @@ class PageFrame extends StatelessWidget {
   const PageFrame({
     required this.child,
     super.key,
-    this.maxWidth = 720,
+    this.maxWidth = defaultMaxWidth,
     this.padding = defaultPadding,
   });
+
+  /// The readable column width a screen gets unless it asks for another.
+  ///
+  /// Named rather than left as a literal default so a component drawn *outside*
+  /// the frame — a bottom bar in `Scaffold.bottomNavigationBar`, which is not a
+  /// descendant of the body's `PageFrame` — can line its content up with the
+  /// column above it instead of guessing the same number again.
+  static const double defaultMaxWidth = 720;
 
   /// Gutter on both sides; a small lead-in at the top because a screen's first
   /// element usually follows an app bar; a generous tail at the bottom so the
