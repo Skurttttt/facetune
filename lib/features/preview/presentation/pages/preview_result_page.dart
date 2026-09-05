@@ -161,10 +161,19 @@ class PreviewResultPage extends ConsumerWidget {
               ? PageFrame.defaultPadding.copyWith(bottom: 0)
               : PageFrame.defaultPadding,
           child: switch (previewState.status) {
-            MakeupPreviewStatus.generating => const Center(
-              child: LoadingState(
-                label: 'Creating another identity-conscious variation…',
-              ),
+            // The result's own frame, waiting to be filled — not a spinner
+            // centred in an empty page. Every value here is already-loaded
+            // journey state this page was watching anyway: the selected style
+            // and the plan's intensity. Nothing is fetched to draw it, and
+            // whichever is missing is simply left out.
+            MakeupPreviewStatus.generating => FinalPreviewLoadingView(
+              key: const ValueKey('final-preview-loading'),
+              supportingText:
+                  'Personalizing your makeup preview for your features.',
+              styleName: selectedStyle?.name,
+              intensityLabel: recommendation == null
+                  ? null
+                  : ResultFormatters.label(recommendation.overallIntensity),
             ),
             MakeupPreviewStatus.failure => _ScrollableStateRegion(
               child: Column(

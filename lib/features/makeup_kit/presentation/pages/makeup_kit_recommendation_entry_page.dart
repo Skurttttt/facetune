@@ -11,6 +11,7 @@ import '../../../authentication/presentation/controllers/auth_controller.dart';
 import '../../../makeup_styles/presentation/controllers/makeup_style_selection_controller.dart';
 import '../../../preview/domain/errors/preview_failure.dart';
 import '../../../analysis/domain/entities/face_analysis.dart';
+import '../../../results/presentation/utils/result_formatters.dart';
 import '../../../results/presentation/widgets/beauty_profile_card.dart';
 import '../../../results/presentation/widgets/before_after_comparison.dart';
 import '../../../results/presentation/widgets/result_actions.dart';
@@ -93,6 +94,14 @@ class MakeupKitRecommendationEntryPage extends ConsumerWidget {
       // "Return home" text action that used to sit at the bottom of the button
       // stack. One Home per screen.
       appBar: FaceTuneTopBar(
+        // Titled only while the makeup plan is being made, which is the one
+        // state on this screen with no heading of its own to read — and it is
+        // the title Makeup Recommendation carries through the same wait, so the
+        // two modes wait under the same bar. Every other state keeps the bare
+        // bar it has today.
+        title: look.status == MakeupKitLookStatus.generatingRecommendation
+            ? 'Your makeup plan'
+            : null,
         actions: resultReady
             ? <Widget>[
                 _KitHomeAction(
@@ -179,19 +188,55 @@ class MakeupKitRecommendationEntryPage extends ConsumerWidget {
           .read(makeupKitLookControllerProvider.notifier)
           .generate(analysisId: analysisId, styleCode: styleCode),
     ),
-    MakeupKitLookStatus.generatingRecommendation => _GeneratingState(
-      label: 'Choosing the best products from your kit…',
-      onCancel: () {
-        ref.read(makeupKitLookControllerProvider.notifier).clear();
-        context.pop();
-      },
+    // The plan stage, in the same shell Makeup Recommendation waits in: same
+    // heading slot, same supporting line, same destination-shaped placeholders,
+    // same spacing and same pulse. Only the supporting copy differs, and it
+    // differs because the work differs — this mode is choosing among products
+    // the user already owns. It is read from the mode the user already picked;
+    // nothing is fetched to say it.
+    //
+    // The escape this state has always offered is preserved rather than dropped
+    // for symmetry: it clears this mode's own controller and pops, exactly as
+    // before. No Standard controller, repository or recommendation is touched.
+    MakeupKitLookStatus.generatingRecommendation => MakeupPlanLoadingView(
+      key: const ValueKey('makeup-plan-loading'),
+      title: 'Creating your makeup plan',
+      supportingText: 'Personalizing your owned products for your features.',
+      footer: TextButton(
+        onPressed: () {
+          ref.read(makeupKitLookControllerProvider.notifier).clear();
+          context.pop();
+        },
+        child: const Text('Cancel and change mode'),
+      ),
     ),
-    MakeupKitLookStatus.generatingPreview => _GeneratingState(
-      label: 'Applying your owned shades to the preview…',
-      onCancel: () {
-        ref.read(makeupKitLookControllerProvider.notifier).clear();
-        context.pop();
-      },
+    // The same shell Makeup Recommendation waits in, with the same hero frame,
+    // spacing, status and reassurance. Only the supporting line differs, and it
+    // differs because the work does — this preview is built from the products
+    // the user owns. Style and intensity come from state this mode already
+    // holds: the selected style, and the kit plan this generation is running
+    // from. Nothing is fetched, and no Standard recommendation is consulted.
+    //
+    // The escape this state has always offered is preserved rather than dropped
+    // for symmetry: it clears this mode's own controller and pops, exactly as
+    // before.
+    MakeupKitLookStatus.generatingPreview => FinalPreviewLoadingView(
+      key: const ValueKey('final-preview-loading'),
+      supportingText:
+          'Using your selected makeup products to create your preview.',
+      styleName: styleName,
+      // The same formatter Standard's loading screen uses, so one intensity
+      // reads identically in both modes.
+      intensityLabel: look.recommendation == null
+          ? null
+          : ResultFormatters.label(look.recommendation!.overallIntensity),
+      footer: TextButton(
+        onPressed: () {
+          ref.read(makeupKitLookControllerProvider.notifier).clear();
+          context.pop();
+        },
+        child: const Text('Cancel and change mode'),
+      ),
     ),
     MakeupKitLookStatus.failure => _FailureState(
       state: look,
@@ -308,28 +353,6 @@ class _NotReadyState extends ConsumerWidget {
       ),
     );
   }
-}
-
-class _GeneratingState extends StatelessWidget {
-  const _GeneratingState({required this.label, required this.onCancel});
-
-  final String label;
-  final VoidCallback onCancel;
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        LoadingState(label: label),
-        const SizedBox(height: AppSpacing.sm),
-        TextButton(
-          onPressed: onCancel,
-          child: const Text('Cancel and change mode'),
-        ),
-      ],
-    ),
-  );
 }
 
 class _ReadyState extends StatelessWidget {

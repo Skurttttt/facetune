@@ -1,11 +1,15 @@
+import 'dart:io';
+
 import 'package:facetune/core/constants/app_constants.dart';
 import 'package:facetune/features/analysis/data/models/face_analysis_dto.dart';
 import 'package:facetune/features/analysis/domain/usecases/analyze_face.dart';
 import 'package:facetune/features/analysis/data/repositories/unavailable_face_analysis_repository.dart';
 import 'package:facetune/features/analysis/presentation/controllers/face_analysis_controller.dart';
 import 'package:facetune/features/analysis/presentation/pages/analysis_result_page.dart';
+import 'package:facetune/shared/widgets/app_ui.dart';
 import 'package:facetune/theme/app_theme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -27,11 +31,16 @@ const _expected = <String, ({String value, int percent})>{
 Future<void> _pumpProfile(
   WidgetTester tester, {
   Size size = const Size(393, 1400),
+  double devicePixelRatio = 1,
+  double topInset = 0,
+  double bottomInset = 0,
   double textScale = 1,
   ThemeMode themeMode = ThemeMode.light,
 }) async {
   tester.view.physicalSize = size;
-  tester.view.devicePixelRatio = 1;
+  tester.view.devicePixelRatio = devicePixelRatio;
+  tester.view.padding = FakeViewPadding(top: topInset, bottom: bottomInset);
+  tester.view.viewPadding = FakeViewPadding(top: topInset, bottom: bottomInset);
   addTearDown(tester.view.reset);
 
   final analysis = FaceAnalysisDto.fromResponse(validAnalysisResponse).analysis;
@@ -63,13 +72,16 @@ Future<void> _pumpProfile(
       overrides: [
         faceAnalysisControllerProvider.overrideWith((ref) => controller),
       ],
-      child: MediaQuery(
-        data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
-        child: MaterialApp.router(
-          theme: AppTheme.lightTheme,
-          darkTheme: AppTheme.darkTheme,
-          themeMode: themeMode,
-          routerConfig: router,
+      child: MaterialApp.router(
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: themeMode,
+        routerConfig: router,
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child!,
         ),
       ),
     ),
@@ -78,6 +90,34 @@ Future<void> _pumpProfile(
 }
 
 void main() {
+  setUpAll(() async {
+    // Flutter's square test font makes both the section title and every
+    // confidence line wrap on a POCO-width viewport. Load the Android UI font
+    // shipped with the active Flutter SDK so this layout test measures the same
+    // line breaks as the target device without a machine-specific SDK path.
+    final separator = Platform.pathSeparator;
+    var directory = File(Platform.resolvedExecutable).parent;
+    File? font;
+    while (directory.parent.path != directory.path) {
+      final candidate = File(
+        '${directory.path}${separator}bin${separator}cache$separator'
+        'artifacts${separator}material_fonts${separator}roboto-regular.ttf',
+      );
+      if (candidate.existsSync()) {
+        font = candidate;
+        break;
+      }
+      directory = directory.parent;
+    }
+    if (font == null) {
+      throw StateError('Could not locate the Flutter SDK Roboto test font.');
+    }
+    final bytes = font.readAsBytesSync();
+    await (FontLoader(
+      'Roboto',
+    )..addFont(Future.value(ByteData.sublistView(bytes)))).load();
+  });
+
   group('every authoritative value survives', () {
     testWidgets('all seven attributes are shown', (tester) async {
       await _pumpProfile(tester);
@@ -209,14 +249,109 @@ void main() {
   });
 
   group('presentation holds up', () {
-    testWidgets('renders at 320px and 2x text without overflow', (
+    testWidgets('has zero scroll extent on the POCO completed viewport', (
       tester,
     ) async {
-      await _pumpProfile(tester, size: const Size(320, 2400), textScale: 2);
+      await _pumpProfile(
+        tester,
+        size: const Size(1080, 2400),
+        devicePixelRatio: 2.75,
+        topInset: 66,
+        bottomInset: 132,
+      );
+
+      final listView = find.byType(ListView);
+      final scrollable = find.descendant(
+        of: listView,
+        matching: find.byType(Scrollable),
+      );
+      final position = tester.state<ScrollableState>(scrollable).position;
+      final viewport = tester.getRect(listView);
+
+      expect(position.viewportDimension, closeTo(704.7272727, 0.001));
+      expect(position.maxScrollExtent, 0);
+      expect(
+        tester.getRect(find.byType(AppCard)).bottom,
+        lessThan(viewport.bottom),
+      );
+      expect(
+        tester.getRect(find.byType(PrimaryButton)).bottom,
+        lessThan(viewport.bottom),
+      );
+      for (final label in _expected.keys) {
+        expect(
+          tester.getRect(find.text(label)).bottom,
+          lessThan(viewport.bottom),
+        );
+      }
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('keeps the CTA reachable by scrolling on a short viewport', (
+      tester,
+    ) async {
+      await _pumpProfile(
+        tester,
+        size: const Size(393, 640),
+        topInset: 24,
+        bottomInset: 48,
+      );
+
+      final listView = find.byType(ListView);
+      final scrollable = find.descendant(
+        of: listView,
+        matching: find.byType(Scrollable),
+      );
+      final position = tester.state<ScrollableState>(scrollable).position;
+      expect(position.maxScrollExtent, greaterThan(0));
+
+      await tester.scrollUntilVisible(
+        find.text('Choose a makeup style'),
+        80,
+        scrollable: scrollable,
+      );
+      await tester.pump();
+
+      final viewport = tester.getRect(listView);
+      final cta = tester.getRect(find.byType(PrimaryButton));
+      expect(cta.top, greaterThanOrEqualTo(viewport.top));
+      expect(cta.bottom, lessThanOrEqualTo(viewport.bottom));
+      expect(find.text('Eye color'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('keeps the CTA reachable at 2x text scale', (tester) async {
+      await _pumpProfile(
+        tester,
+        size: const Size(1080, 2400),
+        devicePixelRatio: 2.75,
+        topInset: 66,
+        bottomInset: 132,
+        textScale: 2,
+      );
+
+      final listView = find.byType(ListView);
+      final scrollable = find.descendant(
+        of: listView,
+        matching: find.byType(Scrollable),
+      );
+      final position = tester.state<ScrollableState>(scrollable).position;
+      expect(position.maxScrollExtent, greaterThan(0));
+
+      await tester.scrollUntilVisible(
+        find.text('Choose a makeup style'),
+        120,
+        scrollable: scrollable,
+      );
+      await tester.pump();
 
       expect(tester.takeException(), isNull);
       expect(find.text('Face shape'), findsOneWidget);
       expect(find.text('91% confidence'), findsOneWidget);
+      final viewport = tester.getRect(listView);
+      final cta = tester.getRect(find.byType(PrimaryButton));
+      expect(cta.top, greaterThanOrEqualTo(viewport.top));
+      expect(cta.bottom, lessThanOrEqualTo(viewport.bottom));
     });
 
     testWidgets('renders in dark theme without overflow', (tester) async {

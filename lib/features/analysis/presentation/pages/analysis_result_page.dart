@@ -113,7 +113,7 @@ class _AnalysisContent extends StatelessWidget {
           label: 'Choose a makeup style',
           onPressed: () => context.push(AppConstants.stylesRoute),
         ),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AppSpacing.sm),
       ],
     );
   }

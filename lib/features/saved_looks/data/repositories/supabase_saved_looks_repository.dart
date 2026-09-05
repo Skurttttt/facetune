@@ -124,69 +124,82 @@ class SupabaseSavedLooksRepository implements SavedLooksRepository {
     ]);
     final recommendationsById = {for (final row in linked[0]) row['id']: row};
     final analysesById = {for (final row in linked[1]) row['id']: row};
-    final items = <SavedLook>[];
-    for (final savedRow in savedRows) {
-      final generated = generatedById[savedRow['generated_image_id']];
-      if (generated == null) throw const FormatException('Missing preview.');
-      final recommendation =
-          recommendationsById[generated['recommendation_id']];
-      final analysis = analysesById[generated['analysis_id']];
-      if (recommendation == null || analysis == null) {
-        throw const FormatException('Missing linked result data.');
-      }
-      final analysisEntity = FaceAnalysisDto.fromResponse({
-        'analysis': {
-          'id': analysis['id'],
-          'originalImagePath': analysis['original_image_path'],
-          'validation': _map(analysis['raw_ai_metadata'])['validation'],
-          'attributes': {
-            'faceShape': analysis['face_shape'],
-            'skinTone': analysis['skin_tone'],
-            'undertone': analysis['undertone'],
-            'eyeShape': analysis['eye_shape'],
-            'lipShape': analysis['lip_shape'],
-            'hairColor': analysis['hair_color'],
-            'eyeColor': analysis['eye_color'],
+    // Rows hydrate concurrently rather than one after another.
+    //
+    // Each row needs two signed URLs and a page is twelve rows, so the
+    // sequential form left twenty-four fast metadata calls queued two at a time
+    // behind one another — which is the stall a user meets on reaching the
+    // bottom of the list. The work per row is unchanged: the same two paths,
+    // the same TTL, the same entity. Only the waiting is shared.
+    //
+    // `Future.wait` resolves in input order, so the page keeps the ordering
+    // `selectSavedLooks` returned, and it still completes with the first error
+    // rather than a partial list — a malformed row fails the whole page exactly
+    // as it did before. The one behavioural difference is that a corrupt row no
+    // longer cancels the rows after it: their URL calls may already be in
+    // flight, and their results are discarded.
+    final items = await Future.wait(
+      savedRows.map((savedRow) async {
+        final generated = generatedById[savedRow['generated_image_id']];
+        if (generated == null) throw const FormatException('Missing preview.');
+        final recommendation =
+            recommendationsById[generated['recommendation_id']];
+        final analysis = analysesById[generated['analysis_id']];
+        if (recommendation == null || analysis == null) {
+          throw const FormatException('Missing linked result data.');
+        }
+        final analysisEntity = FaceAnalysisDto.fromResponse({
+          'analysis': {
+            'id': analysis['id'],
+            'originalImagePath': analysis['original_image_path'],
+            'validation': _map(analysis['raw_ai_metadata'])['validation'],
+            'attributes': {
+              'faceShape': analysis['face_shape'],
+              'skinTone': analysis['skin_tone'],
+              'undertone': analysis['undertone'],
+              'eyeShape': analysis['eye_shape'],
+              'lipShape': analysis['lip_shape'],
+              'hairColor': analysis['hair_color'],
+              'eyeColor': analysis['eye_color'],
+            },
+            'confidence': analysis['confidence_json'],
+            'modelId': analysis['model_name'],
+            'promptVersion': analysis['prompt_version'],
+            'createdAt': analysis['created_at'],
           },
-          'confidence': analysis['confidence_json'],
-          'modelId': analysis['model_name'],
-          'promptVersion': analysis['prompt_version'],
-          'createdAt': analysis['created_at'],
-        },
-      }).analysis;
-      final recommendationEntity = MakeupRecommendationDto.fromResponse({
-        'recommendation': {
-          'id': recommendation['id'],
-          'analysisId': recommendation['analysis_id'],
-          'style': recommendation['makeup_style'],
-          'plan': recommendation['recommendation_json'],
-          'modelId': recommendation['model_name'],
-          'promptVersion': recommendation['prompt_version'],
-          'createdAt': recommendation['created_at'],
-        },
-      }).recommendation;
-      final generatedDto = GeneratedPreviewDto.fromResponse({
-        'preview': {
-          'id': generated['id'],
-          'analysisId': generated['analysis_id'],
-          'recommendationId': generated['recommendation_id'],
-          'originalImagePath': analysisEntity.originalImagePath,
-          'generatedImagePath': generated['storage_path'],
-          'generationNumber': generated['generation_number'],
-          'modelId': generated['model_name'],
-          'promptVersion': generated['prompt_version'],
-          'createdAt': generated['created_at'],
-        },
-      });
-      final urls = await Future.wait([
-        _remote.createSignedUrl(generatedDto.originalImagePath),
-        _remote.createSignedUrl(generatedDto.generatedImagePath),
-      ]);
-      final style = MakeupStyleCatalog.styles.firstWhere(
-        (candidate) => candidate.code == recommendationEntity.styleCode,
-      );
-      items.add(
-        SavedLook(
+        }).analysis;
+        final recommendationEntity = MakeupRecommendationDto.fromResponse({
+          'recommendation': {
+            'id': recommendation['id'],
+            'analysisId': recommendation['analysis_id'],
+            'style': recommendation['makeup_style'],
+            'plan': recommendation['recommendation_json'],
+            'modelId': recommendation['model_name'],
+            'promptVersion': recommendation['prompt_version'],
+            'createdAt': recommendation['created_at'],
+          },
+        }).recommendation;
+        final generatedDto = GeneratedPreviewDto.fromResponse({
+          'preview': {
+            'id': generated['id'],
+            'analysisId': generated['analysis_id'],
+            'recommendationId': generated['recommendation_id'],
+            'originalImagePath': analysisEntity.originalImagePath,
+            'generatedImagePath': generated['storage_path'],
+            'generationNumber': generated['generation_number'],
+            'modelId': generated['model_name'],
+            'promptVersion': generated['prompt_version'],
+            'createdAt': generated['created_at'],
+          },
+        });
+        final urls = await Future.wait([
+          _remote.createSignedUrl(generatedDto.originalImagePath),
+          _remote.createSignedUrl(generatedDto.generatedImagePath),
+        ]);
+        final style = MakeupStyleCatalog.styles.firstWhere(
+          (candidate) => candidate.code == recommendationEntity.styleCode,
+        );
+        return SavedLook(
           id: savedRow['id']! as String,
           preview: generatedDto.toDomain(
             originalImageUrl: urls[0],
@@ -197,9 +210,9 @@ class SupabaseSavedLooksRepository implements SavedLooksRepository {
           style: style,
           isFavorite: savedRow['is_favorite']! as bool,
           createdAt: DateTime.parse(savedRow['created_at']! as String).toUtc(),
-        ),
-      );
-    }
+        );
+      }),
+    );
     return List.unmodifiable(items);
   }
 

@@ -75,11 +75,16 @@ class MakeupRecommendationPage extends ConsumerWidget {
               ? PageFrame.defaultPadding.copyWith(bottom: 0)
               : PageFrame.defaultPadding,
           child: switch (state.status) {
-            MakeupRecommendationStatus.generating => const Center(
-              child: LoadingState(
-                label: 'Designing your personalized makeup plan…',
+            // The destination, with its content still missing — not a spinner
+            // centred in an empty page. The copy names this mode's own work:
+            // recommendations chosen for the user's features.
+            MakeupRecommendationStatus.generating =>
+              const MakeupPlanLoadingView(
+                key: ValueKey('makeup-plan-loading'),
+                title: 'Creating your makeup plan',
+                supportingText:
+                    'Personalizing your recommendations for your features.',
               ),
-            ),
             MakeupRecommendationStatus.failure => Center(
               child: StatusState(
                 title: 'We could not create your plan',

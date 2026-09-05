@@ -1,9 +1,20 @@
 import 'package:flutter/material.dart';
 
 import '../../../../shared/widgets/app_ui.dart';
-import '../../../../theme/app_tokens.dart';
 import '../../domain/entities/kit_look_result.dart';
 
+/// One saved My Makeup Kit look, as a tile in the library.
+///
+/// The same tile the Makeup Recommendation card draws, with this mode's own
+/// facts in it. Two things used to sit over the photograph — a pink "MY KIT"
+/// pill and a white circle carrying a heart — so a kit tile read as a labelled
+/// variant of the product rather than the same library holding a different kind
+/// of look. The mode is now a line of the footer, in the words History uses,
+/// and the favourite it toggled moved into the tile's one secondary control.
+///
+/// My Makeup Kit authority only. The owned-product count is read from the
+/// immutable recommendation this look was validated against; nothing here
+/// consults a Standard recommendation, and nothing falls back to one.
 class KitSavedLookCard extends StatelessWidget {
   const KitSavedLookCard({
     required this.look,
@@ -20,115 +31,66 @@ class KitSavedLookCard extends StatelessWidget {
   final VoidCallback onFavorite;
   final VoidCallback onRemove;
 
+  /// The app's existing owned-product count authority — the same `selections`
+  /// field the kit result screen and the History row already read.
+  ///
+  /// Pluralised, which the old footer was not: it printed "1 owned products"
+  /// for a single-product look. The wording matches History's exactly.
+  static String ownedProductLabel(KitSavedLook look) {
+    final count = look.result.recommendation.selections.length;
+    return '$count owned product${count == 1 ? '' : 's'}';
+  }
+
   @override
   Widget build(BuildContext context) => Card(
     clipBehavior: Clip.antiAlias,
     child: InkWell(
       onTap: isMutating ? null : onOpen,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        // Stretch, not start — the same cross-axis fix the Makeup
+        // Recommendation tile needed, for the same reason: `Expanded` governs
+        // only the main axis, so on a loose cross axis a portrait preview sized
+        // itself narrower than the tile and left a strip down the right edge.
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Nothing over the photograph any more — no badge, no chip, no
+          // second control.
           Expanded(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                PrivateImage(url: look.result.preview.generatedImageUrl),
-                const Positioned(
-                  left: AppSpacing.xs,
-                  top: AppSpacing.xs,
-                  child: _KitBadge(),
-                ),
-                Positioned(
-                  right: AppSpacing.xs,
-                  top: AppSpacing.xs,
-                  child: CircleAvatar(
-                    backgroundColor: Colors.white.withValues(alpha: .92),
-                    child: IconButton(
-                      tooltip: look.isFavorite
-                          ? 'Remove favorite'
-                          : 'Add favorite',
-                      onPressed: isMutating ? null : onFavorite,
-                      icon: Icon(
-                        look.isFavorite
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        color: AppColors.rose,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            child: PrivateImage(
+              url: look.result.preview.generatedImageUrl,
+              // The feed treatment, identical to the Makeup Recommendation
+              // tile: a still ground instead of a spinner per loading tile, and
+              // one short fade instead of a hard swap.
+              placeholder: const ImageSkeleton(),
+              fadeIn: true,
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.sm,
-              AppSpacing.sm,
-              AppSpacing.xs,
-              AppSpacing.sm,
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        look.result.style.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      Text(
-                        '${look.result.recommendation.selections.length} owned products',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
+          LookCardMetadata(
+            title: look.result.style.name,
+            modeLabel: 'My Makeup Kit',
+            secondaryMetadata: ownedProductLabel(look),
+            savedAt: look.createdAt,
+            isFavorite: look.isFavorite,
+            action: LookCardActions(
+              isMutating: isMutating,
+              tooltip: 'Saved kit look options',
+              items: <LookCardAction>[
+                LookCardAction(
+                  label: look.isFavorite ? 'Remove favorite' : 'Add favorite',
+                  icon: look.isFavorite
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  onSelected: onFavorite,
                 ),
-                IconButton(
-                  tooltip: 'Remove saved kit look',
-                  onPressed: isMutating ? null : onRemove,
-                  icon: isMutating
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.more_horiz_rounded),
+                LookCardAction(
+                  label: 'Remove from saved',
+                  icon: Icons.bookmark_remove_outlined,
+                  onSelected: onRemove,
                 ),
               ],
             ),
           ),
         ],
-      ),
-    ),
-  );
-}
-
-class _KitBadge extends StatelessWidget {
-  const _KitBadge();
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(
-      horizontal: AppSpacing.xs,
-      vertical: AppSpacing.xxs,
-    ),
-    decoration: BoxDecoration(
-      // A fixed light-on-dark pair, so the badge stays legible whether it sits
-      // on the card or over the preview image behind it.
-      color: AppColors.petal,
-      borderRadius: BorderRadius.circular(AppRadii.pill),
-    ),
-    child: Text(
-      'MY KIT',
-      // Was `fontSize: 11` written inline — the app's only hardcoded font size,
-      // and the one label that ignored the reader's text-size setting entirely.
-      // `labelSmall` is 11 at default scale, so this looks identical and now
-      // scales like everything else.
-      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-        color: AppColors.roseDark,
-        fontWeight: FontWeight.w800,
       ),
     ),
   );

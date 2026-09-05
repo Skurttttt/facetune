@@ -2,6 +2,10 @@ SUPABASE PW: facetune_123*
 
 powershell -ExecutionPolicy Bypass -File tool/run_dev.ps1
 
+flutter run --release --dart-define-from-file=config/development.json
+
+flutter run --profile --dart-define-from-file=config/development.json
+
 IMPORTANT:
 
 This project was previously developed by Codex.
@@ -14,12 +18,14 @@ Preserve all valid existing work.
 gemini-3.6-flash
 gemini-3.1-flash-image
 
+- Subscription
+- Web Admin
+- Face analysis must be accurate and consistent
+- Tutorial makeup overlay is not consistent it produce makeup overlay on step by step
+- How do you specifically apply the makeup if hard, soft, etc.
+- Detailed instructions and guidelines
+- Loading screen after clicking Show me how UI
 
-Face analysis must be accurate and consistent
-Tutorial makeup overlay is not consistent it produce makeup overlay on step by step
-How do you specifically apply the makeup if hard, soft, etc.
-Detailed instructions
-Side features
-
-
-
+Micro scroll on face
+Upload from gallery
+Transition for every pages
