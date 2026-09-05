@@ -19,6 +19,24 @@ class PageFrame extends StatelessWidget {
     this.padding = defaultPadding,
   });
 
+  /// A frame whose child is a scroll view.
+  ///
+  /// Same gutter and same lead-in; no bottom tail. Padding wrapped around a
+  /// scroll view sits *outside* its viewport, so a tail here is not clearance
+  /// at the end of a scroll — it is dead ground at every offset, and on a
+  /// screen inside `AppShell` it draws as an empty band above the navigation
+  /// bar that the content can never scroll into.
+  ///
+  /// The clearance it was added for is already there: `Scaffold` lays its body
+  /// out *above* `bottomNavigationBar`, so the last item clears the bar without
+  /// help. A scrolling screen supplies its own trailing gap as a final sliver
+  /// instead, where it scrolls with the content it belongs to.
+  const PageFrame.scrolling({
+    required this.child,
+    super.key,
+    this.maxWidth = defaultMaxWidth,
+  }) : padding = scrollingPadding;
+
   /// The readable column width a screen gets unless it asks for another.
   ///
   /// Named rather than left as a literal default so a component drawn *outside*
@@ -29,12 +47,24 @@ class PageFrame extends StatelessWidget {
 
   /// Gutter on both sides; a small lead-in at the top because a screen's first
   /// element usually follows an app bar; a generous tail at the bottom so the
-  /// last element clears the navigation bar and the gesture area.
+  /// last element is not left sitting on the edge of the screen.
+  ///
+  /// For a scrolling child use [PageFrame.scrolling] instead — this tail cannot
+  /// scroll, and on a screen with a bottom navigation bar it reads as a band.
   static const EdgeInsets defaultPadding = EdgeInsets.fromLTRB(
     AppSpacing.gutter,
     AppSpacing.xs,
     AppSpacing.gutter,
     AppSpacing.xl,
+  );
+
+  /// The padding [PageFrame.scrolling] applies. Public so a test can assert the
+  /// bottom tail is gone rather than re-measuring a rendered screen to find it.
+  static const EdgeInsets scrollingPadding = EdgeInsets.fromLTRB(
+    AppSpacing.gutter,
+    AppSpacing.xs,
+    AppSpacing.gutter,
+    0,
   );
 
   final Widget child;

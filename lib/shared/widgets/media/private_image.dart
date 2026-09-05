@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../../theme/app_tokens.dart';
 import 'image_states.dart';
 
 /// Displays a private FaceTune image at the resolution the layout actually
@@ -24,7 +25,9 @@ class PrivateImage extends StatelessWidget {
     super.key,
     this.fit = BoxFit.cover,
     this.semanticLabel,
+    this.placeholder,
     this.errorChild,
+    this.fadeIn = false,
     this.decodeMultiplier = 1,
   });
 
@@ -32,8 +35,23 @@ class PrivateImage extends StatelessWidget {
   final BoxFit fit;
   final String? semanticLabel;
 
+  /// Shown while the image is still decoding. Defaults to a spinner on a quiet
+  /// ground, which is right for a single hero image and wrong for a list of
+  /// them — a feed passes [ImageSkeleton] instead.
+  final Widget? placeholder;
+
   /// Shown when the image cannot be loaded. Defaults to a broken-image tile.
   final Widget? errorChild;
+
+  /// Fades the decoded image in over [placeholder] instead of swapping to it.
+  ///
+  /// Off by default: a hero image the user is waiting for should appear the
+  /// moment it exists. It earns its keep in a scrolling feed, where several
+  /// thumbnails land at unrelated moments and the hard swaps read as flicker.
+  ///
+  /// An image already in Flutter's image cache is drawn straight, with no fade,
+  /// so returning to a screen does not re-animate what was already there.
+  final bool fadeIn;
 
   /// How many times the layout size to decode at.
   ///
@@ -58,14 +76,46 @@ class PrivateImage extends StatelessWidget {
         final width? => width * decodeMultiplier,
         null => null,
       },
-      frameBuilder: (context, child, frame, synchronouslyLoaded) =>
-          synchronouslyLoaded || frame != null
-          ? child
-          : const ImagePlaceholder(),
+      frameBuilder: buildFrame,
       errorBuilder: (context, error, stackTrace) =>
           errorChild ?? const ImageUnavailable(),
     ),
   );
+
+  /// What to draw for a given decode state.
+  ///
+  /// Public so the three states can be tested directly. A widget test cannot
+  /// reach them through the network: its HTTP client answers every request with
+  /// a 400, so the only state a pumped [Image.network] ever settles into is the
+  /// error one.
+  @visibleForTesting
+  Widget buildFrame(
+    BuildContext context,
+    Widget child,
+    int? frame,
+    bool synchronouslyLoaded,
+  ) {
+    // Straight from the image cache. Nothing was ever missing, so there is
+    // nothing to fade and no placeholder to show.
+    if (synchronouslyLoaded) return child;
+    final ground = placeholder ?? const ImagePlaceholder();
+    if (!fadeIn) return frame == null ? ground : child;
+    // The ground stays underneath rather than being swapped out, so the box
+    // never blinks to nothing between the two. `StackFit.expand` keeps the
+    // image bound to the caller's box instead of its own intrinsic size.
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ground,
+        AnimatedOpacity(
+          opacity: frame == null ? 0 : 1,
+          duration: AppDurations.standard,
+          curve: AppCurves.standard,
+          child: child,
+        ),
+      ],
+    );
+  }
 }
 
 /// Physical pixel width to decode an image at so it fills [constraints].

@@ -10,6 +10,8 @@ import '../../../authentication/presentation/controllers/auth_controller.dart';
 import '../../../history/domain/entities/history_entry.dart';
 import '../../../history/presentation/controllers/history_controller.dart';
 import '../../../history/presentation/controllers/history_state.dart';
+import '../../../history/presentation/models/history_feed_item.dart';
+import '../../../history/presentation/utils/look_metadata_presentation.dart';
 import '../../../makeup_styles/presentation/controllers/makeup_style_selection_controller.dart';
 import '../../../preview/presentation/controllers/makeup_preview_controller.dart';
 import '../../../profile/presentation/controllers/profile_controller.dart';
@@ -36,7 +38,7 @@ class HomePage extends ConsumerWidget {
     return AppShell(
       index: 0,
       child: SafeArea(
-        child: PageFrame(
+        child: PageFrame.scrolling(
           child: RefreshIndicator(
             onRefresh: () =>
                 ref.read(historyControllerProvider.notifier).refresh(),
@@ -44,39 +46,20 @@ class HomePage extends ConsumerWidget {
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
                 SliverToBoxAdapter(
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Welcome back, $name',
-                              style: Theme.of(context).textTheme.headlineSmall,
-                            ),
-                            const SizedBox(height: AppSpacing.xxs),
-                            Text(
-                              'What beauty mood are you in?',
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(color: AppColors.muted(context)),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton.filledTonal(
-                        // An icon-only control with no tooltip is unlabelled
-                        // for a screen reader and unguessable for everyone
-                        // else.
-                        tooltip: 'Settings',
-                        onPressed: () =>
-                            context.push(AppConstants.settingsRoute),
-                        icon: const Icon(Icons.tune_rounded),
-                      ),
-                    ],
+                  child: HomeGreetingHeader(
+                    greeting: 'Welcome back, $name',
+                    supportingText: 'What beauty mood are you in?',
+                    trailing: IconButton.filledTonal(
+                      // An icon-only control with no tooltip is unlabelled for
+                      // a screen reader and unguessable for everyone else.
+                      tooltip: 'Settings',
+                      onPressed: () => context.push(AppConstants.settingsRoute),
+                      icon: const Icon(Icons.tune_rounded),
+                    ),
                   ),
                 ),
                 const SliverToBoxAdapter(
-                  child: SizedBox(height: AppSpacing.lg),
+                  child: SizedBox(height: TopLevelHeaderMetrics.contentGap),
                 ),
                 SliverToBoxAdapter(
                   child: _ScanHero(
@@ -213,28 +196,44 @@ class _RecentLooks extends StatelessWidget {
   }
 }
 
+/// Home's compact rendering of the same four lines History states.
+///
+/// The layout is Home's own — a portrait tile in a horizontal strip, not
+/// History's row — but every word in it comes from [lookMetadataOf] reading the
+/// same adapter History reads. This card previously wrote its own title and its
+/// own ISO date, which is how the two screens ended up describing one session
+/// in two vocabularies.
 class _RecentLookCard extends StatelessWidget {
   const _RecentLookCard({required this.entry, required this.onTap});
 
   /// The thumbnail's share of the card's height.
   ///
-  /// Fixed on purpose: a picture does not get more informative when the text
-  /// beside it gets larger, so the caption grows and this does not.
-  static const double thumbnailHeight = 150;
+  /// Reduced from 150 in POLISH-P2 to pay for the two metadata lines the card
+  /// gained. The picture is the least information-dense part of the tile, and
+  /// it is still the tallest: at 118 in a 168-wide card it stays comfortably
+  /// portrait, so the crop is unchanged in kind.
+  static const double thumbnailHeight = 118;
 
   static const double _cardWidth = 168;
 
   /// Height the caption needs at the reader's current text size.
   ///
-  /// Derived from the two line boxes it actually draws rather than guessed:
-  /// `titleSmall` at 14/1.35 and `bodySmall` at 12/1.45, inside `AppSpacing.sm`
+  /// Derived from the four line boxes it actually draws rather than guessed:
+  /// `titleSmall` at 14/1.35, `labelSmall` at 11/1.45, and two `bodySmall` at
+  /// 12/1.45, plus the two `xxs` gaps between them, inside `AppSpacing.sm`
   /// padding, plus a point of slack so a fractional line height cannot round
   /// into a one-pixel overflow.
+  ///
+  /// Only the caption scales. A picture does not get more informative when the
+  /// text beside it gets larger, so the thumbnail keeps its area and the card
+  /// grows underneath it.
   static double captionHeight(BuildContext context) {
     final scaler = MediaQuery.textScalerOf(context);
     return AppSpacing.sm * 2 +
+        AppSpacing.xxs * 2 +
         scaler.scale(14) * 1.35 +
-        scaler.scale(12) * 1.45 +
+        scaler.scale(11) * 1.45 +
+        scaler.scale(12) * 1.45 * 2 +
         2;
   }
 
@@ -242,60 +241,85 @@ class _RecentLookCard extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-    width: _cardWidth,
-    child: Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              height: thumbnailHeight,
-              width: double.infinity,
-              child: PrivateImage(url: entry.thumbnailUrl),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.sm),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          entry.style?.name ?? 'Beauty analysis',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleSmall,
-                        ),
-                        Text(
-                          _date(entry.latestActivityAt),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (entry.isFavorite)
-                    const Icon(
-                      Icons.favorite_rounded,
-                      size: AppIconSizes.sm,
-                      color: AppColors.rose,
-                    ),
-                ],
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final muted = AppColors.muted(context);
+    // Home's feed is the Standard authority and only that, so this is the only
+    // adapter it can build. A My Kit tile would need a My Kit record, and
+    // widening the feed to produce one is out of scope for this track.
+    final metadata = lookMetadataOf(StandardHistoryFeedItem(entry));
+    return SizedBox(
+      width: _cardWidth,
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                height: thumbnailHeight,
+                width: double.infinity,
+                child: PrivateImage(url: entry.thumbnailUrl),
               ),
-            ),
-          ],
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.sm),
+                // One announcement per tile rather than four, matching how the
+                // History row reads itself out.
+                child: MergeSemantics(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              metadata.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: text.titleSmall,
+                            ),
+                          ),
+                          if (entry.isFavorite)
+                            const Icon(
+                              Icons.favorite_rounded,
+                              size: AppIconSizes.sm,
+                              color: AppColors.rose,
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        metadata.modeLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: text.labelSmall?.copyWith(
+                          color: AppColors.onTint(context, AppColors.rose),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        metadata.secondaryMetadata,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: text.bodySmall?.copyWith(color: muted),
+                      ),
+                      Text(
+                        metadata.formattedDateTime,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: text.bodySmall?.copyWith(color: muted),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-    ),
-  );
-
-  static String _date(DateTime value) {
-    final date = value.toLocal();
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-'
-        '${date.day.toString().padLeft(2, '0')}';
+    );
   }
 }
 

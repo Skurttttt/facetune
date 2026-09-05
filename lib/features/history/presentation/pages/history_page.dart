@@ -15,7 +15,6 @@ import '../../../makeup_kit/presentation/controllers/makeup_kit_history_controll
 import '../../../makeup_kit/presentation/controllers/makeup_kit_library_state.dart';
 import '../../../makeup_kit/presentation/controllers/makeup_kit_look_controller.dart';
 import '../../../makeup_kit/presentation/controllers/makeup_kit_result_actions_controller.dart';
-import '../../../makeup_kit/presentation/widgets/kit_history_card.dart';
 import '../../../preview/presentation/controllers/makeup_preview_controller.dart';
 import '../../../preview/presentation/controllers/makeup_preview_state.dart';
 import '../../../recommendation/presentation/controllers/makeup_recommendation_controller.dart';
@@ -24,7 +23,11 @@ import '../../../saved_looks/data/providers/saved_looks_providers.dart';
 import '../../domain/entities/history_entry.dart';
 import '../controllers/history_controller.dart';
 import '../controllers/history_state.dart';
+import '../models/history_feed_item.dart';
+import '../widgets/history_feed.dart';
+import '../widgets/history_filter_controls.dart';
 import '../widgets/history_card.dart';
+import '../widgets/history_card_skeleton.dart';
 
 class HistoryPage extends ConsumerStatefulWidget {
   const HistoryPage({super.key});
@@ -34,7 +37,17 @@ class HistoryPage extends ConsumerStatefulWidget {
 }
 
 class _HistoryPageState extends ConsumerState<HistoryPage> {
+  /// The one order the feed is ever built in.
+  ///
+  /// A constant rather than a field: with the Sort control gone there is no
+  /// longer anything that can set an order, so keeping the choice in mutable
+  /// state would only leave somewhere for a stale `Oldest` or `A-Z` to survive.
+  /// Newest first is also what keeps the date headings meaningful — `A-Z`
+  /// suppressed them entirely.
+  static const _sort = HistoryFeedSort.newest;
+
   final _scrollController = ScrollController();
+  HistoryFeedTypeFilter _typeFilter = HistoryFeedTypeFilter.all;
 
   @override
   void initState() {
@@ -69,12 +82,15 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     );
     ref.listen<HistoryState>(historyControllerProvider, (previous, next) {
       if (next.feedback == null || next.feedback == previous?.feedback) return;
-      // An expired session is the only failure this listener reports; the rest
-      // are confirmations of a delete or a favourite.
+      // A refresh that failed reports here too, and it must not arrive wearing
+      // the same tone as "Added to favorites." The state already carried
+      // `feedbackIsError`; nothing was reading it.
       showAppSnackBar(
         context,
         message: next.feedback!,
-        tone: next.sessionExpired ? AppTone.danger : AppTone.success,
+        tone: next.sessionExpired || next.feedbackIsError
+            ? AppTone.danger
+            : AppTone.success,
         actionLabel: next.sessionExpired ? 'Sign in again' : null,
         onAction: next.sessionExpired
             ? () => ref
@@ -99,7 +115,9 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     });
     ref.listen<int>(makeupKitLibraryRevisionProvider, (previous, next) {
       if (previous != null && previous != next) {
-        ref.read(makeupKitHistoryControllerProvider.notifier).loadInitial();
+        // A refresh rather than a reload: something changed elsewhere in the
+        // app, and the user did not ask to lose their place over it.
+        ref.read(makeupKitHistoryControllerProvider.notifier).refresh();
       }
     });
     ref.listen<MakeupPreviewState>(makeupPreviewControllerProvider, (
@@ -115,14 +133,12 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     return AppShell(
       index: 2,
       child: SafeArea(
-        child: PageFrame(
+        child: PageFrame.scrolling(
           child: RefreshIndicator(
             onRefresh: () async {
               await Future.wait([
                 ref.read(historyControllerProvider.notifier).refresh(),
-                ref
-                    .read(makeupKitHistoryControllerProvider.notifier)
-                    .loadInitial(),
+                ref.read(makeupKitHistoryControllerProvider.notifier).refresh(),
               ]);
             },
             child: _content(
@@ -145,16 +161,6 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     bool isGuest,
     bool previewIsGenerating,
   ) {
-    if (state.status == HistoryLoadStatus.loading &&
-        kitState.status == MakeupKitLibraryStatus.loading) {
-      return ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: const [
-          SizedBox(height: AppSpacing.xxl * 2),
-          Center(child: LoadingState(label: 'Loading your history…')),
-        ],
-      );
-    }
     if (state.status == HistoryLoadStatus.failure &&
         state.items.isEmpty &&
         kitState.items.isEmpty) {
@@ -179,57 +185,39 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       );
     }
 
-    final visibleItems = state.visibleItems;
-    final normalizedQuery = state.query.trim().toLowerCase();
-    final visibleKitItems = kitState.items
-        .where((entry) {
-          final matchesFilter = switch (state.filter) {
-            HistoryFilter.all || HistoryFilter.completed => true,
-            HistoryFilter.favorites => entry.isFavorite,
-          };
-          if (!matchesFilter) return false;
-          if (normalizedQuery.isEmpty) return true;
-          final attributes = entry.result.analysis.attributes;
-          final searchable = [
-            entry.result.style.name,
-            entry.result.style.code,
-            entry.result.recommendation.overallIntensity,
-            entry.result.recommendation.summary,
-            ...entry.result.recommendation.productSnapshots.expand(
-              (snapshot) => [
-                snapshot.category,
-                snapshot.productName,
-                snapshot.colorLabel,
-                snapshot.colorHex,
-                snapshot.finish,
-                snapshot.foundationDepth,
-                snapshot.foundationUndertone,
-              ],
-            ),
-            attributes.faceShape.name,
-            attributes.skinTone.name,
-            attributes.undertone.name,
-            attributes.eyeShape.name,
-            attributes.lipShape.name,
-            attributes.hairColor.name,
-            attributes.eyeColor.name,
-          ].whereType<String>().join(' ').toLowerCase();
-          return searchable.contains(normalizedQuery);
-        })
-        .toList(growable: false);
+    final feedItems = buildHistoryFeed(
+      recommendations: state.items,
+      myMakeupKit: kitState.items,
+      typeFilter: _typeFilter,
+      statusFilter: state.filter,
+      query: state.query,
+      sort: _sort,
+    );
+    // How many of the two authorities have not finished their first page. The
+    // page chrome is built either way, so the header, the filters and the feed
+    // rows all land in their final positions on the very first frame and stay
+    // there — there is no full-screen spinner that later gives way to a layout.
+    final stillLoading =
+        (state.status == HistoryLoadStatus.loading ? 1 : 0) +
+        (kitState.status == MakeupKitLibraryStatus.loading ? 1 : 0);
+    final isLoadingMore =
+        state.status == HistoryLoadStatus.loadingMore ||
+        kitState.status == MakeupKitLibraryStatus.loadingMore;
     return CustomScrollView(
+      // Opening a record and coming back must land where the user left, not at
+      // the top. The offset is kept twice over: by [_scrollController], which
+      // outlives the rebuild, and by PageStorage against this key, which
+      // survives the Scrollable itself being rebuilt. Both are local to this
+      // session — nothing here is written to Supabase or to settings.
+      key: const PageStorageKey('history-feed'),
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        SliverToBoxAdapter(
-          child: Text(
-            'History',
-            style: Theme.of(context).textTheme.headlineMedium,
-          ),
-        ),
-        const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xs)),
         const SliverToBoxAdapter(
-          child: Text('Revisit every step of your FaceTune journey.'),
+          child: TopLevelPageHeader(
+            title: 'History',
+            subtitle: 'Revisit every step of your FaceTune journey.',
+          ),
         ),
         if (isGuest) ...[
           const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.md)),
@@ -242,94 +230,23 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
             ),
           ),
         ],
-        const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
+        const SliverToBoxAdapter(
+          child: SizedBox(height: TopLevelHeaderMetrics.contentGap),
+        ),
         SliverToBoxAdapter(
-          child: TextField(
-            onChanged: (value) =>
+          child: HistoryFilterControls(
+            query: state.query,
+            typeFilter: _typeFilter,
+            statusFilter: state.filter,
+            onQueryChanged: (value) =>
                 ref.read(historyControllerProvider.notifier).setQuery(value),
-            textInputAction: TextInputAction.search,
-            decoration: const InputDecoration(
-              hintText: 'Search styles or beauty traits',
-              prefixIcon: Icon(Icons.search_rounded),
-            ),
+            onTypeChanged: (filter) => setState(() => _typeFilter = filter),
+            onStatusChanged: _setFilter,
           ),
         ),
-        const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.sm)),
-        SliverToBoxAdapter(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _FilterChip(
-                  label: 'All',
-                  selected: state.filter == HistoryFilter.all,
-                  onSelected: () => _setFilter(HistoryFilter.all),
-                ),
-                _FilterChip(
-                  label: 'Completed',
-                  selected: state.filter == HistoryFilter.completed,
-                  onSelected: () => _setFilter(HistoryFilter.completed),
-                ),
-                _FilterChip(
-                  label: 'Favorites',
-                  selected: state.filter == HistoryFilter.favorites,
-                  onSelected: () => _setFilter(HistoryFilter.favorites),
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (state.status == HistoryLoadStatus.failure &&
-            state.items.isNotEmpty) ...[
-          const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.md)),
-          SliverToBoxAdapter(
-            child: StatusState.error(
-              title: 'Could not load more history',
-              message: state.message ?? 'Pull to refresh and try again.',
-              actionLabel: state.sessionExpired ? 'Sign in again' : 'Retry',
-              onAction: state.sessionExpired
-                  ? () => ref
-                        .read(authControllerProvider.notifier)
-                        .recoverExpiredSession()
-                  : () => ref
-                        .read(historyControllerProvider.notifier)
-                        .retryLoadMore(),
-            ),
-          ),
-        ],
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
-        if (kitState.status == MakeupKitLibraryStatus.loading)
-          const SliverToBoxAdapter(
-            child: Center(
-              child: LoadingState(label: 'Loading My Makeup Kit history…'),
-            ),
-          )
-        else if (visibleKitItems.isNotEmpty) ...[
-          SliverToBoxAdapter(
-            child: Text(
-              'My Makeup Kit',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-          ),
-          const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.sm)),
-          SliverList(
-            delegate: SliverChildBuilderDelegate((context, index) {
-              if (index.isOdd) {
-                return const SizedBox(height: AppSpacing.sm);
-              }
-              final entry = visibleKitItems[index ~/ 2];
-              return KitHistoryCard(
-                entry: entry,
-                isMutating: kitState.mutatingIds.contains(
-                  entry.result.analysis.id,
-                ),
-                onOpen: () => _openKit(entry),
-                onDelete: () => _confirmDeleteKit(entry),
-              );
-            }, childCount: visibleKitItems.length * 2 - 1),
-          ),
-          const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
-        ] else if (kitState.status == MakeupKitLibraryStatus.failure)
+        if (kitState.status == MakeupKitLibraryStatus.failure &&
+            kitState.items.isEmpty)
           SliverToBoxAdapter(
             child: StatusState.error(
               title: 'My Makeup Kit history unavailable',
@@ -347,42 +264,51 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                         .loadInitial(),
             ),
           ),
-        if (visibleItems.isNotEmpty) ...[
-          SliverToBoxAdapter(
-            child: Text(
-              'Makeup Recommendations',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-          ),
-          const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.sm)),
-        ],
-        if (visibleItems.isEmpty && visibleKitItems.isEmpty)
+        if (feedItems.isEmpty && stillLoading > 0)
+          // Nothing has arrived yet. "No FaceTune history yet" would be a claim
+          // the app cannot make while a request is still out.
+          const HistoryFeedSkeleton(count: 5)
+        else if (feedItems.isEmpty)
           SliverFillRemaining(
             hasScrollBody: false,
-            // Both branches are absences, not failures: either nothing has been
-            // created yet, or a filter matched nothing. Neither should announce
-            // itself or wear an error tone.
-            child: StatusState.empty(
-              title: state.items.isEmpty && kitState.items.isEmpty
-                  ? 'No FaceTune history yet'
-                  : 'No matching sessions',
-              message: state.items.isEmpty && kitState.items.isEmpty
-                  ? 'Complete a selfie analysis to begin your private history.'
-                  : 'Try another search or filter.',
-              icon: state.items.isEmpty
-                  ? Icons.history_rounded
-                  : Icons.search_off_rounded,
+            // Every branch is an absence, not a failure: nothing created yet,
+            // nothing of this kind yet, nothing favorited yet, or nothing
+            // matching. None should announce itself or wear an error tone, and
+            // each should name the thing that would fix it.
+            child: Builder(
+              builder: (context) {
+                final reason = resolveHistoryEmptyReason(
+                  hasAnyRecords:
+                      state.items.isNotEmpty || kitState.items.isNotEmpty,
+                  typeFilter: _typeFilter,
+                  statusFilter: state.filter,
+                  query: state.query,
+                );
+                return StatusState.empty(
+                  title: reason.title,
+                  message: reason.message,
+                  icon: switch (reason) {
+                    HistoryEmptyReason.noHistory => Icons.history_rounded,
+                    HistoryEmptyReason.noMyMakeupKitHistory =>
+                      Icons.inventory_2_outlined,
+                    HistoryEmptyReason.noFavorites =>
+                      Icons.favorite_border_rounded,
+                    HistoryEmptyReason.noMatches => Icons.search_off_rounded,
+                  },
+                );
+              },
             ),
           )
-        else if (visibleItems.isNotEmpty)
-          SliverList(
-            delegate: SliverChildBuilderDelegate((context, index) {
-              if (index.isOdd) {
-                return const SizedBox(height: AppSpacing.sm);
-              }
-              final entry = visibleItems[index ~/ 2];
-              return HistoryCard(
-                entry: entry,
+        else
+          HistoryFeed(
+            items: feedItems,
+            sort: _sort,
+            // One card widget, two untouched authorities. Each branch still
+            // reads its own controller for mutation state and still calls the
+            // callbacks that mode already owned.
+            itemBuilder: (context, item) => switch (item) {
+              StandardHistoryFeedItem(:final entry) => HistoryCard(
+                item: item,
                 isMutating: state.mutatingIds.contains(entry.id),
                 onOpen: () => _open(entry),
                 onFavorite: entry.preview == null
@@ -393,22 +319,66 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                 onRegenerate: entry.canRegenerate && !previewIsGenerating
                     ? () => _regenerate(entry)
                     : null,
+                // The wording the removed icon's tooltip already used.
+                regenerateLabel: entry.preview == null
+                    ? 'Generate preview'
+                    : 'Generate another variation',
                 onDelete: () => _confirmDelete(entry),
-              );
-            }, childCount: visibleItems.length * 2 - 1),
+              ),
+              // No favorite action: the My Kit history authority
+              // (MakeupKitHistoryController) exposes delete only, and inventing
+              // one here would mean inventing persistence for it. The heart on
+              // the card stays as the read-only indicator it already was.
+              MyMakeupKitHistoryFeedItem(:final entry) => HistoryCard(
+                item: item,
+                isMutating: kitState.mutatingIds.contains(
+                  entry.result.analysis.id,
+                ),
+                onOpen: () => _openKit(entry),
+                onDelete: () => _confirmDeleteKit(entry),
+              ),
+            },
           ),
-        if (state.status == HistoryLoadStatus.loadingMore)
-          const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.all(AppSpacing.lg),
-              child: Center(child: AppProgress()),
+        // Two rows standing in for the page being fetched — whether that is one
+        // authority's first page or another's next. They are shaped like the
+        // cards they will become, so the list grows downward instead of a
+        // spinner appearing and then shoving everything up. One footer serves
+        // both authorities: they page independently, and a second spinner said
+        // nothing the first one did not.
+        if (feedItems.isNotEmpty && (stillLoading > 0 || isLoadingMore))
+          const HistoryFeedSkeleton(count: 2),
+        // Inline, at the bottom, next to the rows that did load. A failed next
+        // page never takes away the pages that succeeded.
+        if (state.status == HistoryLoadStatus.failure && state.items.isNotEmpty)
+          SliverToBoxAdapter(
+            child: StatusState.error(
+              title: 'Could not load more history',
+              message: state.message ?? 'Pull to refresh and try again.',
+              actionLabel: state.sessionExpired ? 'Sign in again' : 'Retry',
+              onAction: state.sessionExpired
+                  ? () => ref
+                        .read(authControllerProvider.notifier)
+                        .recoverExpiredSession()
+                  : () => ref
+                        .read(historyControllerProvider.notifier)
+                        .retryLoadMore(),
             ),
           ),
-        if (kitState.status == MakeupKitLibraryStatus.loadingMore)
-          const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.all(AppSpacing.lg),
-              child: Center(child: AppProgress()),
+        if (kitState.status == MakeupKitLibraryStatus.failure &&
+            kitState.items.isNotEmpty)
+          SliverToBoxAdapter(
+            child: StatusState.error(
+              title: 'Could not load more My Makeup Kit history',
+              message: kitState.message ?? 'Pull to refresh and try again.',
+              icon: Icons.inventory_2_outlined,
+              actionLabel: kitState.sessionExpired ? 'Sign in again' : 'Retry',
+              onAction: kitState.sessionExpired
+                  ? () => ref
+                        .read(authControllerProvider.notifier)
+                        .recoverExpiredSession()
+                  : () => ref
+                        .read(makeupKitHistoryControllerProvider.notifier)
+                        .retryLoadMore(),
             ),
           ),
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xl)),
@@ -563,26 +533,4 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       ref.read(makeupKitLookControllerProvider.notifier).clear();
     }
   }
-}
-
-class _FilterChip extends StatelessWidget {
-  const _FilterChip({
-    required this.label,
-    required this.selected,
-    required this.onSelected,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onSelected;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(right: AppSpacing.xs),
-    child: FilterChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => onSelected(),
-    ),
-  );
 }

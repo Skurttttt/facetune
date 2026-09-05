@@ -85,7 +85,7 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
     return AppShell(
       index: 1,
       child: SafeArea(
-        child: PageFrame(
+        child: PageFrame.scrolling(
           child: RefreshIndicator(
             onRefresh: () async {
               await Future.wait([
@@ -144,15 +144,11 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        SliverToBoxAdapter(
-          child: Text(
-            'Saved looks',
-            style: Theme.of(context).textTheme.headlineMedium,
-          ),
-        ),
-        const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xs)),
         const SliverToBoxAdapter(
-          child: Text('Your personal makeup library, ready when you are.'),
+          child: TopLevelPageHeader(
+            title: 'Saved looks',
+            subtitle: 'Your personal makeup library, ready when you are.',
+          ),
         ),
         if (isGuest) ...[
           const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.md)),
@@ -184,7 +180,9 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
             ),
           ),
         ],
-        const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
+        const SliverToBoxAdapter(
+          child: SizedBox(height: TopLevelHeaderMetrics.contentGap),
+        ),
         if (kitState.status == MakeupKitLibraryStatus.loading)
           const SliverToBoxAdapter(
             child: Padding(

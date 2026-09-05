@@ -47,6 +47,45 @@ class MakeupKitHistoryController extends StateNotifier<MakeupKitHistoryState> {
     await _load(offset: 0, append: false, generation: generation);
   }
 
+  /// Reloads the first page without emptying the list first.
+  ///
+  /// [loadInitial] resets to a blank state before it fetches, which takes the
+  /// rows — and with them the reader's scroll position — away for the duration
+  /// of the request. Same repository call, same contract; only the moment the
+  /// rows are replaced differs. A failure leaves the existing rows alone.
+  Future<void> refresh() async {
+    if (state.items.isEmpty) return loadInitial();
+    if (state.status == MakeupKitLibraryStatus.refreshing) return;
+    final generation = ++_generation;
+    state = _copy(status: MakeupKitLibraryStatus.refreshing);
+    try {
+      final result = await _repository
+          .loadHistoryPage(offset: 0, limit: pageSize)
+          .timeout(_timeout);
+      if (!mounted || generation != _generation) return;
+      state = _copy(
+        status: MakeupKitLibraryStatus.ready,
+        items: List.unmodifiable(result.items),
+        hasMore: result.hasMore,
+      );
+    } on MakeupKitLibraryFailure catch (failure) {
+      _refreshFailed(failure.message, sessionExpired: failure.sessionExpired);
+    } on TimeoutException {
+      _refreshFailed('Refreshing My Makeup Kit history took too long.');
+    } catch (_) {
+      _refreshFailed('My Makeup Kit history could not be refreshed just now.');
+    }
+  }
+
+  void _refreshFailed(String message, {bool sessionExpired = false}) {
+    if (!mounted) return;
+    state = _copy(
+      status: MakeupKitLibraryStatus.ready,
+      feedback: message,
+      sessionExpired: sessionExpired,
+    );
+  }
+
   Future<void> loadMore() async {
     if (!state.hasMore || state.status != MakeupKitLibraryStatus.ready) return;
     state = _copy(status: MakeupKitLibraryStatus.loadingMore);
@@ -55,6 +94,19 @@ class MakeupKitHistoryController extends StateNotifier<MakeupKitHistoryState> {
       append: true,
       generation: _generation,
     );
+  }
+
+  /// Re-attempts only the page that failed, keeping everything already loaded.
+  ///
+  /// The Standard authority has had this since HIST-UI-2; the kit side had no
+  /// way back from a failed next page except a full reload, which would have
+  /// thrown away the rows the user could still read.
+  Future<void> retryLoadMore() async {
+    if (state.status != MakeupKitLibraryStatus.failure || state.items.isEmpty) {
+      return;
+    }
+    state = _copy(status: MakeupKitLibraryStatus.ready);
+    await loadMore();
   }
 
   Future<void> _load({

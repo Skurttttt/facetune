@@ -46,7 +46,49 @@ class HistoryController extends StateNotifier<HistoryState> {
     await _ensureVisible(++_filterGeneration);
   }
 
-  Future<void> refresh() => loadInitial();
+  /// Reloads the first page without taking the current one away first.
+  ///
+  /// [loadInitial] clears `items` before it fetches, which is right when there
+  /// is nothing on screen and wrong once there is: it empties the feed, so the
+  /// scroll position collapses and the user loses their place. This runs the
+  /// same request against the same repository contract and swaps the rows in
+  /// only when the answer arrives.
+  ///
+  /// A failure keeps the rows that are already there. A reload that fails is
+  /// not a reason to throw away records the user can still read and act on.
+  Future<void> refresh() async {
+    if (state.items.isEmpty) return loadInitial();
+    if (state.status == HistoryLoadStatus.refreshing) return;
+    final generation = ++_loadGeneration;
+    state = _state(status: HistoryLoadStatus.refreshing);
+    try {
+      final page = await _repository.loadPage(offset: 0, limit: pageSize);
+      if (!mounted || generation != _loadGeneration) return;
+      state = _state(
+        status: HistoryLoadStatus.ready,
+        items: List.unmodifiable(page.items),
+        hasMore: page.hasMore,
+        nextOffset: page.nextOffset,
+        sessionExpired: false,
+      );
+      await _ensureVisible(++_filterGeneration);
+    } on HistoryFailure catch (failure) {
+      if (!mounted || generation != _loadGeneration) return;
+      _refreshFailed(failure.message, sessionExpired: failure.sessionExpired);
+    } catch (_) {
+      if (!mounted || generation != _loadGeneration) return;
+      _refreshFailed('Your FaceTune history could not be refreshed just now.');
+    }
+  }
+
+  /// Reports the failure and returns the feed to the state it was already in.
+  void _refreshFailed(String message, {bool sessionExpired = false}) =>
+      state = _state(
+        status: HistoryLoadStatus.ready,
+        feedback: message,
+        feedbackIsError: true,
+        sessionExpired: sessionExpired,
+      );
 
   Future<void> loadMore() async {
     if (!state.hasMore || state.status != HistoryLoadStatus.ready) {

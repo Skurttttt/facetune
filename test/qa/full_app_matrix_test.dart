@@ -12,7 +12,6 @@ import 'package:facetune/features/history/presentation/pages/history_page.dart';
 import 'package:facetune/features/home/presentation/pages/home_page.dart';
 import 'package:facetune/features/makeup_kit/data/providers/makeup_kit_library_providers.dart';
 import 'package:facetune/features/makeup_kit/data/providers/makeup_kit_products_providers.dart';
-import 'package:facetune/features/makeup_kit/data/repositories/unavailable_makeup_kit_library_repository.dart';
 import 'package:facetune/features/makeup_kit/data/repositories/unavailable_makeup_kit_products_repository.dart';
 import 'package:facetune/features/makeup_kit/presentation/pages/makeup_kit_overview_page.dart';
 import 'package:facetune/features/makeup_styles/presentation/pages/style_selection_page.dart';
@@ -20,10 +19,11 @@ import 'package:facetune/features/preview/data/providers/preview_providers.dart'
 import 'package:facetune/features/preview/data/repositories/unavailable_makeup_preview_repository.dart';
 import 'package:facetune/features/preview/presentation/pages/preview_result_page.dart';
 import 'package:facetune/features/profile/data/providers/profile_providers.dart';
+import 'package:facetune/features/profile/presentation/pages/profile_page.dart';
 import 'package:facetune/features/recommendation/data/providers/recommendation_providers.dart';
 import 'package:facetune/features/recommendation/data/repositories/unavailable_makeup_recommendation_repository.dart';
 import 'package:facetune/features/saved_looks/data/providers/saved_looks_providers.dart';
-import 'package:facetune/features/saved_looks/data/repositories/unavailable_saved_looks_repository.dart';
+import 'package:facetune/features/saved_looks/presentation/pages/saved_looks_page.dart';
 import 'package:facetune/features/scan/presentation/pages/live_camera_page.dart';
 import 'package:facetune/features/scan/presentation/pages/scan_page.dart';
 import 'package:facetune/features/settings/data/providers/settings_providers.dart';
@@ -35,6 +35,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/fake_account_repositories.dart';
 import '../helpers/fake_auth_repository.dart';
 import '../helpers/fake_history_repository.dart';
+import '../helpers/fake_library_repositories.dart';
 
 typedef _PageFactory = Widget Function();
 
@@ -116,6 +117,11 @@ final _screens = <_ScreenCase>[
   ),
   _ScreenCase('final preview', PreviewResultPage.new, 'Result unavailable'),
   _ScreenCase('History', HistoryPage.new, 'History'),
+  // POLISH-P4: two of the four top-level tabs were never in this matrix, so
+  // Saved and Profile were the only screens in the app whose theme and
+  // large-text behaviour nothing checked.
+  _ScreenCase('Saved', SavedLooksPage.new, 'Saved looks'),
+  _ScreenCase('Profile', ProfilePage.new, 'Profile'),
   _ScreenCase(
     'My Makeup Kit',
     MakeupKitOverviewPage.new,
@@ -156,7 +162,7 @@ Future<void> _pumpPage(
         profileRepositoryProvider.overrideWithValue(FakeProfileRepository()),
         historyRepositoryProvider.overrideWithValue(FakeHistoryRepository()),
         savedLooksRepositoryProvider.overrideWithValue(
-          const UnavailableSavedLooksRepository(),
+          FakeSavedLooksRepository(),
         ),
         settingsRepositoryProvider.overrideWithValue(FakeSettingsRepository()),
         faceAnalysisRepositoryProvider.overrideWithValue(
@@ -172,7 +178,7 @@ Future<void> _pumpPage(
           const UnavailableMakeupKitProductsRepository(),
         ),
         makeupKitLibraryRepositoryProvider.overrideWithValue(
-          const UnavailableMakeupKitLibraryRepository(),
+          FakeMakeupKitLibraryRepository(),
         ),
         appVersionProvider.overrideWith((ref) async => '1.0.0+1'),
       ],

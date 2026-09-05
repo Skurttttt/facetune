@@ -15,12 +15,11 @@ gemini-3.6-flash
 gemini-3.1-flash-image
 
 
-
+Face analysis must be accurate and consistent
 Tutorial makeup overlay is not consistent it produce makeup overlay on step by step
-
-Live Camera Capture but still upload photo exist
-AI powered 1 person only detects (middle or with highest confidence)
 How do you specifically apply the makeup if hard, soft, etc.
 Detailed instructions
 Side features
+
+
 

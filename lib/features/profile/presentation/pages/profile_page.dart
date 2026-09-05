@@ -39,7 +39,7 @@ class ProfilePage extends ConsumerWidget {
     return AppShell(
       index: 3,
       child: SafeArea(
-        child: PageFrame(
+        child: PageFrame.scrolling(
           child: switch (state.status) {
             ProfileStatus.loading => const Center(
               child: LoadingState(label: 'Loading your profile…'),
@@ -65,22 +65,15 @@ class ProfilePage extends ConsumerWidget {
             ),
             ProfileStatus.ready => ListView(
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Profile',
-                        style: Theme.of(context).textTheme.headlineMedium,
-                      ),
-                    ),
-                    IconButton.filledTonal(
-                      tooltip: 'Open settings',
-                      onPressed: () => context.push(AppConstants.settingsRoute),
-                      icon: const Icon(Icons.settings_outlined),
-                    ),
-                  ],
+                TopLevelPageHeader(
+                  title: 'Profile',
+                  trailing: IconButton.filledTonal(
+                    tooltip: 'Open settings',
+                    onPressed: () => context.push(AppConstants.settingsRoute),
+                    icon: const Icon(Icons.settings_outlined),
+                  ),
                 ),
-                const SizedBox(height: AppSpacing.lg),
+                const SizedBox(height: TopLevelHeaderMetrics.contentGap),
                 AppCard(
                   child: Column(
                     children: [

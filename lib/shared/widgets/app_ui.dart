@@ -15,6 +15,7 @@ export 'buttons/secondary_button.dart';
 export 'buttons/tertiary_button.dart';
 export 'content/detail_row.dart';
 export 'content/section_header.dart';
+export 'content/top_level_headers.dart';
 export 'feedback/app_notice.dart';
 export 'feedback/app_progress.dart';
 export 'feedback/loading_state.dart';

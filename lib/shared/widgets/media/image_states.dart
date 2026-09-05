@@ -23,6 +23,21 @@ class ImagePlaceholder extends StatelessWidget {
   );
 }
 
+/// The still ground for an image inside a list of many.
+///
+/// Same tone as [ImagePlaceholder] and deliberately without its spinner. One
+/// spinner beside a single image reads as "this is loading"; a column of them
+/// reads as a stalled screen, and a scrolling feed can put five on screen at
+/// once. The reasoning above about not animating the space where a face is
+/// about to appear applies here too, so this stays still rather than shimmering.
+class ImageSkeleton extends StatelessWidget {
+  const ImageSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) =>
+      ColoredBox(color: Theme.of(context).colorScheme.surfaceContainerHighest);
+}
+
 /// The ground shown when a private image cannot be loaded.
 ///
 /// Deliberately understated, and deliberately silent about *why*. The usual

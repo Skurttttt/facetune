@@ -1,6 +1,9 @@
 import '../../domain/entities/kit_look_result.dart';
 
-enum MakeupKitLibraryStatus { loading, ready, loadingMore, failure }
+/// [refreshing] means a list that is already on screen is being reloaded
+/// underneath the reader, so it keeps its rows and its scroll offset until the
+/// new page arrives. [loading] means there is nothing to keep.
+enum MakeupKitLibraryStatus { loading, ready, refreshing, loadingMore, failure }
 
 class MakeupKitSavedState {
   const MakeupKitSavedState({

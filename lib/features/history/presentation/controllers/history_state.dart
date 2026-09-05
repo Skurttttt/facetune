@@ -1,6 +1,14 @@
 import '../../domain/entities/history_entry.dart';
 
-enum HistoryLoadStatus { loading, ready, loadingMore, failure }
+/// [refreshing] is deliberately distinct from [loading].
+///
+/// [loading] means there is nothing to show yet, so the screen may draw
+/// skeletons in place of the feed. [refreshing] means the feed is already on
+/// screen and is being reloaded underneath the user — it must keep its rows,
+/// its order and its scroll offset until the new page actually arrives. It also
+/// blocks `loadMore`, so a reload and a page append can never interleave and
+/// produce duplicate rows.
+enum HistoryLoadStatus { loading, ready, refreshing, loadingMore, failure }
 
 class HistoryState {
   const HistoryState({
