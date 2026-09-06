@@ -19,10 +19,16 @@ typedef AppDestination = ({
 
 /// The persistent bottom navigation the four top-level screens sit in.
 class AppShell extends StatelessWidget {
-  const AppShell({required this.child, required this.index, super.key});
+  const AppShell({
+    required this.child,
+    required this.index,
+    super.key,
+    this.onDestinationSelected,
+  });
 
   final Widget child;
   final int index;
+  final ValueChanged<int>? onDestinationSelected;
 
   /// The tabs, in order. Order is the contract: [index] is a position in this
   /// list, and every caller passes a literal.
@@ -58,24 +64,45 @@ class AppShell extends StatelessWidget {
   ];
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    body: child,
-    bottomNavigationBar: NavigationBar(
-      selectedIndex: index,
-      // Labels always shown. Hiding the unselected ones saves a few points of
-      // height and costs every user who does not recognise the glyph — and
-      // three of these four are ambiguous without their word.
-      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-      onDestinationSelected: (value) => context.go(destinations[value].route),
-      destinations: [
-        for (final destination in destinations)
-          NavigationDestination(
-            icon: Icon(destination.icon),
-            selectedIcon: Icon(destination.selectedIcon),
-            label: destination.label,
-            tooltip: destination.label,
-          ),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) {
+    // Top-level pages historically wrapped themselves in AppShell. Keep those
+    // call sites harmless when the router's persistent shell is already above
+    // them, while preserving direct page/widget-test presentation.
+    if (_AppShellScope.maybeOf(context)) return child;
+
+    return _AppShellScope(
+      child: Scaffold(
+        body: child,
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: index,
+          // Labels always shown. Hiding the unselected ones saves a few points of
+          // height and costs every user who does not recognise the glyph — and
+          // three of these four are ambiguous without their word.
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          onDestinationSelected:
+              onDestinationSelected ??
+              (value) => context.go(destinations[value].route),
+          destinations: [
+            for (final destination in destinations)
+              NavigationDestination(
+                icon: Icon(destination.icon),
+                selectedIcon: Icon(destination.selectedIcon),
+                label: destination.label,
+                tooltip: destination.label,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AppShellScope extends InheritedWidget {
+  const _AppShellScope({required super.child});
+
+  static bool maybeOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<_AppShellScope>() != null;
+
+  @override
+  bool updateShouldNotify(_AppShellScope oldWidget) => false;
 }

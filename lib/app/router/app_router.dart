@@ -29,6 +29,7 @@ import '../../features/scan/presentation/pages/scan_page.dart';
 import '../../features/tutorial/presentation/pages/tutorial_page.dart';
 import '../../features/settings/presentation/pages/settings_page.dart';
 import '../../shared/widgets/app_ui.dart';
+import 'app_navigation_transitions.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final refreshNotifier = _AuthRouterRefreshNotifier();
@@ -68,10 +69,63 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       return isPublicRoute ? AppConstants.homeRoute : null;
     },
     routes: [
-      GoRoute(
-        path: AppConstants.homeRoute,
-        name: 'home',
-        builder: (context, state) => const HomePage(),
+      StatefulShellRoute(
+        navigatorContainerBuilder: buildTopLevelBranchContainer,
+        builder: (context, state, navigationShell) => AppShell(
+          index: navigationShell.currentIndex,
+          onDestinationSelected: (index) => navigationShell.goBranch(index),
+          child: navigationShell,
+        ),
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: AppConstants.homeRoute,
+                name: 'home',
+                pageBuilder: (context, state) => NoTransitionPage<void>(
+                  key: state.pageKey,
+                  child: const HomePage(),
+                ),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: AppConstants.savedRoute,
+                name: 'saved',
+                pageBuilder: (context, state) => NoTransitionPage<void>(
+                  key: state.pageKey,
+                  child: const SavedLooksPage(),
+                ),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: AppConstants.historyRoute,
+                name: 'history',
+                pageBuilder: (context, state) => NoTransitionPage<void>(
+                  key: state.pageKey,
+                  child: const HistoryPage(),
+                ),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: AppConstants.profileRoute,
+                name: 'profile',
+                pageBuilder: (context, state) => NoTransitionPage<void>(
+                  key: state.pageKey,
+                  child: const ProfilePage(),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
       GoRoute(
         path: AppConstants.authRoute,
@@ -116,52 +170,54 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppConstants.stylesRoute,
         name: 'styles',
-        builder: (context, state) => const StyleSelectionPage(),
+        pageBuilder: (context, state) =>
+            buildJourneyPage(context, state, const StyleSelectionPage()),
       ),
       GoRoute(
         path: AppConstants.recommendationModeRoute,
         name: 'recommendationMode',
-        builder: (context, state) => const RecommendationModeSelectionPage(),
+        pageBuilder: (context, state) => buildJourneyPage(
+          context,
+          state,
+          const RecommendationModeSelectionPage(),
+        ),
       ),
       GoRoute(
         path: AppConstants.recommendationRoute,
         name: 'recommendation',
-        builder: (context, state) => const MakeupRecommendationPage(),
+        pageBuilder: (context, state) =>
+            buildJourneyPage(context, state, const MakeupRecommendationPage()),
       ),
       GoRoute(
         path: AppConstants.analysisRoute,
         name: 'analysis',
-        builder: (context, state) => const AnalysisResultPage(),
+        pageBuilder: (context, state) =>
+            buildJourneyPage(context, state, const AnalysisResultPage()),
       ),
       GoRoute(
         path: AppConstants.previewRoute,
         name: 'preview',
-        builder: (context, state) => const PreviewResultPage(),
+        pageBuilder: (context, state) =>
+            buildJourneyPage(context, state, const PreviewResultPage()),
       ),
       GoRoute(
         path: AppConstants.tutorialRoute,
         name: 'tutorial',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           // The canonical preview reference is passed as `extra` rather than a
           // path parameter: it carries both an id and a source mode, and a URL
           // segment could not express the pair without letting a caller name a
           // mode the row does not have.
           final args = state.extra! as TutorialPageArgs;
-          return TutorialPage(
-            preview: args.preview,
-            finalPreviewUrl: args.finalPreviewUrl,
+          return buildJourneyPage(
+            context,
+            state,
+            TutorialPage(
+              preview: args.preview,
+              finalPreviewUrl: args.finalPreviewUrl,
+            ),
           );
         },
-      ),
-      GoRoute(
-        path: AppConstants.savedRoute,
-        name: 'saved',
-        builder: (context, state) => const SavedLooksPage(),
-      ),
-      GoRoute(
-        path: AppConstants.historyRoute,
-        name: 'history',
-        builder: (context, state) => const HistoryPage(),
       ),
       GoRoute(
         path: AppConstants.makeupKitRoute,
@@ -182,12 +238,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppConstants.makeupKitRecommendationEntryRoute,
         name: 'makeupKitRecommendationEntry',
-        builder: (context, state) => const MakeupKitRecommendationEntryPage(),
-      ),
-      GoRoute(
-        path: AppConstants.profileRoute,
-        name: 'profile',
-        builder: (context, state) => const ProfilePage(),
+        pageBuilder: (context, state) => buildJourneyPage(
+          context,
+          state,
+          const MakeupKitRecommendationEntryPage(),
+        ),
       ),
       GoRoute(
         path: AppConstants.settingsRoute,
