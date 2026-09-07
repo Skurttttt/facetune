@@ -3,6 +3,14 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 import { consumeAiQuota, quotaMessage } from "../_shared/ai_quota.ts";
 import {
+  commitAiLook,
+  releaseAiLook,
+  reserveAiLook,
+  usageFailureMessage,
+  usageFailureRetryable,
+  usageFailureStatus,
+} from "../_shared/ai_look_usage.ts";
+import {
   FINAL_PREVIEW_MODEL,
   finalPreviewModelConfigurationError,
 } from "../_shared/final_preview_model.ts";
@@ -76,6 +84,32 @@ function kitRecommendationId(value: unknown): string {
   return id;
 }
 
+/**
+ * The AI Look operation identity for this request.
+ *
+ * Same contract as the Standard path: a client that reuses a stable
+ * `operationId` across retries gets one reservation and one charge however many
+ * times the request repeats. Absent, the server mints one, which bills
+ * correctly but cannot recognise a retry. Constrained to a uuid so no storage
+ * path or other user content can become an idempotency key.
+ */
+function operationId(value: unknown): string {
+  const supplied = typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>).operationId
+    : undefined;
+  if (supplied === undefined || supplied === null) {
+    return crypto.randomUUID();
+  }
+  if (typeof supplied !== "string" || !uuidPattern.test(supplied)) {
+    throw new FunctionFailure(
+      400,
+      "invalid_operation_id",
+      "A valid operation ID is required.",
+    );
+  }
+  return supplied;
+}
+
 function previewResponse(
   row: Record<string, unknown>,
   originalImagePath: string,
@@ -116,6 +150,12 @@ Deno.serve(async (request) => {
   }
   let uploadedPath: string | null = null;
   let userClient: ReturnType<typeof createClient> | null = null;
+  // The AI Look this request holds, once reserved.
+  let heldOperationId: string | null = null;
+  // Set the instant a usable canonical kit preview row exists. From that point
+  // the reservation must never be released: the user can open the result, so
+  // the AI Look is owed.
+  let previewPersisted = false;
   try {
     const authorization = request.headers.get("authorization");
     if (!authorization?.toLowerCase().startsWith("bearer ")) {
@@ -153,6 +193,7 @@ Deno.serve(async (request) => {
       );
     }
     const requestedId = kitRecommendationId(body);
+    const requestedOperationId = operationId(body);
     const { data: recommendation, error: recommendationError } = await client
       .from("kit_makeup_recommendations")
       .select(
@@ -244,6 +285,53 @@ Deno.serve(async (request) => {
         "The original image path is invalid.",
       );
     }
+
+    // ---- AI Look reservation -------------------------------------------
+    //
+    // After ownership and the owned-product plan are proven, and before any
+    // paid work. The Kit path is wrapped identically to Standard Mode: gating
+    // only one of the two would leave the other as a free channel.
+    const reservation = await reserveAiLook(client, requestedOperationId);
+
+    if (!reservation.ok) {
+      // A replay of an operation that already committed returns the preview it
+      // paid for rather than generating and charging a second time.
+      if (reservation.errorCode === "USAGE_ALREADY_COMMITTED") {
+        const { data: priorUsage } = await client
+          .from("usage_ledger")
+          .select("canonical_kit_generated_image_id")
+          .eq("operation_id", requestedOperationId)
+          .maybeSingle();
+        const priorPreviewId =
+          (priorUsage as Record<string, unknown> | null)
+            ?.canonical_kit_generated_image_id;
+        if (typeof priorPreviewId === "string") {
+          const { data: priorPreview } = await client
+            .from("kit_generated_images")
+            .select("*")
+            .eq("id", priorPreviewId)
+            .maybeSingle();
+          if (priorPreview) {
+            return jsonResponse(
+              previewResponse(
+                priorPreview as unknown as Record<string, unknown>,
+                originalImagePath,
+              ),
+            );
+          }
+        }
+      }
+      console.error(
+        `[generate-kit-makeup-preview] ai_look_reserve_denied code=${reservation.errorCode}`,
+      );
+      throw new FunctionFailure(
+        usageFailureStatus(reservation.errorCode),
+        reservation.errorCode ?? "TEMPORARY_BACKEND_FAILURE",
+        usageFailureMessage(reservation.errorCode),
+        usageFailureRetryable(reservation.errorCode),
+      );
+    }
+    heldOperationId = requestedOperationId;
 
     const [download, latestGeneration, quota] = await Promise.all([
       client.storage.from("face-images").download(originalImagePath),
@@ -372,6 +460,28 @@ Deno.serve(async (request) => {
       );
     }
     uploadedPath = null;
+    // A usable canonical kit preview now exists, so the AI Look is owed from
+    // this line onward and must never be released.
+    previewPersisted = true;
+
+    // ---- AI Look commit -------------------------------------------------
+    //
+    // After the row insert, for the same reason as Standard Mode: a stored
+    // object with no row is unreachable and is not a usable result. A commit
+    // that cannot be recorded does not fail the request — the user has their
+    // preview — and reconciliation commits it from the persisted evidence.
+    const commit = await commitAiLook(
+      client,
+      requestedOperationId,
+      "makeup_kit",
+      (inserted as unknown as Record<string, unknown>).id as string,
+    );
+    if (!commit.ok) {
+      console.error(
+        `[generate-kit-makeup-preview] ai_look_commit_deferred code=${commit.errorCode}`,
+      );
+    }
+
     console.log(
       `[generate-kit-makeup-preview] Completed model=${model} prompt=${KIT_MAKEUP_PREVIEW_PROMPT_VERSION} variation=${generationNumber}`,
     );
@@ -379,6 +489,21 @@ Deno.serve(async (request) => {
   } catch (error) {
     if (uploadedPath && userClient) {
       await userClient.storage.from("face-images").remove([uploadedPath]);
+    }
+    // ---- AI Look release ------------------------------------------------
+    //
+    // Releases only when no usable canonical preview was persisted. A client
+    // timeout never reaches here, so an abandoned request cannot cause a wrong
+    // release; anything left reserved is resolved by reconciliation.
+    if (heldOperationId && !previewPersisted && userClient) {
+      const released = await releaseAiLook(
+        userClient,
+        heldOperationId,
+        error instanceof FunctionFailure ? error.code : "server_error",
+      );
+      console.log(
+        `[generate-kit-makeup-preview] ai_look_release ok=${released.ok}`,
+      );
     }
     const failure = error instanceof FunctionFailure
       ? error

@@ -1,4 +1,6 @@
 import 'package:facetune/core/supabase/supabase_availability_provider.dart';
+import 'package:facetune/features/subscription/data/providers/subscription_providers.dart';
+import 'package:facetune/features/subscription/data/repositories/unavailable_subscription_repository.dart';
 import 'package:facetune/features/analysis/data/models/face_analysis_dto.dart';
 import 'package:facetune/features/analysis/data/providers/analysis_providers.dart';
 import 'package:facetune/features/analysis/data/repositories/unavailable_face_analysis_repository.dart';
@@ -572,6 +574,9 @@ Future<void> _pump(
     ProviderScope(
       overrides: [
         supabaseAvailableProvider.overrideWithValue(true),
+        subscriptionRepositoryProvider.overrideWithValue(
+          const UnavailableSubscriptionRepository(),
+        ),
         authRepositoryProvider.overrideWithValue(auth),
         profileRepositoryProvider.overrideWithValue(FakeProfileRepository()),
         historyRepositoryProvider.overrideWithValue(

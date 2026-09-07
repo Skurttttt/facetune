@@ -10,6 +10,7 @@ import '../../../preview/presentation/controllers/makeup_preview_controller.dart
 import '../../../preview/presentation/controllers/makeup_preview_state.dart';
 import '../../../../shared/widgets/app_ui.dart';
 import '../../../../theme/app_tokens.dart';
+import '../../../subscription/presentation/widgets/ai_look_allowance_notice.dart';
 import '../../domain/errors/recommendation_failure.dart';
 import '../controllers/makeup_recommendation_controller.dart';
 import '../controllers/makeup_recommendation_state.dart';
@@ -281,13 +282,22 @@ class _PaletteBottomAction extends StatelessWidget {
                 AppSpacing.gutter,
                 AppSpacing.sm,
               ),
-              child: PrimaryButton(
-                key: const ValueKey('palette-generate-preview'),
-                label: previewIsGenerating
-                    ? 'Creating your preview…'
-                    : 'Generate makeup preview',
-                icon: Icons.auto_awesome_rounded,
-                onPressed: previewIsGenerating ? null : onGeneratePreview,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Context for the decision about to be made. Informative
+                  // only — it never disables the button, because the server
+                  // remains the authority on whether a generation may proceed.
+                  const AiLookAllowanceNotice(),
+                  PrimaryButton(
+                    key: const ValueKey('palette-generate-preview'),
+                    label: previewIsGenerating
+                        ? 'Creating your preview…'
+                        : 'Generate makeup preview',
+                    icon: Icons.auto_awesome_rounded,
+                    onPressed: previewIsGenerating ? null : onGeneratePreview,
+                  ),
+                ],
               ),
             ),
           ),

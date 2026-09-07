@@ -8,6 +8,7 @@ import '../../../../theme/app_tokens.dart';
 import '../../../authentication/domain/services/auth_validators.dart';
 import '../../../authentication/presentation/controllers/auth_controller.dart';
 import '../../../authentication/presentation/widgets/auth_feedback_listener.dart';
+import '../../../subscription/presentation/widgets/subscription_summary_card.dart';
 import '../../domain/errors/profile_failure.dart';
 import '../controllers/profile_controller.dart';
 import '../controllers/profile_state.dart';
@@ -138,6 +139,7 @@ class ProfilePage extends ConsumerWidget {
                     ],
                   ),
                 ),
+                const SubscriptionSummaryCard(),
                 if (isGuest) ...[
                   const SizedBox(height: AppSpacing.md),
                   const AppCard(

@@ -3,6 +3,14 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 import { consumeAiQuota, quotaMessage } from "../_shared/ai_quota.ts";
 import {
+  commitAiLook,
+  releaseAiLook,
+  reserveAiLook,
+  usageFailureMessage,
+  usageFailureRetryable,
+  usageFailureStatus,
+} from "../_shared/ai_look_usage.ts";
+import {
   FINAL_PREVIEW_MODEL,
   finalPreviewModelConfigurationError,
 } from "../_shared/final_preview_model.ts";
@@ -60,6 +68,36 @@ function recommendationId(value: unknown): string {
   return id;
 }
 
+/**
+ * The AI Look operation identity for this request.
+ *
+ * A client that supplies a stable `operationId` and reuses it across retries
+ * gets idempotency: the same operation resolves to one reservation and one
+ * charge, however many times the request is repeated. When the field is absent
+ * the server mints one, which still bills correctly but cannot recognise a
+ * retry as the same operation — the existing app does not send one yet, and
+ * SUB-6 is where the client starts to.
+ *
+ * The shape is constrained to a uuid so a storage path, an email, or any other
+ * user content cannot be used as an idempotency key.
+ */
+function operationId(value: unknown): string {
+  const supplied = typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>).operationId
+    : undefined;
+  if (supplied === undefined || supplied === null) {
+    return crypto.randomUUID();
+  }
+  if (typeof supplied !== "string" || !uuidPattern.test(supplied)) {
+    throw new FunctionFailure(
+      400,
+      "invalid_operation_id",
+      "A valid operation ID is required.",
+    );
+  }
+  return supplied;
+}
+
 function previewResponse(
   row: Record<string, unknown>,
   originalImagePath: string,
@@ -99,6 +137,13 @@ Deno.serve(async (request) => {
   }
   let uploadedPath: string | null = null;
   let userClient: ReturnType<typeof createClient> | null = null;
+  // The AI Look this request holds, once reserved.
+  let heldOperationId: string | null = null;
+  // Set the instant a usable canonical preview row exists. From that point the
+  // reservation must never be released: the user can open the result, so the
+  // AI Look is owed. Anything that fails afterwards leaves the reservation
+  // standing for reconciliation to commit from the persisted evidence.
+  let previewPersisted = false;
   const requestStartedAt = Date.now();
   const timings: Record<string, number> = {};
 
@@ -171,6 +216,7 @@ Deno.serve(async (request) => {
       );
     }
     const requestedRecommendationId = recommendationId(body);
+    const requestedOperationId = operationId(body);
     // These two reads stay sequential: the analysis id is only known after the
     // recommendation row is read. Collapsing them into one embedded PostgREST
     // query would save a round trip but relies on the composite ownership
@@ -225,6 +271,72 @@ Deno.serve(async (request) => {
         "The original image path is invalid.",
       );
     }
+
+    // ---- AI Look reservation -------------------------------------------
+    //
+    // Placed here for two reasons. It is after ownership is proven, so a
+    // request that was never valid cannot burn capacity; and it is before any
+    // paid work, so a refusal costs nothing. An exhausted, expired, suspended,
+    // or revoked entitlement stops the request here and Gemini is never
+    // contacted.
+    const reservation = await timed(
+      "ai_look_reserve",
+      () => reserveAiLook(client, requestedOperationId),
+    );
+
+    if (!reservation.ok) {
+      // A replay of an operation that already committed is not a failure: the
+      // preview it paid for still exists, so return that instead of generating
+      // — and charging — a second time. This is what makes a lost response or
+      // a client timeout safe to retry.
+      if (reservation.errorCode === "USAGE_ALREADY_COMMITTED") {
+        const { data: priorUsage } = await timed(
+          "prior_usage_fetch",
+          () =>
+            client
+              .from("usage_ledger")
+              .select("canonical_generated_image_id")
+              .eq("operation_id", requestedOperationId)
+              .maybeSingle(),
+        );
+        const priorPreviewId =
+          (priorUsage as Record<string, unknown> | null)
+            ?.canonical_generated_image_id;
+        if (typeof priorPreviewId === "string") {
+          const { data: priorPreview } = await timed(
+            "prior_preview_fetch",
+            () =>
+              client
+                .from("generated_images")
+                .select("*")
+                .eq("id", priorPreviewId)
+                .maybeSingle(),
+          );
+          if (priorPreview) {
+            console.log("[Phase10] ai_look_replayed_committed");
+            reportTimings("replayed");
+            return jsonResponse(
+              previewResponse(
+                priorPreview as Record<string, unknown>,
+                originalImagePath,
+              ),
+            );
+          }
+        }
+      }
+      console.error(
+        `[Phase10] ai_look_reserve_denied code=${reservation.errorCode}`,
+      );
+      throw new FunctionFailure(
+        usageFailureStatus(reservation.errorCode),
+        reservation.errorCode ?? "TEMPORARY_BACKEND_FAILURE",
+        usageFailureMessage(reservation.errorCode),
+        usageFailureRetryable(reservation.errorCode),
+      );
+    }
+    heldOperationId = requestedOperationId;
+    console.log("[Phase10] ai_look_reserved");
+
     // The source download, the generation-number lookup, and the quota check are
     // mutually independent once ownership is proven, so they run concurrently
     // rather than as three serial round trips. Every one of them is awaited and
@@ -400,6 +512,39 @@ Deno.serve(async (request) => {
     }
     console.log("[Phase10] database_insert_success=true");
     uploadedPath = null;
+    // A usable canonical preview now exists and the user can open it, so the
+    // AI Look is owed from this line onward and must never be released.
+    previewPersisted = true;
+
+    // ---- AI Look commit -------------------------------------------------
+    //
+    // Deliberately after the row insert rather than after the storage upload:
+    // an object with no row is unreachable from History, Saved Looks, Tutorial,
+    // and reopen, so it is not a usable result and must not be charged.
+    //
+    // A commit that cannot be recorded does not fail the request. The preview
+    // is real and the user has it; failing here would deny them a result they
+    // already own. The reservation is left standing instead, and
+    // `reconcile_stale_ai_look_reservations` commits it from the persisted
+    // preview — which is exactly the evidence-first case it was built for.
+    const commit = await timed(
+      "ai_look_commit",
+      () =>
+        commitAiLook(
+          client,
+          requestedOperationId,
+          "standard",
+          (inserted as Record<string, unknown>).id as string,
+        ),
+    );
+    if (commit.ok) {
+      console.log("[Phase10] ai_look_committed");
+    } else {
+      console.error(
+        `[Phase10] ai_look_commit_deferred code=${commit.errorCode}`,
+      );
+    }
+
     console.log(
       `[generate-makeup-preview] Completed model=${model} prompt=${MAKEUP_PREVIEW_PROMPT_VERSION} variation=${generationNumber}`,
     );
@@ -409,6 +554,27 @@ Deno.serve(async (request) => {
   } catch (error) {
     if (uploadedPath && userClient) {
       await userClient.storage.from("face-images").remove([uploadedPath]);
+    }
+    // ---- AI Look release ------------------------------------------------
+    //
+    // This block is the only place that can say a request definitively failed
+    // on the server, and it releases only when no usable canonical preview was
+    // persisted. If `previewPersisted` is set the reservation is left alone:
+    // the user has a result, so the AI Look is owed, and reconciliation will
+    // commit it rather than hand back capacity for work that succeeded.
+    //
+    // Nothing here reacts to a client timeout or a dropped connection. Those
+    // never reach this code — the request keeps running server-side — which is
+    // precisely why an abandoned request cannot cause a wrong release.
+    if (heldOperationId && !previewPersisted && userClient) {
+      const released = await releaseAiLook(
+        userClient,
+        heldOperationId,
+        error instanceof FunctionFailure ? error.code : "server_error",
+      );
+      console.log(
+        `[Phase10] ai_look_release ok=${released.ok} code=${released.errorCode}`,
+      );
     }
     const failure = error instanceof FunctionFailure
       ? error

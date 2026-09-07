@@ -28,6 +28,7 @@ import '../../features/scan/presentation/pages/live_camera_page.dart';
 import '../../features/scan/presentation/pages/scan_page.dart';
 import '../../features/tutorial/presentation/pages/tutorial_page.dart';
 import '../../features/settings/presentation/pages/settings_page.dart';
+import '../../features/subscription/presentation/pages/subscription_page.dart';
 import '../../shared/widgets/app_ui.dart';
 import 'app_navigation_transitions.dart';
 
@@ -243,6 +244,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           state,
           const MakeupKitRecommendationEntryPage(),
         ),
+      ),
+      GoRoute(
+        path: AppConstants.subscriptionRoute,
+        name: 'subscription',
+        builder: (context, state) => const SubscriptionPage(),
       ),
       GoRoute(
         path: AppConstants.settingsRoute,

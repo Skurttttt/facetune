@@ -33,6 +33,7 @@ class AppConstants {
       '/makeup-kit/recommendation-entry';
   static const String profileRoute = '/profile';
   static const String settingsRoute = '/settings';
+  static const String subscriptionRoute = '/subscription';
 
   static const String authCallbackUrl = 'io.facetune.app://login-callback/';
   static const String passwordResetCallbackUrl =

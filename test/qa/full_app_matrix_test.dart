@@ -1,4 +1,6 @@
 import 'package:facetune/core/supabase/supabase_availability_provider.dart';
+import 'package:facetune/features/subscription/data/providers/subscription_providers.dart';
+import 'package:facetune/features/subscription/data/repositories/unavailable_subscription_repository.dart';
 import 'package:facetune/features/analysis/data/providers/analysis_providers.dart';
 import 'package:facetune/features/analysis/data/repositories/unavailable_face_analysis_repository.dart';
 import 'package:facetune/features/analysis/presentation/pages/analysis_result_page.dart';
@@ -158,6 +160,9 @@ Future<void> _pumpPage(
         // repositories. No matrix case may reach a device picker, network, or
         // paid service merely because it was rendered.
         supabaseAvailableProvider.overrideWithValue(true),
+        subscriptionRepositoryProvider.overrideWithValue(
+          const UnavailableSubscriptionRepository(),
+        ),
         authRepositoryProvider.overrideWithValue(auth),
         profileRepositoryProvider.overrideWithValue(FakeProfileRepository()),
         historyRepositoryProvider.overrideWithValue(FakeHistoryRepository()),
@@ -273,6 +278,9 @@ void main() {
         ProviderScope(
           overrides: [
             supabaseAvailableProvider.overrideWithValue(true),
+            subscriptionRepositoryProvider.overrideWithValue(
+              const UnavailableSubscriptionRepository(),
+            ),
             authRepositoryProvider.overrideWithValue(auth),
           ],
           child: MaterialApp(

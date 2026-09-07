@@ -1,4 +1,6 @@
 import 'package:facetune/core/supabase/supabase_availability_provider.dart';
+import 'package:facetune/features/subscription/data/providers/subscription_providers.dart';
+import 'package:facetune/features/subscription/data/repositories/unavailable_subscription_repository.dart';
 import 'package:facetune/features/authentication/data/providers/auth_repository_provider.dart';
 import 'package:facetune/features/authentication/domain/entities/auth_user.dart';
 import 'package:facetune/features/profile/data/providers/profile_providers.dart';
@@ -29,6 +31,9 @@ void main() {
       ProviderScope(
         overrides: [
           supabaseAvailableProvider.overrideWithValue(true),
+          subscriptionRepositoryProvider.overrideWithValue(
+            const UnavailableSubscriptionRepository(),
+          ),
           authRepositoryProvider.overrideWithValue(authRepository),
           profileRepositoryProvider.overrideWithValue(
             FakeProfileRepository(
@@ -65,6 +70,9 @@ void main() {
       ProviderScope(
         overrides: [
           supabaseAvailableProvider.overrideWithValue(true),
+          subscriptionRepositoryProvider.overrideWithValue(
+            const UnavailableSubscriptionRepository(),
+          ),
           authRepositoryProvider.overrideWithValue(authRepository),
           profileRepositoryProvider.overrideWithValue(
             FakeProfileRepository(
