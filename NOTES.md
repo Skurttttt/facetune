@@ -25,7 +25,69 @@ gemini-3.1-flash-image
 - How do you specifically apply the makeup if hard, soft, etc.
 - Detailed instructions and guidelines
 - Loading screen after clicking Show me how UI
+- Upload from gallery
 
-Micro scroll on face
-Upload from gallery
 Transition for every pages
+
+
+I would actually use three documents
+
+For this project, the cleanest setup would be:
+
+SUBSCRIPTION_SOURCE_OF_TRUTH.md
+WEB_ADMIN_SOURCE_OF_TRUTH.md
+SUBSCRIPTION_ADMIN_SHARED_CONTRACT.md
+
+The third one can stay short.
+
+Shared Contract
+
+It defines only the objects both systems must agree on.
+
+For example:
+
+Plan Codes
+
+free
+plus
+pro
+salon_pro
+salon_pilot
+
+And:
+
+Entitlement Status
+
+active
+grace_period
+expired
+suspended
+revoked
+
+And:
+
+Usage Status
+
+reserved
+committed
+released
+
+And:
+
+Usage Type
+
+final_makeup_preview
+
+And common fields such as:
+
+user_id
+entitlement_id
+plan_code
+ai_look_limit
+ai_look_used
+ai_look_remaining
+period_start
+period_end
+expires_at
+
+This prevents Flutter, backend and Admin Web from all developing their own interpretation of what an entitlement means. Humans apparently enjoy naming the same thing four different ways unless threatened with documentation.
