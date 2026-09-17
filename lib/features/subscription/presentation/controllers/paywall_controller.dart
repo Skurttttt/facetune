@@ -3,14 +3,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/providers/subscription_providers.dart';
 import '../../domain/repositories/plan_price_source.dart';
 import 'paywall_state.dart';
+import 'purchase_controller.dart';
 
 /// Whether a purchase can actually be started from this build.
 ///
-/// False until SUB-9 wires Google Play Billing. The paywall reads it to decide
-/// whether its plan actions are live, so the screen never offers a button that
-/// silently does nothing — and so nothing here can be mistaken for a path that
-/// grants entitlement.
-final purchaseAvailableProvider = Provider<bool>((ref) => false);
+/// Now answered by the billing connection rather than being a constant `false`.
+/// It reports only that Google Play is reachable and no attempt is already in
+/// flight; the paywall additionally requires a *store price for that plan*
+/// before enabling its button, so a plan Google Play has no product for still
+/// cannot be tapped. The screen therefore never offers a button that silently
+/// does nothing, and nothing here grants entitlement.
+final purchaseAvailableProvider = Provider<bool>(
+  (ref) => ref.watch(purchaseControllerProvider).canPurchase,
+);
 
 /// Loads localized provider prices for the paywall.
 ///

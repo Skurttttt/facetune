@@ -3,6 +3,26 @@ import 'package:flutter/material.dart';
 import '../../domain/catalog/subscription_plan_catalog.dart';
 import '../../domain/entities/subscription_plan_code.dart';
 
+/// How much visual weight a plan carries on the paywall, relative to its
+/// peers.
+///
+/// A presentation contract and nothing more. It is keyed by the domain's
+/// [SubscriptionPlanCode] rather than carrying a plan of its own, so it cannot
+/// become a second list of plans, and it says nothing about price, allowance,
+/// or what an account holds — changing which plan is [recommended] changes
+/// which card is drawn heavier and not one thing about what anyone is granted.
+enum PlanEmphasis {
+  /// Drawn as an ordinary card.
+  standard,
+
+  /// The plan the paywall leads with for most people. At most one.
+  recommended,
+
+  /// A plan for makeup professionals, set apart from the consumer tiers by
+  /// structure rather than by decoration.
+  professional,
+}
+
 /// Product copy for the paywall.
 ///
 /// Separate from `SubscriptionPlanCatalog`, which holds plan *configuration*
@@ -27,6 +47,22 @@ abstract final class PlanPresentation {
     SubscriptionPlanCode.free,
     ...purchasablePlans,
   ];
+
+  /// The weight a plan's card carries, per the approved plan hierarchy: Plus
+  /// is the mainstream recommendation, Salon Pro is the professional plan,
+  /// and everything else — Free as the baseline, Pro as the larger consumer
+  /// tier — is drawn plainly.
+  ///
+  /// Salon Pilot is never emphasized. It is not on the paywall at all, and
+  /// mapping it here to [PlanEmphasis.standard] is what keeps the switch
+  /// exhaustive without giving it a presentation it must not have.
+  static PlanEmphasis emphasis(SubscriptionPlanCode plan) => switch (plan) {
+    SubscriptionPlanCode.plus => PlanEmphasis.recommended,
+    SubscriptionPlanCode.salonPro => PlanEmphasis.professional,
+    SubscriptionPlanCode.free ||
+    SubscriptionPlanCode.pro ||
+    SubscriptionPlanCode.salonPilot => PlanEmphasis.standard,
+  };
 
   /// A one-line description of who the plan is for.
   static String tagline(SubscriptionPlanCode plan) => switch (plan) {

@@ -23,3 +23,15 @@ verify_jwt = true
 
 [functions.delete-history-item]
 verify_jwt = true
+
+[functions.verify-google-play-purchase]
+verify_jwt = true
+
+# The one function in this project that does not sit behind Supabase's JWT
+# gate, because its caller is Google rather than a signed-in user: a Pub/Sub
+# push carries a Google-minted OIDC token, which that gate would reject. The
+# authentication it replaces is not skipped — `pubsub_auth.ts` verifies the
+# token's signature against Google's published keys and pins both the audience
+# and the pushing service account before the body is read.
+[functions.google-play-rtdn]
+verify_jwt = false

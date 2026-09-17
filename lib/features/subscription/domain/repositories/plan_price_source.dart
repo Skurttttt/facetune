@@ -9,10 +9,11 @@ import '../entities/subscription_plan_code.dart';
 /// actually charged is whatever the store says in their region, and only the
 /// store can say it.
 ///
-/// Until SUB-9 wires Google Play Billing, the app has no price source at all —
-/// see `UnavailablePlanPriceSource`. The paywall handles that honestly rather
-/// than substituting a literal, because a hardcoded price that disagrees with
-/// the store is worse than no price: the user would believe it.
+/// Backed by Google Play (`GooglePlayPlanPriceSource`). When the store is
+/// unreachable, or has no product configured for a plan, the answer is simply
+/// absent: the paywall handles that honestly rather than substituting a
+/// literal, because a hardcoded price that disagrees with the store is worse
+/// than no price — the user would believe it.
 abstract interface class PlanPriceSource {
   /// Prices keyed by plan, omitting any the provider did not return.
   ///

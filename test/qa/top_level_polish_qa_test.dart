@@ -371,6 +371,18 @@ void main() {
       expect(find.text('Registered account'), findsOneWidget);
       expect(find.text('Edit display name'), findsOneWidget);
       expect(find.text('Your library'), findsOneWidget);
+      // The last row sits below the fold on this device, so it is only built
+      // once scrolled to. Asserting it without scrolling would test where the
+      // list happens to end today, not that the row is still there.
+      await tester.scrollUntilVisible(
+        find.text('Settings and privacy'),
+        80,
+        scrollable: find.descendant(
+          of: find.byType(ListView),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      await tester.pumpAndSettle();
       for (final row in [
         'Saved looks',
         'FaceTune history',

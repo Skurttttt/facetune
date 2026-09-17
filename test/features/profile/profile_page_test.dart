@@ -1,3 +1,4 @@
+import 'package:facetune/core/constants/app_constants.dart';
 import 'package:facetune/core/supabase/supabase_availability_provider.dart';
 import 'package:facetune/features/subscription/data/providers/subscription_providers.dart';
 import 'package:facetune/features/subscription/data/repositories/unavailable_subscription_repository.dart';
@@ -9,6 +10,7 @@ import 'package:facetune/features/profile/presentation/pages/profile_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../helpers/fake_account_repositories.dart';
 import '../../helpers/fake_auth_repository.dart';
@@ -98,6 +100,74 @@ void main() {
       find.textContaining('Safe account transfer is not available'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('offers plan navigation even when no entitlement is provisioned', (
+    tester,
+  ) async {
+    final authRepository = FakeAuthRepository(
+      user: const AuthUser(id: 'unprovisioned-user', isAnonymous: false),
+    );
+    addTearDown(authRepository.dispose);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          supabaseAvailableProvider.overrideWithValue(true),
+          subscriptionRepositoryProvider.overrideWithValue(
+            const UnavailableSubscriptionRepository(),
+          ),
+          authRepositoryProvider.overrideWithValue(authRepository),
+          profileRepositoryProvider.overrideWithValue(
+            FakeProfileRepository(
+              profile: _profile(
+                authUserId: 'unprovisioned-user',
+                displayName: 'Mia Chen',
+              ),
+            ),
+          ),
+          avatarPickerProvider.overrideWithValue(const FakeAvatarPicker()),
+        ],
+        child: MaterialApp.router(
+          routerConfig: GoRouter(
+            routes: [
+              GoRoute(
+                path: '/',
+                builder: (context, state) => const ProfilePage(),
+              ),
+              GoRoute(
+                path: AppConstants.subscriptionRoute,
+                builder: (context, state) => const Text('plans screen'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The authoritative card stays hidden without an entitlement, so the entry
+    // below is the only way into the plan comparison screen.
+    expect(
+      find.byKey(const ValueKey('subscription-summary-card')),
+      findsNothing,
+    );
+    final entry = find.text('Plans & Subscription');
+    await tester.scrollUntilVisible(
+      entry,
+      80,
+      scrollable: find.descendant(
+        of: find.byType(ListView),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(entry, findsOneWidget);
+
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+
+    expect(find.text('plans screen'), findsOneWidget);
   });
 }
 

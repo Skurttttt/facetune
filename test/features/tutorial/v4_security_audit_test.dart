@@ -69,11 +69,38 @@ void main() {
           reason: '$name must not be publicly invokable',
         );
       }
-      expect(
-        RegExp(r'verify_jwt\s*=\s*false').hasMatch(config),
-        isFalse,
-        reason: 'no function may opt out',
+      // Exactly one function may leave the gateway gate, and only because its
+      // caller is Google rather than a signed-in user: the Pub/Sub push
+      // endpoint SUB-11 added for Real-time Developer Notifications. The rule
+      // being defended is "nothing is publicly invokable", not "everything
+      // uses this particular gate", so the exception has to authenticate its
+      // own caller — asserted below — to be allowed here.
+      final optOuts = RegExp(
+        r'\[functions\.([a-z0-9-]+)\]\s+verify_jwt\s*=\s*false',
+      ).allMatches(config).map((match) => match.group(1)).toList();
+      expect(optOuts, [
+        'google-play-rtdn',
+      ], reason: 'no other function may opt out');
+    });
+
+    test('the one gateway exception authenticates its own caller', () {
+      final pushAuth = source(
+        'supabase/functions/google-play-rtdn/pubsub_auth.ts',
       );
+      final index = source('supabase/functions/google-play-rtdn/index.ts');
+
+      // A verified Google signature, pinned to this push subscription and the
+      // service account that pushes to it.
+      expect(pushAuth, contains('crypto.subtle.verify'));
+      expect(pushAuth, contains('token_signature_invalid'));
+      expect(pushAuth, contains('token_audience_rejected'));
+      expect(pushAuth, contains('token_identity_rejected'));
+      expect(pushAuth, contains('token_expired'));
+      // And it refuses to serve at all if either pin is unconfigured, rather
+      // than falling back to accepting anyone.
+      expect(index, contains('GOOGLE_PLAY_RTDN_AUDIENCE'));
+      expect(index, contains('GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT'));
+      expect(index, contains('401'));
     });
 
     test('the V4 functions re-verify the caller themselves', () {

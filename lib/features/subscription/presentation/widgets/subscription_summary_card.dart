@@ -83,13 +83,13 @@ class SubscriptionSummaryCard extends ConsumerWidget {
                   ),
                 ),
                 if (state.isRefreshing)
+                  // The shared small spinner: same 18pt footprint as before,
+                  // and silent to a screen reader on purpose — the card's own
+                  // text is still the answer, and this only says it is being
+                  // re-checked.
                   const Padding(
                     padding: EdgeInsets.only(left: AppSpacing.sm),
-                    child: SizedBox(
-                      width: AppIconSizes.sm,
-                      height: AppIconSizes.sm,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
+                    child: AppProgress(size: AppProgressSize.small),
                   ),
               ],
             ),

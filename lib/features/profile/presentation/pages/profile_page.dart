@@ -202,6 +202,20 @@ class ProfilePage extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.md),
+                // Always visible. SubscriptionSummaryCard reports an
+                // authoritative allowance and hides when there is none, so it
+                // cannot be the only way into the plan comparison screen.
+                ListTile(
+                  key: const ValueKey('profile-plans-and-subscription'),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                  leading: const Icon(
+                    Icons.workspace_premium_outlined,
+                    color: AppColors.rose,
+                  ),
+                  title: const Text('Plans & Subscription'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => context.push(AppConstants.subscriptionRoute),
+                ),
                 ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 4),
                   leading: const Icon(

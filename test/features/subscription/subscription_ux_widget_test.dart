@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:facetune/core/supabase/supabase_availability_provider.dart';
 import 'package:facetune/features/authentication/data/providers/auth_repository_provider.dart';
 import 'package:facetune/features/authentication/domain/entities/auth_user.dart';
@@ -10,9 +12,12 @@ import 'package:facetune/features/subscription/domain/entities/subscription_usag
 import 'package:facetune/features/subscription/domain/errors/subscription_state_failure.dart';
 import 'package:facetune/features/subscription/domain/repositories/subscription_repository.dart';
 import 'package:facetune/features/subscription/data/providers/subscription_providers.dart';
+import 'package:facetune/features/subscription/presentation/controllers/subscription_controller.dart';
 import 'package:facetune/features/subscription/presentation/widgets/ai_look_allowance_notice.dart';
 import 'package:facetune/features/subscription/presentation/widgets/subscription_summary_card.dart';
+import 'package:facetune/shared/widgets/app_ui.dart';
 import 'package:facetune/theme/app_theme.dart';
+import 'package:facetune/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -56,6 +61,22 @@ class _StubRepository implements SubscriptionRepository {
   Future<SubscriptionSummary> resolve() async {
     if (_result is SubscriptionSummary) return _result;
     throw _result;
+  }
+}
+
+/// Answers the first resolve, then never answers again — so a refresh can be
+/// observed in flight with a known answer still on screen.
+class _AnswerThenHang implements SubscriptionRepository {
+  _AnswerThenHang(this.first);
+
+  final SubscriptionSummary first;
+  var _calls = 0;
+
+  @override
+  Future<SubscriptionSummary> resolve() {
+    _calls++;
+    if (_calls == 1) return Future.value(first);
+    return Completer<SubscriptionSummary>().future;
   }
 }
 
@@ -246,6 +267,61 @@ void main() {
 
       expect(find.textContaining('remaining'), findsNothing);
       expect(find.text('Try again'), findsOneWidget);
+    });
+
+    testWidgets('a refresh shows the shared small spinner beside the plan', (
+      tester,
+    ) async {
+      final repository = _AnswerThenHang(
+        summaryFor(
+          plan: SubscriptionPlanCode.plus,
+          displayName: 'FaceTune Plus',
+          allowance: 3,
+          committed: 1,
+          resetAt: DateTime.utc(2026, 10, 7),
+        ),
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            supabaseAvailableProvider.overrideWithValue(true),
+            authRepositoryProvider.overrideWithValue(_signedIn(tester)),
+            subscriptionRepositoryProvider.overrideWithValue(repository),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.lightTheme,
+            home: const Scaffold(
+              body: SingleChildScrollView(child: SubscriptionSummaryCard()),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(AppProgress), findsNothing);
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SubscriptionSummaryCard)),
+      );
+      // ignore: unawaited_futures — the second answer never arrives by design.
+      container.read(subscriptionControllerProvider.notifier).refresh();
+      await tester.pump();
+      await tester.pump(AppDurations.standard);
+
+      // The known answer stays on screen; only the shared spinner is added.
+      expect(find.text('2 of 3 AI Looks remaining'), findsOneWidget);
+      final spinner = tester.widget<AppProgress>(find.byType(AppProgress));
+      expect(spinner.size, AppProgressSize.small);
+      expect(spinner.semanticLabel, isNull, reason: 'the text is the answer');
+      // No raw indicator drift: the only CircularProgressIndicator on screen
+      // is the one inside AppProgress.
+      expect(
+        find.descendant(
+          of: find.byType(AppProgress),
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
     });
   });
 

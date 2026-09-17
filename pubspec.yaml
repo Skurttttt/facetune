@@ -46,6 +46,26 @@ dependencies:
   share_plus: ^13.3.0
   package_info_plus: ^10.2.1
   camera: ^0.12.0+2
+  # Google Play Billing, via the Flutter team's own storefront plugin. Chosen as
+  # the single dependency that owns billing: it brings the native
+  # `com.android.billingclient` artifact itself (Play Billing Library 8.0.0 in
+  # in_app_purchase_android 0.5.0), so declaring a manual BillingClient
+  # dependency alongside it would give two owners to one native library.
+  #
+  # The floor is 3.3.0 because that is the first release depending on
+  # in_app_purchase_android ^0.5.0, and 0.5.0 is the first to ship Play Billing
+  # Library 8 — required by Google Play for every new app and update. Resolution
+  # settles on in_app_purchase_android 0.5.0 exactly: 0.5.0+1 and later raise
+  # their floor to Dart 3.12, above this project's Dart 3.10.
+  in_app_purchase: ^3.3.0
+  # The Android implementation of the plugin above, declared directly because
+  # the app reads Play-specific subscription detail the storefront-independent
+  # API does not expose — the offer's pricing phases, which carry the billing
+  # period, and the offer token a subscription purchase must be launched with.
+  # This is the approach the in_app_purchase README prescribes for
+  # platform-specific APIs; it adds no second native billing dependency, since
+  # this is the same package that already brings `com.android.billingclient`.
+  in_app_purchase_android: ^0.5.0
 
 dev_dependencies:
   flutter_test:
