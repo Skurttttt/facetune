@@ -62,10 +62,17 @@ interface CachedKeySet {
 
 let cachedKeySet: CachedKeySet | null = null;
 
-function base64UrlToBytes(value: string): Uint8Array {
+// Returns bytes backed by a plain ArrayBuffer so the result satisfies Web
+// Crypto's BufferSource parameter type (Uint8Array<ArrayBufferLike> does not).
+function base64UrlToBytes(value: string): Uint8Array<ArrayBuffer> {
   const padded = value.replace(/-/g, "+").replace(/_/g, "/")
     .padEnd(Math.ceil(value.length / 4) * 4, "=");
-  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+  const binary = atob(padded);
+  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
+  for (let index = 0; index < binary.length; index++) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
 }
 
 function decodeSegment(segment: string): Record<string, unknown> {
