@@ -129,7 +129,15 @@ class AiLookAllowanceCopy {
     // A blocked entitlement outranks the count. Saying "you have run out" to
     // someone whose subscription was suspended would be wrong and would point
     // them at the wrong remedy.
-    final blocked = _blockedStatus(summary.status);
+    //
+    // "Ended" is also read from the server's effective refusal, not only from
+    // the stored status: a verified period can lapse before a provider read
+    // moves the status, and the card must say so rather than promise a reset
+    // date that has already passed. A status that already names its own
+    // block keeps its own words.
+    final blocked =
+        _blockedStatus(summary.status) ??
+        (summary.hasEnded ? _blockedStatus(EntitlementStatus.expired) : null);
     if (blocked != null) {
       return build(
         headline: blocked.$1,
@@ -197,6 +205,9 @@ class AiLookAllowanceCopy {
       };
 
   static String? _renewalLine(SubscriptionSummary summary) {
+    // An ended subscription neither resets nor expires from here: the date on
+    // record has already passed, and repeating it would read as a promise.
+    if (summary.hasEnded) return null;
     if (summary.replenishes) {
       final date = _formatDate(summary.resetAt, summary);
       return date == null ? null : 'Resets $date';

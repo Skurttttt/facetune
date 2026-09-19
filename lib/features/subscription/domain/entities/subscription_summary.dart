@@ -1,3 +1,4 @@
+import '../errors/subscription_error_code.dart';
 import 'billing_provider.dart';
 import 'entitlement_status.dart';
 import 'reset_policy.dart';
@@ -99,6 +100,39 @@ class SubscriptionSummary {
 
   /// Whether this plan's allowance ever replenishes.
   bool get replenishes => resetPolicy == ResetPolicy.billingPeriod;
+
+  /// Whether the server says this entitlement has ended: the subscription
+  /// expired or was revoked, or the admin-granted term lapsed.
+  ///
+  /// Read from the server's refusal, not from [status]. The stored status is a
+  /// historical record that only a verified provider read moves, so it can
+  /// still say `active` after a billing period has passed. The server refuses
+  /// generation the moment the verified `period_end` or `expires_at` passes
+  /// and names the reason in [denialReason]; that refusal is what "ended"
+  /// means here. A subscription that is merely exhausted
+  /// (`AI_LOOK_LIMIT_REACHED`), on hold (`ENTITLEMENT_SUSPENDED`) or still
+  /// being confirmed is still held, and is not ended.
+  bool get hasEnded {
+    if (!hasEntitlement || generationAuthorized) return false;
+    final reason = denialReason;
+    if (reason == null) return false;
+    return switch (SubscriptionErrorCode.fromCode(reason)) {
+      SubscriptionErrorCode.entitlementExpired ||
+      SubscriptionErrorCode.entitlementRevoked ||
+      SubscriptionErrorCode.salonPilotExpired => true,
+      _ => false,
+    };
+  }
+
+  /// The plan this account currently holds, or null when it holds none or the
+  /// one on record has ended.
+  ///
+  /// This is what "current plan" means on the paywall — the plan the account
+  /// is still subscribed to, which the store would not sell again. An ended
+  /// plan is history, not a current plan: treating it as current would leave a
+  /// lapsed subscriber unable to subscribe again.
+  SubscriptionPlanCode? get currentPlan =>
+      hasEntitlement && !hasEnded ? planCode : null;
 
   @override
   bool operator ==(Object other) =>

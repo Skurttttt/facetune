@@ -122,9 +122,10 @@ class SubscriptionPage extends ConsumerWidget {
     final subscription = ref.watch(subscriptionControllerProvider);
     final purchaseAvailable = ref.watch(purchaseAvailableProvider);
     final purchase = ref.watch(purchaseControllerProvider);
-    final currentPlan = subscription.summary?.hasEntitlement == true
-        ? subscription.summary?.planCode
-        : null;
+    // The plan the account still holds, per the server's effective state. An
+    // entitlement whose verified period has ended is not a current plan: its
+    // card must offer the purchase again rather than a disabled "current".
+    final currentPlan = subscription.summary?.currentPlan;
 
     return Scaffold(
       appBar: const FaceTuneTopBar(title: 'Plans'),

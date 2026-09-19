@@ -23,6 +23,7 @@ SubscriptionSummary summary({
   DateTime? resetAt,
   DateTime? expiresAt,
   bool hasEntitlement = true,
+  String? denialReason,
 }) => SubscriptionSummary(
   hasEntitlement: hasEntitlement,
   planCode: plan,
@@ -32,7 +33,9 @@ SubscriptionSummary summary({
     committedUsage: committed,
     reservedUsage: reserved,
   ),
+  // A named refusal is a refusal, whatever the stored status says.
   generationAuthorized:
+      denialReason == null &&
       status == EntitlementStatus.active &&
       allowance - committed - reserved > 0,
   resolvedAt: DateTime.utc(2026, 9, 7, 12),
@@ -41,6 +44,7 @@ SubscriptionSummary summary({
   resetPolicy: resetPolicy,
   resetAt: resetAt,
   expiresAt: expiresAt,
+  denialReason: denialReason,
 );
 
 SubscriptionSummary plus({int committed = 0}) => summary(
@@ -215,6 +219,64 @@ void main() {
       expect(copy.remainingLine, '25 of 30 AI Looks remaining');
       expect(copy.headline, 'Your subscription has ended');
       expect(copy.upgradePrompt, isFalse);
+    });
+
+    test(
+      'a lapsed period reads as ended even while the stored status is active',
+      () {
+        // The stored status only moves on a verified provider read. Until
+        // then the server still refuses generation on the lapsed period_end
+        // and says why; the card must follow that refusal, not the status,
+        // and must not promise a reset that has already passed.
+        final copy = AiLookAllowanceCopy.forSummary(
+          summary(
+            plan: SubscriptionPlanCode.plus,
+            displayName: 'FaceTune Plus',
+            allowance: 3,
+            status: EntitlementStatus.active,
+            resetAt: DateTime.utc(2026, 9, 17, 11, 11),
+            denialReason: 'ENTITLEMENT_EXPIRED',
+          ),
+        );
+        expect(copy.headline, 'Your subscription has ended');
+        expect(copy.detail, 'Renew to create more AI Looks.');
+        expect(copy.compactLine, 'Your subscription has ended');
+        expect(copy.renewalLine, isNull);
+        expect(copy.tone, AppTone.warning);
+      },
+    );
+
+    test('a revoked refusal reads as ended the same way', () {
+      final copy = AiLookAllowanceCopy.forSummary(
+        summary(
+          plan: SubscriptionPlanCode.plus,
+          displayName: 'FaceTune Plus',
+          allowance: 3,
+          status: EntitlementStatus.active,
+          resetAt: DateTime.utc(2026, 10, 7),
+          denialReason: 'ENTITLEMENT_REVOKED',
+        ),
+      );
+      expect(copy.headline, 'Your subscription has ended');
+      expect(copy.renewalLine, isNull);
+    });
+
+    test('an exhausted live subscription is not ended', () {
+      // Out of AI Looks is a different message with a different remedy: the
+      // subscription is still held and will reset on the verified date.
+      final copy = AiLookAllowanceCopy.forSummary(
+        summary(
+          plan: SubscriptionPlanCode.plus,
+          displayName: 'FaceTune Plus',
+          allowance: 3,
+          committed: 3,
+          resetAt: DateTime.utc(2026, 10, 7),
+          denialReason: 'AI_LOOK_LIMIT_REACHED',
+        ),
+      );
+      expect(copy.headline, 'You have used all your AI Looks');
+      expect(copy.detail, 'Your allowance resets on Oct 7.');
+      expect(copy.renewalLine, 'Resets Oct 7');
     });
   });
 

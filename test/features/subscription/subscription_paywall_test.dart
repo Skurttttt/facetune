@@ -27,20 +27,29 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../helpers/fake_auth_repository.dart';
 import '../../helpers/plan_action.dart';
 
-SubscriptionSummary summaryOn(SubscriptionPlanCode plan) => SubscriptionSummary(
+SubscriptionSummary summaryOn(
+  SubscriptionPlanCode plan, {
+  EntitlementStatus status = EntitlementStatus.active,
+  bool autoRenew = true,
+  int committed = 1,
+  String? denialReason,
+}) => SubscriptionSummary(
   hasEntitlement: true,
   planCode: plan,
   planDisplayName: 'FaceTune Plus',
-  usage: const SubscriptionUsageSummary(
+  usage: SubscriptionUsageSummary(
     effectiveAllowance: 3,
-    committedUsage: 1,
+    committedUsage: committed,
   ),
-  generationAuthorized: true,
-  resolvedAt: DateTime.utc(2026, 9, 7, 12),
-  status: EntitlementStatus.active,
+  // The server never names a refusal it did not make.
+  generationAuthorized: denialReason == null,
+  resolvedAt: DateTime.utc(2026, 9, 19, 12),
+  status: status,
   billingProvider: BillingProvider.googlePlay,
   resetPolicy: ResetPolicy.billingPeriod,
   resetAt: DateTime.utc(2026, 10, 7),
+  autoRenew: autoRenew,
+  denialReason: denialReason,
 );
 
 class _Subscriptions implements SubscriptionRepository {
@@ -224,6 +233,112 @@ void main() {
     ) async {
       await pumpPaywall(tester);
       expect(find.textContaining('Current plan'), findsNothing);
+    });
+
+    testWidgets('an exhausted subscription is still the current plan', (
+      tester,
+    ) async {
+      // Out of AI Looks is not out of subscription. The plan is still held,
+      // so it must not be offered for sale a second time.
+      await pumpPaywall(
+        tester,
+        summary: summaryOn(
+          SubscriptionPlanCode.plus,
+          committed: 3,
+          denialReason: 'AI_LOOK_LIMIT_REACHED',
+        ),
+        purchaseAvailable: true,
+      );
+
+      expect(find.byKey(const ValueKey('plan-current-plus')), findsOneWidget);
+      final current = tester.widget<SecondaryButton>(
+        find.byKey(const ValueKey('plan-action-plus')),
+      );
+      expect(current.onPressed, isNull);
+    });
+
+    testWidgets(
+      'cancelled but paid through stays current until the verified period ends',
+      (tester) async {
+        // auto_renew off is a statement about the future, not about now: the
+        // period the user paid for is still running, and Google would refuse
+        // to sell the same subscription again.
+        await pumpPaywall(
+          tester,
+          summary: summaryOn(SubscriptionPlanCode.plus, autoRenew: false),
+          purchaseAvailable: true,
+        );
+
+        expect(
+          find.byKey(const ValueKey('plan-current-plus')),
+          findsOneWidget,
+        );
+        final current = tester.widget<SecondaryButton>(
+          find.byKey(const ValueKey('plan-action-plus')),
+        );
+        expect(current.onPressed, isNull);
+      },
+    );
+
+    testWidgets(
+      'a plan whose verified period has ended can be purchased again',
+      (tester) async {
+        // The stored status can still read `active` until a verified provider
+        // read moves it; the server nonetheless refuses generation on the
+        // lapsed period_end. That refusal is what decides "current": an ended
+        // plan is history, and its card must sell the plan again rather than
+        // sit disabled behind "Your current plan".
+        await pumpPaywall(
+          tester,
+          summary: summaryOn(
+            SubscriptionPlanCode.plus,
+            status: EntitlementStatus.active,
+            denialReason: 'ENTITLEMENT_EXPIRED',
+          ),
+          purchaseAvailable: true,
+          prices: {
+            SubscriptionPlanCode.plus: const PlanPrice(
+              formattedPrice: '₱399.00',
+              currencyCode: 'PHP',
+            ),
+          },
+        );
+
+        expect(find.byKey(const ValueKey('plan-current-plus')), findsNothing);
+        expect(find.textContaining('Current plan'), findsNothing);
+        final action = tester.widget<PrimaryButton>(
+          find.byKey(const ValueKey('plan-action-plus')),
+        );
+        expect(
+          action.onPressed,
+          isNotNull,
+          reason: 'an ended subscription must be purchasable again',
+        );
+      },
+    );
+
+    testWidgets('a revoked plan can be purchased again', (tester) async {
+      await pumpPaywall(
+        tester,
+        summary: summaryOn(
+          SubscriptionPlanCode.plus,
+          status: EntitlementStatus.revoked,
+          denialReason: 'ENTITLEMENT_REVOKED',
+        ),
+        purchaseAvailable: true,
+        prices: {
+          SubscriptionPlanCode.plus: const PlanPrice(
+            formattedPrice: '₱399.00',
+            currencyCode: 'PHP',
+          ),
+        },
+      );
+
+      expect(find.byKey(const ValueKey('plan-current-plus')), findsNothing);
+      final action = tester.widget<PrimaryButton>(
+        find.byKey(const ValueKey('plan-action-plus')),
+      );
+      expect(action.onPressed, isNotNull);
     });
   });
 
