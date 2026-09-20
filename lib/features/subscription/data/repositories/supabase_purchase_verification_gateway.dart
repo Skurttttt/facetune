@@ -32,7 +32,10 @@ class SupabasePurchaseVerificationGateway
   final Duration operationTimeout;
 
   @override
-  Future<void> verify(PurchaseEvidence evidence) async {
+  Future<void> verify(
+    PurchaseEvidence evidence, {
+    PurchaseVerificationSource source = PurchaseVerificationSource.purchase,
+  }) async {
     if (!evidence.isVerifiable) {
       throw const SubscriptionStateFailure(
         'This purchase is missing the information Google Play needs to '
@@ -55,6 +58,7 @@ class SupabasePurchaseVerificationGateway
           .verify(
             purchaseToken: evidence.purchaseToken,
             providerProductId: evidence.providerProductId,
+            source: source.code,
           )
           .timeout(operationTimeout);
     } on PurchaseVerificationRemoteFailure catch (failure) {

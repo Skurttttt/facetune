@@ -1,5 +1,10 @@
 import { validateGeneratedImage } from "../generate-makeup-preview/image_validation.ts";
 import { kitMakeupPreviewPrompt } from "./prompt.ts";
+import {
+  noteProviderAttempt,
+  readProviderUsage,
+  type UsageSink,
+} from "../_shared/ai_telemetry.ts";
 import type { GeneratedImage, NormalizedKitPreviewPlan } from "./types.ts";
 import { FunctionFailure } from "./types.ts";
 
@@ -55,6 +60,9 @@ export async function requestGeminiKitPreview(
   style: string,
   plan: NormalizedKitPreviewPlan,
   variationNumber: number,
+  // SUB-13: filled with the accepted response's usage units. Optional, and
+  // read only after the image has been validated; nothing else changes.
+  usageSink?: UsageSink,
 ): Promise<GeneratedImage> {
   const endpoint = `https://generativelanguage.googleapis.com/v1/models/${
     encodeURIComponent(model)
@@ -78,6 +86,7 @@ export async function requestGeminiKitPreview(
     const remainingBudgetMs = totalBudgetMs - (Date.now() - budgetStartedAt);
     if (remainingBudgetMs <= 0) break;
     try {
+      noteProviderAttempt(usageSink, attempt);
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
@@ -89,7 +98,12 @@ export async function requestGeminiKitPreview(
           Math.min(attemptTimeoutMs, remainingBudgetMs),
         ),
       });
-      if (response.ok) return generatedImage(await response.json());
+      if (response.ok) {
+        const payload = await response.json();
+        const image = generatedImage(payload);
+        if (usageSink) usageSink.usage = readProviderUsage(payload, attempt);
+        return image;
+      }
       const detail = await safeErrorPayload(response);
       const failure = classifyGeminiFailure(response.status, detail);
       const transient = response.status === 429 || response.status >= 500;

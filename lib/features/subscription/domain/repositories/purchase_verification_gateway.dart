@@ -1,5 +1,17 @@
 import '../entities/purchase_evidence.dart';
 
+/// How the purchase reached the client: bought just now, or found again by a
+/// restore. Carried for telemetry only (SUB-13): the server counts restores
+/// and purchases separately, and nothing about verification depends on it.
+enum PurchaseVerificationSource {
+  purchase('purchase'),
+  restore('restore');
+
+  const PurchaseVerificationSource(this.code);
+
+  final String code;
+}
+
 /// Sends provider purchase evidence to the FaceTune backend for verification.
 ///
 /// This is the seam between the client billing phase and server verification.
@@ -27,5 +39,12 @@ abstract interface class PurchaseVerificationGateway {
   ///
   /// Throws a `SubscriptionStateFailure` when verification could not be
   /// completed, and when the server rejects the purchase.
-  Future<void> verify(PurchaseEvidence evidence);
+  ///
+  /// [source] says whether this is a fresh purchase or a restore. It is a
+  /// measurement label, not an input to the decision: the server verifies the
+  /// same way either way.
+  Future<void> verify(
+    PurchaseEvidence evidence, {
+    PurchaseVerificationSource source = PurchaseVerificationSource.purchase,
+  });
 }

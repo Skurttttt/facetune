@@ -4,6 +4,11 @@ import {
   TUTORIAL_OUTPUT_RESOLUTION,
 } from "../_shared/tutorial_ai_config.ts";
 import { FunctionFailure, type GeneratedGuideline } from "./types.ts";
+import {
+  noteProviderAttempt,
+  readProviderUsage,
+  type UsageSink,
+} from "../_shared/ai_telemetry.ts";
 
 const maximumBytes = 10 * 1024 * 1024;
 const minimumBytes = 10 * 1024;
@@ -12,7 +17,9 @@ function encodeBase64(bytes: Uint8Array): string {
   const chunkSize = 0x8000;
   let binary = "";
   for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+    binary += String.fromCharCode(
+      ...bytes.subarray(offset, offset + chunkSize),
+    );
   }
   return btoa(binary);
 }
@@ -76,7 +83,10 @@ export function validateGuidelineImage(
 ///
 /// A guideline identical to the original selfie means nothing was drawn, which
 /// is a failure to render rather than a valid empty result.
-export function isUnchanged(original: Uint8Array, generated: Uint8Array): boolean {
+export function isUnchanged(
+  original: Uint8Array,
+  generated: Uint8Array,
+): boolean {
   if (original.length !== generated.length) return false;
   for (let index = 0; index < original.length; index += 1) {
     if (original[index] !== generated[index]) return false;
@@ -134,6 +144,9 @@ export async function requestGeminiGuideline(
   prompt: string,
   original: { bytes: Uint8Array; mimeType: string },
   canonicalPreview: { bytes: Uint8Array; mimeType: string },
+  // SUB-13: filled with the accepted response's usage units. Optional, and
+  // read only after the image has been accepted; nothing else changes.
+  usageSink?: UsageSink,
 ): Promise<GeneratedGuideline> {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${
     encodeURIComponent(model)
@@ -176,6 +189,7 @@ export async function requestGeminiGuideline(
   let lastTransient: FunctionFailure | null = null;
   for (let attempt = 1; attempt <= GUIDELINE_MAXIMUM_ATTEMPTS; attempt += 1) {
     try {
+      noteProviderAttempt(usageSink, attempt);
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
@@ -185,7 +199,12 @@ export async function requestGeminiGuideline(
         body,
         signal: AbortSignal.timeout(GUIDELINE_REQUEST_TIMEOUT_MS),
       });
-      if (response.ok) return firstImagePart(await response.json());
+      if (response.ok) {
+        const payload = await response.json();
+        const guideline = firstImagePart(payload);
+        if (usageSink) usageSink.usage = readProviderUsage(payload, attempt);
+        return guideline;
+      }
       const transient = response.status === 429 || response.status >= 500;
       console.error(
         `[generate-tutorial-step-v4] Gemini failed status=${response.status} attempt=${attempt}`,
@@ -207,7 +226,9 @@ export async function requestGeminiGuideline(
       if (error instanceof FunctionFailure) {
         if (!error.retryable) throw error;
         lastTransient = error;
-      } else if (error instanceof DOMException && error.name === "TimeoutError") {
+      } else if (
+        error instanceof DOMException && error.name === "TimeoutError"
+      ) {
         lastTransient = new FunctionFailure(
           504,
           "gemini_timeout",

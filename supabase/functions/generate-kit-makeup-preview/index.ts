@@ -17,6 +17,13 @@ import {
 import { isOwnedOriginalPath } from "../_shared/storage_ownership.ts";
 import { extensionFor } from "../generate-makeup-preview/image_validation.ts";
 import { requestGeminiKitPreview } from "./gemini_client.ts";
+import {
+  createTelemetryClient,
+  recordAiOperationMetric,
+  type TelemetryClient,
+  usageForMetric,
+  type UsageSink,
+} from "../_shared/ai_telemetry.ts";
 import { KIT_MAKEUP_PREVIEW_PROMPT_VERSION } from "./prompt.ts";
 import type { CurrentKitProduct } from "./types.ts";
 import { FunctionFailure } from "./types.ts";
@@ -156,6 +163,18 @@ Deno.serve(async (request) => {
   // the reservation must never be released: the user can open the result, so
   // the AI Look is owed.
   let previewPersisted = false;
+  const telemetryEventId = crypto.randomUUID();
+  let telemetryClient: TelemetryClient | null = null;
+  let metricUserId: string | null = null;
+  // SUB-13 telemetry. Filled as the request proceeds and recorded once, at
+  // the exit, whatever the outcome. Best-effort: nothing below can fail the
+  // request or change what was reserved, committed, or released.
+  const usageSink: UsageSink = {};
+  let metricOperationId: string | null = null;
+  let geminiStartedAt: number | null = null;
+  let geminiLatencyMs: number | null = null;
+  let persistenceStartedAt: number | null = null;
+  let persistenceLatencyMs: number | null = null;
   try {
     const authorization = request.headers.get("authorization");
     if (!authorization?.toLowerCase().startsWith("bearer ")) {
@@ -182,6 +201,8 @@ Deno.serve(async (request) => {
         "Your session has expired. Sign in again.",
       );
     }
+    metricUserId = authData.user.id;
+    telemetryClient = createTelemetryClient();
     let body: unknown;
     try {
       body = await request.json();
@@ -194,6 +215,7 @@ Deno.serve(async (request) => {
     }
     const requestedId = kitRecommendationId(body);
     const requestedOperationId = operationId(body);
+    metricOperationId = requestedOperationId;
     const { data: recommendation, error: recommendationError } = await client
       .from("kit_makeup_recommendations")
       .select(
@@ -302,9 +324,8 @@ Deno.serve(async (request) => {
           .select("canonical_kit_generated_image_id")
           .eq("operation_id", requestedOperationId)
           .maybeSingle();
-        const priorPreviewId =
-          (priorUsage as Record<string, unknown> | null)
-            ?.canonical_kit_generated_image_id;
+        const priorPreviewId = (priorUsage as Record<string, unknown> | null)
+          ?.canonical_kit_generated_image_id;
         if (typeof priorPreviewId === "string") {
           const { data: priorPreview } = await client
             .from("kit_generated_images")
@@ -312,6 +333,17 @@ Deno.serve(async (request) => {
             .eq("id", priorPreviewId)
             .maybeSingle();
           if (priorPreview) {
+            await recordAiOperationMetric(
+              telemetryClient,
+              telemetryEventId,
+              metricUserId,
+              {
+                operationKind: "final_preview",
+                outcome: "duplicate",
+                sourceMode: "makeup_kit",
+                operationId: requestedOperationId,
+              },
+            );
             return jsonResponse(
               previewResponse(
                 priorPreview as unknown as Record<string, unknown>,
@@ -392,9 +424,14 @@ Deno.serve(async (request) => {
     // any more.
     const configurationError = finalPreviewModelConfigurationError();
     if (configurationError !== null) {
-      throw new FunctionFailure(500, "server_configuration", configurationError);
+      throw new FunctionFailure(
+        500,
+        "server_configuration",
+        configurationError,
+      );
     }
     const model = FINAL_PREVIEW_MODEL;
+    geminiStartedAt = Date.now();
     const generated = await requestGeminiKitPreview(
       requiredEnvironment("GEMINI_API_KEY"),
       model,
@@ -403,7 +440,9 @@ Deno.serve(async (request) => {
       recommendationRow.makeup_style as string,
       plan,
       generationNumber,
+      usageSink,
     );
+    geminiLatencyMs = Date.now() - geminiStartedAt;
     if (imagesAreIdentical(originalBytes, generated.bytes)) {
       throw new FunctionFailure(
         502,
@@ -427,6 +466,7 @@ Deno.serve(async (request) => {
         "A safe preview path could not be created.",
       );
     }
+    persistenceStartedAt = Date.now();
     const { error: uploadError } = await client.storage.from("face-images")
       .upload(candidatePath, generated.bytes, {
         contentType: generated.mimeType,
@@ -459,6 +499,7 @@ Deno.serve(async (request) => {
         true,
       );
     }
+    persistenceLatencyMs = Date.now() - persistenceStartedAt;
     uploadedPath = null;
     // A usable canonical kit preview now exists, so the AI Look is owed from
     // this line onward and must never be released.
@@ -484,6 +525,24 @@ Deno.serve(async (request) => {
 
     console.log(
       `[generate-kit-makeup-preview] Completed model=${model} prompt=${KIT_MAKEUP_PREVIEW_PROMPT_VERSION} variation=${generationNumber}`,
+    );
+    await recordAiOperationMetric(
+      telemetryClient,
+      telemetryEventId,
+      metricUserId,
+      {
+        operationKind: "final_preview",
+        outcome: "succeeded",
+        sourceMode: "makeup_kit",
+        operationId: requestedOperationId,
+        latencyMs: geminiLatencyMs,
+        persistenceLatencyMs,
+        providerName: "google_gemini",
+        modelName: model,
+        promptVersion: KIT_MAKEUP_PREVIEW_PROMPT_VERSION,
+        usage: usageForMetric(usageSink),
+        outputImages: 1,
+      },
     );
     return jsonResponse(previewResponse(inserted, originalImagePath));
   } catch (error) {
@@ -517,6 +576,31 @@ Deno.serve(async (request) => {
         `[generate-kit-makeup-preview] Unhandled error type=${
           error?.constructor?.name ?? "unknown"
         }`,
+      );
+    }
+    if (telemetryClient && metricUserId && metricOperationId) {
+      // A refusal before any AI Look was held is a denial; anything after a
+      // hold is a failure. Either way only the code travels, never the message.
+      await recordAiOperationMetric(
+        telemetryClient,
+        telemetryEventId,
+        metricUserId,
+        {
+          operationKind: "final_preview",
+          outcome: heldOperationId ? "failed" : "denied",
+          failureCategory: failure.code,
+          sourceMode: "makeup_kit",
+          operationId: metricOperationId,
+          latencyMs: geminiLatencyMs ??
+            (geminiStartedAt === null ? null : Date.now() - geminiStartedAt),
+          persistenceLatencyMs: persistenceStartedAt === null
+            ? null
+            : persistenceLatencyMs ?? Date.now() - persistenceStartedAt,
+          providerName: usageSink.attempts ? "google_gemini" : null,
+          modelName: FINAL_PREVIEW_MODEL,
+          promptVersion: KIT_MAKEUP_PREVIEW_PROMPT_VERSION,
+          usage: usageForMetric(usageSink),
+        },
       );
     }
     return jsonResponse({

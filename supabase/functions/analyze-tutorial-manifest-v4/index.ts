@@ -2,6 +2,14 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 import { consumeAiQuota, quotaMessage } from "../_shared/ai_quota.ts";
 import {
+  createTelemetryClient,
+  outcomeForFailureCode,
+  recordAiOperationMetric,
+  type TelemetryClient,
+  usageForMetric,
+  type UsageSink,
+} from "../_shared/ai_telemetry.ts";
+import {
   isOwnedGeneratedPreviewPath,
   isOwnedOriginalPath,
 } from "../_shared/storage_ownership.ts";
@@ -116,6 +124,20 @@ Deno.serve(async (request: Request) => {
       405,
     );
   }
+  // SUB-13 telemetry. Recorded once at the exit, whatever the outcome, and
+  // never able to change it. `paidWorkStarted` separates a refusal (denied)
+  // from an attempt that was lost (failed).
+  const usageSink: UsageSink = {};
+  const telemetryEventId = crypto.randomUUID();
+  let telemetryClient: TelemetryClient | null = null;
+  let metricUserId: string | null = null;
+  let metricPreviewId: string | null = null;
+  let metricSourceMode: "standard" | "my_makeup_kit" | null = null;
+  let metricSessionId: string | null = null;
+  let metricModel: string | null = null;
+  let geminiStartedAt: number | null = null;
+  let geminiLatencyMs: number | null = null;
+  let paidWorkStarted = false;
   try {
     const authorization = request.headers.get("authorization");
     if (!authorization?.toLowerCase().startsWith("bearer ")) {
@@ -136,6 +158,7 @@ Deno.serve(async (request: Request) => {
       global: { headers: { Authorization: authorization } },
       auth: { persistSession: false, autoRefreshToken: false },
     });
+    metricModel = model;
     const { data: authData, error: authError } = await client.auth.getUser();
     if (authError || !authData.user) {
       throw new FunctionFailure(
@@ -145,6 +168,8 @@ Deno.serve(async (request: Request) => {
       );
     }
     const userId = authData.user.id;
+    metricUserId = userId;
+    telemetryClient = createTelemetryClient();
 
     let body: unknown;
     try {
@@ -157,6 +182,8 @@ Deno.serve(async (request: Request) => {
       );
     }
     const { previewId, sourceMode } = requestPayload(body);
+    metricPreviewId = previewId;
+    metricSourceMode = sourceMode;
     const isKit = sourceMode === "my_makeup_kit";
 
     // Every read below goes through the RLS-scoped user client, so a preview
@@ -187,9 +214,13 @@ Deno.serve(async (request: Request) => {
     // before anything is downloaded and before quota is touched.
     const { data: existingSession } = await client
       .from("tutorial_v4_sessions")
-      .select("id,manifest_status,manifest_prompt_version,manifest_schema_version")
+      .select(
+        "id,manifest_status,manifest_prompt_version,manifest_schema_version",
+      )
       .eq(
-        isKit ? "canonical_kit_generated_image_id" : "canonical_generated_image_id",
+        isKit
+          ? "canonical_kit_generated_image_id"
+          : "canonical_generated_image_id",
         previewId,
       )
       .maybeSingle();
@@ -209,6 +240,13 @@ Deno.serve(async (request: Request) => {
       console.log(
         `[analyze-tutorial-manifest-v4] Reused session=${existing.id} status=${existing.manifest_status}`,
       );
+      await recordAiOperationMetric(telemetryClient, telemetryEventId, userId, {
+        operationKind: "tutorial_manifest",
+        outcome: "duplicate",
+        sourceMode,
+        tutorialSessionId: existing.id as string,
+        canonicalPreviewId: previewId,
+      });
       return jsonResponse({
         manifest: {
           tutorialSessionId: existing.id,
@@ -255,17 +293,19 @@ Deno.serve(async (request: Request) => {
         "The original analysis could not be found.",
       );
     }
-    const originalPath =
-      (analysis as unknown as Record<string, unknown>).original_image_path as string;
+    const originalPath = (analysis as unknown as Record<string, unknown>)
+      .original_image_path as string;
 
     // Both images are proven to belong to the caller, segment by segment,
     // before either is read. The tutorial is grounded entirely in this pair.
-    if (!isOwnedOriginalPath(originalPath, userId, analysisId, [
-      "jpg",
-      "jpeg",
-      "png",
-      "webp",
-    ])) {
+    if (
+      !isOwnedOriginalPath(originalPath, userId, analysisId, [
+        "jpg",
+        "jpeg",
+        "png",
+        "webp",
+      ])
+    ) {
       throw new FunctionFailure(
         403,
         "invalid_original_path",
@@ -305,9 +345,8 @@ Deno.serve(async (request: Request) => {
           "The kit-based makeup plan is no longer available.",
         );
       }
-      const snapshot =
-        (kitRecommendation as unknown as Record<string, unknown>)
-          .product_snapshot_json;
+      const snapshot = (kitRecommendation as unknown as Record<string, unknown>)
+        .product_snapshot_json;
       backed = productBackedCategories(snapshot);
       supportingContext =
         `My Makeup Kit Mode. Categories the user owns a product for: ${
@@ -342,6 +381,8 @@ Deno.serve(async (request: Request) => {
       );
     }
 
+    paidWorkStarted = true;
+    geminiStartedAt = Date.now();
     const geminiText = await requestGeminiManifest(
       requiredEnvironment("GEMINI_API_KEY"),
       model,
@@ -354,7 +395,9 @@ Deno.serve(async (request: Request) => {
         mimeType: mimeTypeFor(previewPath),
       },
       supportingContext,
+      usageSink,
     );
+    geminiLatencyMs = Date.now() - geminiStartedAt;
     const verdicts = parseManifestResponse(geminiText);
     const resolved = resolveManifest(verdicts, sourceMode, backed);
 
@@ -403,6 +446,7 @@ Deno.serve(async (request: Request) => {
     }
     const sessionId = (session as unknown as Record<string, unknown>)
       .id as string;
+    metricSessionId = sessionId;
 
     // Replace rather than append, so a re-analysis after a version bump cannot
     // leave two generations of verdicts behind.
@@ -438,6 +482,18 @@ Deno.serve(async (request: Request) => {
     console.log(
       `[analyze-tutorial-manifest-v4] Completed model=${model} prompt=${TUTORIAL_MANIFEST_PROMPT_VERSION} mode=${sourceMode} status=${resolved.manifestStatus} included=${resolved.includedCategories.length}`,
     );
+    await recordAiOperationMetric(telemetryClient, telemetryEventId, userId, {
+      operationKind: "tutorial_manifest",
+      outcome: "succeeded",
+      sourceMode,
+      tutorialSessionId: sessionId,
+      canonicalPreviewId: previewId,
+      latencyMs: geminiLatencyMs,
+      providerName: "google_gemini",
+      modelName: model,
+      promptVersion: TUTORIAL_MANIFEST_PROMPT_VERSION,
+      usage: usageForMetric(usageSink),
+    });
     return jsonResponse({
       manifest: {
         tutorialSessionId: sessionId,
@@ -453,16 +509,39 @@ Deno.serve(async (request: Request) => {
       },
     });
   } catch (error) {
-    const failure = error instanceof FunctionFailure ? error : new FunctionFailure(
-      500,
-      "server_error",
-      "The tutorial request could not be completed.",
-    );
+    const failure = error instanceof FunctionFailure
+      ? error
+      : new FunctionFailure(
+        500,
+        "server_error",
+        "The tutorial request could not be completed.",
+      );
     if (!(error instanceof FunctionFailure)) {
       console.error(
         `[analyze-tutorial-manifest-v4] Unhandled error type=${
           error?.constructor?.name ?? "unknown"
         }`,
+      );
+    }
+    if (telemetryClient && metricUserId) {
+      await recordAiOperationMetric(
+        telemetryClient,
+        telemetryEventId,
+        metricUserId,
+        {
+          operationKind: "tutorial_manifest",
+          outcome: outcomeForFailureCode(failure.code, paidWorkStarted),
+          failureCategory: failure.code,
+          sourceMode: metricSourceMode,
+          tutorialSessionId: metricSessionId,
+          canonicalPreviewId: metricPreviewId,
+          latencyMs: geminiLatencyMs ??
+            (geminiStartedAt === null ? null : Date.now() - geminiStartedAt),
+          providerName: usageSink.attempts ? "google_gemini" : null,
+          modelName: metricModel,
+          promptVersion: TUTORIAL_MANIFEST_PROMPT_VERSION,
+          usage: usageForMetric(usageSink),
+        },
       );
     }
     return jsonResponse({

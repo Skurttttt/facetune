@@ -39,7 +39,10 @@ function purchase(
   };
 }
 
-function interpret(value: SubscriptionPurchaseV2, claimed: string | null = null) {
+function interpret(
+  value: SubscriptionPurchaseV2,
+  claimed: string | null = null,
+) {
   return interpretPurchase(value, {
     approvedProductIds,
     claimedProductId: claimed,
@@ -55,19 +58,46 @@ Deno.test("accepts a request carrying only a purchase token", () => {
   const parsed = parseVerificationRequest({ purchaseToken: "abc.123_token-x" });
   assertEquals(parsed.purchaseToken, "abc.123_token-x");
   assertEquals(parsed.claimedProductId, null);
+  assertEquals(parsed.verificationSource, null);
+});
+
+Deno.test("accepts only the two purchase-source telemetry labels", () => {
+  assertEquals(
+    parseVerificationRequest({
+      purchaseToken: "abc.123_token-x",
+      source: "purchase",
+    }).verificationSource,
+    "purchase",
+  );
+  assertEquals(
+    parseVerificationRequest({
+      purchaseToken: "abc.123_token-x",
+      source: "restore",
+    }).verificationSource,
+    "restore",
+  );
+  assertEquals(
+    parseVerificationRequest({
+      purchaseToken: "abc.123_token-x",
+      source: "client-forged-other",
+    }).verificationSource,
+    null,
+  );
 });
 
 Deno.test("rejects a missing or malformed purchase token", () => {
-  for (const body of [
-    {},
-    { purchaseToken: "" },
-    { purchaseToken: 42 },
-    { purchaseToken: "has spaces" },
-    { purchaseToken: "semi;colon" },
-    null,
-    [],
-    "string",
-  ]) {
+  for (
+    const body of [
+      {},
+      { purchaseToken: "" },
+      { purchaseToken: 42 },
+      { purchaseToken: "has spaces" },
+      { purchaseToken: "semi;colon" },
+      null,
+      [],
+      "string",
+    ]
+  ) {
     assertThrows(
       () => parseVerificationRequest(body),
       VerificationFailure,
@@ -79,7 +109,9 @@ Deno.test("rejects a missing or malformed purchase token", () => {
 // Valid purchases for each approved plan
 // ---------------------------------------------------------------------------
 
-for (const productId of ["facetune_plus", "facetune_pro", "facetune_salon_pro"]) {
+for (
+  const productId of ["facetune_plus", "facetune_pro", "facetune_salon_pro"]
+) {
   Deno.test(`verifies a valid ${productId} purchase`, () => {
     const verified = interpret(
       purchase({
@@ -138,7 +170,10 @@ Deno.test("an unknown product is rejected", () => {
       interpret(
         purchase({
           lineItems: [
-            { productId: "some_other_app_sub", expiryTime: "2026-10-10T00:00:00.000Z" },
+            {
+              productId: "some_other_app_sub",
+              expiryTime: "2026-10-10T00:00:00.000Z",
+            },
           ],
         }),
       ),
@@ -164,7 +199,10 @@ Deno.test("Salon Pilot and Free can never be purchased products", () => {
 });
 
 Deno.test("a purchase with no line items is rejected", () => {
-  assertThrows(() => interpret(purchase({ lineItems: [] })), VerificationFailure);
+  assertThrows(
+    () => interpret(purchase({ lineItems: [] })),
+    VerificationFailure,
+  );
   assertThrows(
     () => interpret(purchase({ lineItems: undefined })),
     VerificationFailure,
@@ -285,7 +323,10 @@ Deno.test("a replacement purchase carries the token it supersedes", () => {
 });
 
 Deno.test("an empty linked token is treated as absent", () => {
-  assertEquals(interpret(purchase({ linkedPurchaseToken: "" })).linkedPurchaseToken, null);
+  assertEquals(
+    interpret(purchase({ linkedPurchaseToken: "" })).linkedPurchaseToken,
+    null,
+  );
 });
 
 Deno.test("a license-tester purchase is flagged", () => {

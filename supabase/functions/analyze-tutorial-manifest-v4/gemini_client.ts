@@ -1,6 +1,11 @@
 import { tutorialManifestPrompt } from "./prompt.ts";
 import { TUTORIAL_MANIFEST_SCHEMA } from "./schema.ts";
 import { FunctionFailure } from "./types.ts";
+import {
+  noteProviderAttempt,
+  readProviderUsage,
+  type UsageSink,
+} from "../_shared/ai_telemetry.ts";
 
 const requestTimeoutMs = 45000;
 const maximumAttempts = 2;
@@ -58,6 +63,9 @@ export async function requestGeminiManifest(
   original: { bytes: Uint8Array; mimeType: string },
   canonicalPreview: { bytes: Uint8Array; mimeType: string },
   supportingContext: string,
+  // SUB-13: filled with the accepted response's usage units. Optional, and
+  // read only after the text has been accepted; nothing else changes.
+  usageSink?: UsageSink,
 ): Promise<string> {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${
     encodeURIComponent(model)
@@ -98,6 +106,7 @@ export async function requestGeminiManifest(
 
   for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
     try {
+      noteProviderAttempt(usageSink, attempt);
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
@@ -107,7 +116,12 @@ export async function requestGeminiManifest(
         body,
         signal: AbortSignal.timeout(requestTimeoutMs),
       });
-      if (response.ok) return responseText(await response.json());
+      if (response.ok) {
+        const payload = await response.json();
+        const text = responseText(payload);
+        if (usageSink) usageSink.usage = readProviderUsage(payload, attempt);
+        return text;
+      }
       const transient = response.status === 429 || response.status >= 500;
       console.error(
         `[analyze-tutorial-manifest-v4] Gemini failed status=${response.status} attempt=${attempt}`,

@@ -6,6 +6,7 @@ import 'package:facetune/features/subscription/data/repositories/supabase_purcha
 import 'package:facetune/features/subscription/domain/entities/billing_provider.dart';
 import 'package:facetune/features/subscription/domain/entities/purchase_evidence.dart';
 import 'package:facetune/features/subscription/domain/errors/subscription_state_failure.dart';
+import 'package:facetune/features/subscription/domain/repositories/purchase_verification_gateway.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// The client half of server-side verification.
@@ -20,7 +21,7 @@ class _Remote implements PurchaseVerificationRemoteDataSource {
   final Object? failure;
   final Object? response;
 
-  final List<({String token, String productId})> calls = [];
+  final List<({String token, String productId, String? source})> calls = [];
 
   @override
   String? get currentUserId => userId;
@@ -29,8 +30,13 @@ class _Remote implements PurchaseVerificationRemoteDataSource {
   Future<Object?> verify({
     required String purchaseToken,
     required String providerProductId,
+    String? source,
   }) async {
-    calls.add((token: purchaseToken, productId: providerProductId));
+    calls.add((
+      token: purchaseToken,
+      productId: providerProductId,
+      source: source,
+    ));
     final thrown = failure;
     if (thrown != null) throw thrown;
     return response;
@@ -55,6 +61,21 @@ void main() {
       expect(remote.calls, hasLength(1));
       expect(remote.calls.single.token, 'super-secret-provider-token');
       expect(remote.calls.single.productId, 'facetune_pro');
+      expect(remote.calls.single.source, 'purchase');
+    });
+
+    test('labels a restore without changing verification evidence', () async {
+      final remote = _Remote(
+        response: const {'verified': true, 'subscription': <String, Object?>{}},
+      );
+
+      await SupabasePurchaseVerificationGateway(
+        remote,
+      ).verify(_evidence, source: PurchaseVerificationSource.restore);
+
+      expect(remote.calls.single.token, 'super-secret-provider-token');
+      expect(remote.calls.single.productId, 'facetune_pro');
+      expect(remote.calls.single.source, 'restore');
     });
 
     test('success yields nothing the caller could apply as a plan', () async {
@@ -290,5 +311,6 @@ class _SlowRemote implements PurchaseVerificationRemoteDataSource {
   Future<Object?> verify({
     required String purchaseToken,
     required String providerProductId,
+    String? source,
   }) => Completer<Object?>().future;
 }

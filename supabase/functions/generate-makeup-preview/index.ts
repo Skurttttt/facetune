@@ -17,6 +17,13 @@ import {
 import { isOwnedOriginalPath } from "../_shared/storage_ownership.ts";
 import { extensionFor } from "./image_validation.ts";
 import { requestGeminiPreview } from "./gemini_client.ts";
+import {
+  createTelemetryClient,
+  recordAiOperationMetric,
+  type TelemetryClient,
+  usageForMetric,
+  type UsageSink,
+} from "../_shared/ai_telemetry.ts";
 import { MAKEUP_PREVIEW_PROMPT_VERSION } from "./prompt.ts";
 import { FunctionFailure } from "./types.ts";
 
@@ -145,6 +152,14 @@ Deno.serve(async (request) => {
   // standing for reconciliation to commit from the persisted evidence.
   let previewPersisted = false;
   const requestStartedAt = Date.now();
+  const telemetryEventId = crypto.randomUUID();
+  let telemetryClient: TelemetryClient | null = null;
+  let metricUserId: string | null = null;
+  // SUB-13 telemetry. Filled as the request proceeds and recorded once, at
+  // the exit, whatever the outcome. Best-effort: nothing below can fail the
+  // request or change what was reserved, committed, or released.
+  const usageSink: UsageSink = {};
+  let metricOperationId: string | null = null;
   const timings: Record<string, number> = {};
 
   // Records how long a stage took. Durations only — never payloads, paths,
@@ -204,6 +219,8 @@ Deno.serve(async (request) => {
         "Your session has expired. Sign in again.",
       );
     }
+    metricUserId = authData.user.id;
+    telemetryClient = createTelemetryClient();
     console.log("[Phase10] auth_verified");
     let body: unknown;
     try {
@@ -217,6 +234,7 @@ Deno.serve(async (request) => {
     }
     const requestedRecommendationId = recommendationId(body);
     const requestedOperationId = operationId(body);
+    metricOperationId = requestedOperationId;
     // These two reads stay sequential: the analysis id is only known after the
     // recommendation row is read. Collapsing them into one embedded PostgREST
     // query would save a round trip but relies on the composite ownership
@@ -238,6 +256,10 @@ Deno.serve(async (request) => {
         "The recommendation could not be linked to a source image.",
       );
     }
+    const recommendationRow = recommendation as unknown as Record<
+      string,
+      unknown
+    >;
     console.log("[Phase10] recommendation_loaded");
     const { data: analysis, error: analysisError } = await timed(
       "analysis_fetch",
@@ -245,7 +267,7 @@ Deno.serve(async (request) => {
         client
           .from("analyses")
           .select("id, original_image_path")
-          .eq("id", recommendation.analysis_id)
+          .eq("id", recommendationRow.analysis_id as string)
           .maybeSingle(),
     );
     if (analysisError || !analysis) {
@@ -255,13 +277,14 @@ Deno.serve(async (request) => {
         "The original analysis could not be found.",
       );
     }
+    const analysisRow = analysis as unknown as Record<string, unknown>;
     console.log("[Phase10] analysis_loaded");
-    const originalImagePath = analysis.original_image_path as string;
+    const originalImagePath = analysisRow.original_image_path as string;
     if (
       !isOwnedOriginalPath(
         originalImagePath,
         authData.user.id,
-        analysis.id as string,
+        analysisRow.id as string,
         ["jpg", "jpeg", "png", "webp"],
       )
     ) {
@@ -299,9 +322,8 @@ Deno.serve(async (request) => {
               .eq("operation_id", requestedOperationId)
               .maybeSingle(),
         );
-        const priorPreviewId =
-          (priorUsage as Record<string, unknown> | null)
-            ?.canonical_generated_image_id;
+        const priorPreviewId = (priorUsage as Record<string, unknown> | null)
+          ?.canonical_generated_image_id;
         if (typeof priorPreviewId === "string") {
           const { data: priorPreview } = await timed(
             "prior_preview_fetch",
@@ -315,6 +337,17 @@ Deno.serve(async (request) => {
           if (priorPreview) {
             console.log("[Phase10] ai_look_replayed_committed");
             reportTimings("replayed");
+            await recordAiOperationMetric(
+              telemetryClient,
+              telemetryEventId,
+              metricUserId,
+              {
+                operationKind: "final_preview",
+                outcome: "duplicate",
+                sourceMode: "standard",
+                operationId: requestedOperationId,
+              },
+            );
             return jsonResponse(
               previewResponse(
                 priorPreview as Record<string, unknown>,
@@ -395,7 +428,8 @@ Deno.serve(async (request) => {
     );
 
     const generationNumber =
-      ((latestGeneration.data?.generation_number as number | undefined) ?? 0) +
+      (((latestGeneration.data as Record<string, unknown> | null)
+        ?.generation_number as number | undefined) ?? 0) +
       1;
 
     // Image generation is the most expensive AI call in the app, so an
@@ -416,7 +450,11 @@ Deno.serve(async (request) => {
     // fails without spending anything.
     const configurationError = finalPreviewModelConfigurationError();
     if (configurationError !== null) {
-      throw new FunctionFailure(500, "server_configuration", configurationError);
+      throw new FunctionFailure(
+        500,
+        "server_configuration",
+        configurationError,
+      );
     }
     const model = FINAL_PREVIEW_MODEL;
     const generated = await timed("gemini", () =>
@@ -425,9 +463,10 @@ Deno.serve(async (request) => {
         model,
         originalBytes,
         originalMimeType,
-        recommendation.makeup_style as string,
-        recommendation.recommendation_json as Record<string, unknown>,
+        recommendationRow.makeup_style as string,
+        recommendationRow.recommendation_json as Record<string, unknown>,
         generationNumber,
+        usageSink,
       ));
     const identityCheckStartedAt = Date.now();
     const unchanged = imagesAreIdentical(originalBytes, generated.bytes);
@@ -443,7 +482,7 @@ Deno.serve(async (request) => {
     const extension = extensionFor(generated.mimeType);
     const paddedNumber = generationNumber.toString().padStart(4, "0");
     const candidatePath =
-      `${authData.user.id}/analyses/${analysis.id}/generated/${requestedRecommendationId}/preview_${paddedNumber}.${extension}`;
+      `${authData.user.id}/analyses/${analysisRow.id}/generated/${requestedRecommendationId}/preview_${paddedNumber}.${extension}`;
     if (
       candidatePath === originalImagePath ||
       candidatePath.includes("/original/")
@@ -486,7 +525,7 @@ Deno.serve(async (request) => {
           .from("generated_images")
           .insert({
             user_id: authData.user.id,
-            analysis_id: analysis.id,
+            analysis_id: analysisRow.id,
             recommendation_id: requestedRecommendationId,
             storage_path: candidatePath,
             generation_number: generationNumber,
@@ -550,6 +589,25 @@ Deno.serve(async (request) => {
     );
     console.log("[Phase10] response_returned");
     reportTimings("success");
+    await recordAiOperationMetric(
+      telemetryClient,
+      telemetryEventId,
+      metricUserId,
+      {
+        operationKind: "final_preview",
+        outcome: "succeeded",
+        sourceMode: "standard",
+        operationId: requestedOperationId,
+        latencyMs: timings.gemini ?? null,
+        persistenceLatencyMs: (timings.storage_upload ?? 0) +
+          (timings.db_insert ?? 0),
+        providerName: "google_gemini",
+        modelName: model,
+        promptVersion: MAKEUP_PREVIEW_PROMPT_VERSION,
+        usage: usageForMetric(usageSink),
+        outputImages: 1,
+      },
+    );
     return jsonResponse(previewResponse(inserted, originalImagePath));
   } catch (error) {
     if (uploadedPath && userClient) {
@@ -593,6 +651,28 @@ Deno.serve(async (request) => {
     console.error(`[Phase10] request_failed code=${failure.code}`);
     // Timing on the failure path is what makes a slow-failure diagnosable.
     reportTimings(failure.code);
+    if (telemetryClient && metricUserId && metricOperationId) {
+      // A refusal before any AI Look was held is a denial; anything after a
+      // hold is a failure. Either way only the code travels, never the message.
+      await recordAiOperationMetric(
+        telemetryClient,
+        telemetryEventId,
+        metricUserId,
+        {
+          operationKind: "final_preview",
+          outcome: heldOperationId ? "failed" : "denied",
+          failureCategory: failure.code,
+          sourceMode: "standard",
+          operationId: metricOperationId,
+          latencyMs: timings.gemini ?? null,
+          persistenceLatencyMs: timings.storage_upload ?? null,
+          providerName: usageSink.attempts ? "google_gemini" : null,
+          modelName: FINAL_PREVIEW_MODEL,
+          promptVersion: MAKEUP_PREVIEW_PROMPT_VERSION,
+          usage: usageForMetric(usageSink),
+        },
+      );
+    }
     return jsonResponse({
       error: {
         code: failure.code,

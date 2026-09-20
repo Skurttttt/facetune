@@ -342,7 +342,12 @@ class PurchaseController extends StateNotifier<PurchaseState> {
 
     try {
       try {
-        await _verification().verify(evidence);
+        await _verification().verify(
+          evidence,
+          source: update.status == PurchaseUpdateStatus.restored
+              ? PurchaseVerificationSource.restore
+              : PurchaseVerificationSource.purchase,
+        );
       } on SubscriptionStateFailure catch (failure) {
         if (!mounted) return;
         // The purchase stays unacknowledged on purpose. Google refunds an

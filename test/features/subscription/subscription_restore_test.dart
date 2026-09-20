@@ -5,6 +5,7 @@ import 'package:facetune/features/subscription/domain/entities/purchase_evidence
 import 'package:facetune/features/subscription/domain/entities/purchase_update.dart';
 import 'package:facetune/features/subscription/domain/entities/subscription_plan_code.dart';
 import 'package:facetune/features/subscription/domain/errors/subscription_state_failure.dart';
+import 'package:facetune/features/subscription/domain/repositories/purchase_verification_gateway.dart';
 import 'package:facetune/features/subscription/presentation/controllers/purchase_controller.dart';
 import 'package:facetune/features/subscription/presentation/controllers/purchase_state.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -97,6 +98,11 @@ void main() {
           harness.verification.received.single.purchaseToken,
           'restored-token-value',
           reason: 'the evidence must be sent to the backend',
+        );
+        expect(
+          harness.verification.sources.single,
+          PurchaseVerificationSource.restore,
+          reason: 'restore is a telemetry label, never entitlement authority',
         );
         expect(
           harness.store.completed.single.purchaseToken,

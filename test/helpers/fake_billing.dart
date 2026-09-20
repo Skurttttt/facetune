@@ -108,14 +108,19 @@ class FakePurchaseVerificationGateway implements PurchaseVerificationGateway {
 
   final Object? failure;
   final List<PurchaseEvidence> received = [];
+  final List<PurchaseVerificationSource> sources = [];
 
   /// When set, a verification is recorded at once but does not answer until
   /// the test completes it — so a second delivery can arrive mid-flight.
   final Completer<void>? gate;
 
   @override
-  Future<void> verify(PurchaseEvidence evidence) async {
+  Future<void> verify(
+    PurchaseEvidence evidence, {
+    PurchaseVerificationSource source = PurchaseVerificationSource.purchase,
+  }) async {
     received.add(evidence);
+    sources.add(source);
     await gate?.future;
     final thrown = failure;
     if (thrown != null) throw thrown;

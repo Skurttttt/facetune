@@ -1,4 +1,9 @@
 import { makeupPreviewPrompt } from "./prompt.ts";
+import {
+  noteProviderAttempt,
+  readProviderUsage,
+  type UsageSink,
+} from "../_shared/ai_telemetry.ts";
 import type { GeneratedImage } from "./types.ts";
 import { FunctionFailure } from "./types.ts";
 import { validateGeneratedImage } from "./image_validation.ts";
@@ -74,6 +79,9 @@ export async function requestGeminiPreview(
   style: string,
   recommendation: Record<string, unknown>,
   variationNumber: number,
+  // SUB-13: filled with the accepted response's usage units. Optional, and
+  // read only after the image has been validated; nothing else changes.
+  usageSink?: UsageSink,
 ): Promise<GeneratedImage> {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${
     encodeURIComponent(model)
@@ -99,6 +107,7 @@ export async function requestGeminiPreview(
       if (remainingBudgetMs <= 0) break;
       const attemptTimeout = Math.min(attemptTimeoutMs, remainingBudgetMs);
       try {
+        noteProviderAttempt(usageSink, attempt);
         console.log(
           `[Phase10] gemini_request_started model=${model} attempt=${attempt} budget_ms=${attemptTimeout}`,
         );
@@ -112,7 +121,12 @@ export async function requestGeminiPreview(
           signal: AbortSignal.timeout(attemptTimeout),
         });
         console.log(`[Phase10] gemini_status=${response.status}`);
-        if (response.ok) return generatedImage(await response.json());
+        if (response.ok) {
+          const payload = await response.json();
+          const image = generatedImage(payload);
+          if (usageSink) usageSink.usage = readProviderUsage(payload, attempt);
+          return image;
+        }
         const errorPayload = await safeErrorPayload(response);
         const classification = classifyGeminiFailure(
           response.status,

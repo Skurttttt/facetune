@@ -90,9 +90,18 @@ const purchaseTokenPattern = /^[A-Za-z0-9._~\-]{1,1024}$/;
 /// because the client has it to hand and it makes a mismatch visible in
 /// diagnostics, but it is never used to decide a plan — see
 /// `interpretPurchase`.
+/// How the client says the purchase reached it. Telemetry only (SUB-13): it
+/// is counted, never acted on, and anything but the two known words is
+/// dropped rather than stored.
+export type VerificationSource = "purchase" | "restore";
+
 export function parseVerificationRequest(
   value: unknown,
-): { purchaseToken: string; claimedProductId: string | null } {
+): {
+  purchaseToken: string;
+  claimedProductId: string | null;
+  verificationSource: VerificationSource | null;
+} {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new VerificationFailure(
       400,
@@ -113,10 +122,14 @@ export function parseVerificationRequest(
     );
   }
   const claimed = body.providerProductId;
+  const source = body.source;
   return {
     purchaseToken,
     claimedProductId: typeof claimed === "string" && claimed.length > 0
       ? claimed
+      : null,
+    verificationSource: source === "purchase" || source === "restore"
+      ? source
       : null,
   };
 }
@@ -134,7 +147,8 @@ export function selectApprovedLineItem(
 ): NonNullable<SubscriptionPurchaseV2["lineItems"]>[number] {
   const items = purchase.lineItems ?? [];
   for (const item of items) {
-    if (typeof item?.productId === "string" &&
+    if (
+      typeof item?.productId === "string" &&
       approvedProductIds.has(item.productId)
     ) {
       return item;
@@ -178,8 +192,8 @@ export function interpretPurchase(
   // sending one, and some restored purchases, legitimately carry none. Its
   // absence is not evidence of theft, so the database's
   // one-purchase-to-one-account constraint is the backstop for that case.
-  const externalAccountId =
-    purchase.externalAccountIdentifiers?.obfuscatedExternalAccountId;
+  const externalAccountId = purchase.externalAccountIdentifiers
+    ?.obfuscatedExternalAccountId;
   if (
     typeof externalAccountId === "string" &&
     externalAccountId.length > 0 &&

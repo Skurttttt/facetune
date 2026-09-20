@@ -25,7 +25,10 @@ class UnavailablePurchaseVerificationGateway
   const UnavailablePurchaseVerificationGateway();
 
   @override
-  Future<void> verify(PurchaseEvidence evidence) async {
+  Future<void> verify(
+    PurchaseEvidence evidence, {
+    PurchaseVerificationSource source = PurchaseVerificationSource.purchase,
+  }) async {
     throw const SubscriptionStateFailure(
       'Purchases cannot be confirmed yet. If you were charged, Google Play '
       'will refund it automatically.',

@@ -1,6 +1,12 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
+import {
+  createTelemetryClient,
+  outcomeForFailureCode,
+  recordAiOperationMetric,
+  type TelemetryClient,
+} from "../_shared/ai_telemetry.ts";
 import { GooglePlayApi, parseServiceAccount } from "./google_play_api.ts";
 import {
   failureForActivationCode,
@@ -9,6 +15,7 @@ import {
   sha256Hex,
   type SubscriptionPurchaseV2,
   VerificationFailure,
+  type VerificationSource,
 } from "./verification.ts";
 
 // FaceTune SUB-10 — server-side Google Play purchase verification.
@@ -93,6 +100,17 @@ Deno.serve(async (request) => {
     );
   }
 
+  // SUB-13 telemetry. One `purchase_verification` metric per request, written
+  // after the outcome is decided and never able to change it. The token and
+  // provider payload never reach it; the Edge Function supplies the account
+  // established above from the verified request JWT.
+  const startedAt = Date.now();
+  const telemetryEventId = crypto.randomUUID();
+  let telemetryClient: TelemetryClient | null = null;
+  let telemetryUserId: string | null = null;
+  let verificationSource: VerificationSource | null = null;
+  let purchaseReference: string | null = null;
+  let providerAttempted = false;
   try {
     // ---------------------------------------------------------------------
     // Identity. Established from the caller's own JWT, never from the body.
@@ -125,6 +143,8 @@ Deno.serve(async (request) => {
       );
     }
     const userId = authData.user.id;
+    telemetryUserId = userId;
+    telemetryClient = createTelemetryClient();
 
     let payload: unknown;
     try {
@@ -136,9 +156,9 @@ Deno.serve(async (request) => {
         "The request body must be valid JSON.",
       );
     }
-    const { purchaseToken, claimedProductId } = parseVerificationRequest(
-      payload,
-    );
+    const parsed = parseVerificationRequest(payload);
+    const { purchaseToken, claimedProductId } = parsed;
+    verificationSource = parsed.verificationSource;
 
     // ---------------------------------------------------------------------
     // Verify with Google. This is the only step that can establish that a
@@ -150,8 +170,10 @@ Deno.serve(async (request) => {
       ),
       requiredEnvironment("GOOGLE_PLAY_PACKAGE_NAME"),
     );
-    const providerResponse = await api.getSubscription(purchaseToken) as
-      SubscriptionPurchaseV2;
+    providerAttempted = true;
+    const providerResponse = await api.getSubscription(
+      purchaseToken,
+    ) as SubscriptionPurchaseV2;
 
     const verified = interpretPurchase(providerResponse, {
       approvedProductIds,
@@ -171,12 +193,12 @@ Deno.serve(async (request) => {
     // ---------------------------------------------------------------------
     // Persist. The raw token never reaches the database — only its hash.
     // ---------------------------------------------------------------------
-    const purchaseReference = await sha256Hex(purchaseToken);
+    purchaseReference = await sha256Hex(purchaseToken);
     const linkedReference = verified.linkedPurchaseToken === null
       ? null
       : await sha256Hex(verified.linkedPurchaseToken);
 
-    // A second client, used for exactly one RPC. The activation function's
+    // A second client, used for privileged RPCs. The activation function's
     // arguments carry its authority, so it is granted to `service_role` alone;
     // see the rationale in the SUB-10 migration. This client is never used for
     // a table read or write, and the user identity above was established with
@@ -255,6 +277,23 @@ Deno.serve(async (request) => {
       );
     }
 
+    await recordAiOperationMetric(
+      telemetryClient,
+      telemetryEventId,
+      userId,
+      {
+        operationKind: "purchase_verification",
+        // The writer derives duplicate/replay from the authoritative provider
+        // verification row's creation and latest-verification timestamps.
+        outcome: "succeeded",
+        latencyMs: Date.now() - startedAt,
+        providerName: "google_play",
+        providerAttemptCount: 1,
+        verificationSource,
+        purchaseReference,
+      },
+    );
+
     return jsonResponse({
       verified: true,
       acknowledged,
@@ -281,6 +320,23 @@ Deno.serve(async (request) => {
     console.error(
       `[verify-google-play-purchase] request_failed code=${failure.code}`,
     );
+    if (telemetryClient && telemetryUserId) {
+      await recordAiOperationMetric(
+        telemetryClient,
+        telemetryEventId,
+        telemetryUserId,
+        {
+          operationKind: "purchase_verification",
+          outcome: outcomeForFailureCode(failure.code, false),
+          failureCategory: failure.code,
+          latencyMs: Date.now() - startedAt,
+          providerName: providerAttempted ? "google_play" : null,
+          providerAttemptCount: providerAttempted ? 1 : 0,
+          verificationSource,
+          purchaseReference,
+        },
+      );
+    }
     return jsonResponse(
       {
         error: {

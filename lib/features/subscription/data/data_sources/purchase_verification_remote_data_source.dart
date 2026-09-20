@@ -15,9 +15,13 @@ abstract interface class PurchaseVerificationRemoteDataSource {
   /// with the provider is worth recording server-side. It is not what decides
   /// the plan — the backend resolves that from the purchase Google returns —
   /// so a client that lied about it would gain nothing.
+  ///
+  /// [source] (`purchase` or `restore`) is a telemetry label the backend
+  /// counts; it changes nothing about how the purchase is verified.
   Future<Object?> verify({
     required String purchaseToken,
     required String providerProductId,
+    String? source,
   });
 }
 
@@ -54,6 +58,7 @@ class SupabasePurchaseVerificationRemoteDataSource
   Future<Object?> verify({
     required String purchaseToken,
     required String providerProductId,
+    String? source,
   }) async {
     try {
       final response = await client.functions.invoke(
@@ -61,6 +66,7 @@ class SupabasePurchaseVerificationRemoteDataSource
         body: {
           'purchaseToken': purchaseToken,
           'providerProductId': providerProductId,
+          'source': ?source,
         },
       );
       return response.data;
