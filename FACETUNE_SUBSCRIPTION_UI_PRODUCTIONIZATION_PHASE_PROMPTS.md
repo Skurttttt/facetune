@@ -9,6 +9,8 @@
 **Scope:** Flutter frontend / presentation only  
 **Backend changes:** FORBIDDEN  
 
+
+
 ---
 
 # HOW TO USE THIS FILE
@@ -122,6 +124,7 @@ After implementation:
 - report manual actions exactly
 - STOP
 
+- Subscription UI Productionization MUST NOT modify, refactor, migrate, rename, reconfigure, or “clean up” Step-by-Step Tutorial V4. Any file belonging to Tutorial V4 is read-only unless the user explicitly authorizes a separate Tutorial V4 phase.
 ---
 
 # STRICT NO-BACKEND GUARD
