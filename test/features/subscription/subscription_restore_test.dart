@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:facetune/features/subscription/domain/entities/billing_provider.dart';
 import 'package:facetune/features/subscription/domain/entities/purchase_evidence.dart';
 import 'package:facetune/features/subscription/domain/entities/purchase_update.dart';
@@ -48,12 +50,17 @@ void main() {
     Object? verificationFailure,
     Object? restoreThrows,
     List<PurchaseUpdate> delivers = const [],
+    Completer<void>? restoreGate,
+    Completer<void>? verificationGate,
+    Duration restoreTimeout = const Duration(seconds: 15),
   }) async {
     final store = FakeStoreBillingGateway(available: storeAvailable)
       ..restoreThrows = restoreThrows
-      ..restoreDelivers = delivers;
+      ..restoreDelivers = delivers
+      ..restoreGate = restoreGate;
     final verification = FakePurchaseVerificationGateway(
       failure: verificationFailure,
+      gate: verificationGate,
     );
     final refreshes = <String>[];
 
@@ -63,6 +70,7 @@ void main() {
       refreshSubscription: () async => refreshes.add('refresh'),
       accountId: 'account-uuid',
       restoreSettleWindow: Duration.zero,
+      restoreTimeout: restoreTimeout,
     );
     addTearDown(controller.dispose);
     addTearDown(store.dispose);
@@ -210,6 +218,173 @@ void main() {
 
       expect(harness.store.restoreCount, 1);
     });
+
+    test('rapid repeated taps start exactly one provider query', () async {
+      final gate = Completer<void>();
+      final harness = await build(restoreGate: gate);
+
+      final first = harness.controller.restore();
+      await harness.controller.restore();
+      await harness.controller.restore();
+
+      expect(harness.store.restoreCount, 1);
+      expect(harness.controller.state.phase, PurchasePhase.restoring);
+
+      gate.complete();
+      await first;
+      expect(harness.controller.state.phase, PurchasePhase.restoredNothing);
+    });
+  });
+
+  group('a tap is reflected before the provider answers', () {
+    test('the phase moves to restoring at once, and stays busy', () async {
+      final gate = Completer<void>();
+      final harness = await build(restoreGate: gate);
+
+      final pending = harness.controller.restore();
+
+      expect(harness.controller.state.phase, PurchasePhase.restoring);
+      expect(harness.controller.state.isBusy, isTrue);
+      expect(harness.controller.state.canPurchase, isFalse);
+      expect(harness.controller.state.viaRestore, isTrue);
+      expect(harness.controller.state.message, isNull);
+
+      gate.complete();
+      await pending;
+    });
+
+    test('a purchase started from a plan is not a restore', () async {
+      final harness = await build();
+
+      await harness.controller.restore();
+      expect(harness.controller.state.viaRestore, isTrue);
+
+      harness.controller.acknowledgeMessage();
+      expect(harness.controller.state.viaRestore, isFalse);
+
+      await harness.controller.buy(SubscriptionPlanCode.plus);
+      expect(harness.controller.state.viaRestore, isFalse);
+    });
+  });
+
+  group('a provider query that never returns cannot hold the screen', () {
+    test('the wait is bounded and ends in a retryable failure', () async {
+      final harness = await build(
+        restoreGate: Completer<void>(),
+        restoreTimeout: const Duration(milliseconds: 20),
+      );
+
+      await harness.controller.restore();
+
+      expect(harness.store.restoreCount, 1);
+      expect(harness.controller.state.phase, PurchasePhase.failed);
+      expect(harness.controller.state.message, contains('did not respond'));
+      expect(harness.controller.state.viaRestore, isTrue);
+      // Recoverable: the next tap is accepted rather than swallowed.
+      expect(harness.controller.state.canPurchase, isTrue);
+      expect(harness.verification.received, isEmpty);
+      expect(harness.refreshes, isEmpty);
+    });
+
+    test('the timeout never overrides a delivery that beat it', () async {
+      // The provider delivers on the stream before its own query returns.
+      // The handler has already moved on to verification; the timeout must
+      // notice and leave that attempt alone.
+      final gate = Completer<void>();
+      final verificationGate = Completer<void>();
+      final harness = await build(
+        restoreGate: gate,
+        verificationGate: verificationGate,
+        restoreTimeout: const Duration(milliseconds: 20),
+      );
+
+      final pending = harness.controller.restore();
+      harness.store.updates.add(restoredUpdate);
+      await pumpEventQueue();
+      expect(harness.controller.state.phase, PurchasePhase.verifying);
+
+      await pending;
+      expect(
+        harness.controller.state.phase,
+        PurchasePhase.verifying,
+        reason: 'a timed-out query must not fail a verification in flight',
+      );
+
+      verificationGate.complete();
+      await pumpEventQueue();
+      expect(harness.controller.state.phase, PurchasePhase.verified);
+    });
+
+    test(
+      'a late answer after the timeout is still verified, exactly once',
+      () async {
+        final gate = Completer<void>();
+        final harness = await build(
+          restoreGate: gate,
+          delivers: [restoredUpdate],
+          restoreTimeout: const Duration(milliseconds: 20),
+        );
+
+        await harness.controller.restore();
+        expect(harness.controller.state.phase, PurchasePhase.failed);
+
+        // The platform call was never cancelled; it answers now.
+        gate.complete();
+        await pumpEventQueue();
+
+        expect(harness.verification.received, hasLength(1));
+        expect(harness.store.completed, hasLength(1));
+        expect(harness.refreshes, hasLength(1));
+        expect(harness.controller.state.phase, PurchasePhase.verified);
+      },
+    );
+
+    test(
+      'a late answer landing beside a fresh one does not verify twice',
+      () async {
+        final firstQuery = Completer<void>();
+        final verificationGate = Completer<void>();
+        final harness = await build(
+          restoreGate: firstQuery,
+          verificationGate: verificationGate,
+          restoreTimeout: const Duration(milliseconds: 20),
+        );
+
+        // First tap: the query stalls and the bound reports it.
+        await harness.controller.restore();
+        expect(harness.controller.state.phase, PurchasePhase.failed);
+
+        // Second tap: the provider answers promptly with the purchase, and
+        // its verification is now with the server.
+        harness.store
+          ..restoreGate = null
+          ..restoreDelivers = [restoredUpdate];
+        final second = harness.controller.restore();
+        await pumpEventQueue();
+        expect(harness.controller.state.phase, PurchasePhase.verifying);
+        expect(harness.verification.received, hasLength(1));
+
+        // The first query finally answers with the same purchase while that
+        // verification is still outstanding.
+        firstQuery.complete();
+        await pumpEventQueue();
+        expect(
+          harness.verification.received,
+          hasLength(1),
+          reason: 'the same evidence is not sent twice while in flight',
+        );
+
+        verificationGate.complete();
+        await second;
+        await pumpEventQueue();
+
+        expect(harness.store.restoreCount, 2);
+        expect(harness.verification.received, hasLength(1));
+        expect(harness.store.completed, hasLength(1));
+        expect(harness.refreshes, hasLength(1));
+        expect(harness.controller.state.phase, PurchasePhase.verified);
+      },
+    );
   });
 
   group('the restore phases describe a step, never a grant', () {

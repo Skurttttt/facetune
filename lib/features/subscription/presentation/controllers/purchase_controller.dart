@@ -63,11 +63,13 @@ class PurchaseController extends StateNotifier<PurchaseState> {
     required Future<void> Function() refreshSubscription,
     String? accountId,
     Duration restoreSettleWindow = const Duration(seconds: 5),
+    Duration restoreTimeout = const Duration(seconds: 15),
   }) : _store = store,
        _verification = verification,
        _refreshSubscription = refreshSubscription,
        _accountId = accountId,
        _restoreSettleWindow = restoreSettleWindow,
+       _restoreTimeout = restoreTimeout,
        super(const PurchaseState());
 
   final StoreBillingGateway _store;
@@ -88,9 +90,44 @@ class PurchaseController extends StateNotifier<PurchaseState> {
   /// spend it.
   final Duration _restoreSettleWindow;
 
+  /// How long the provider's own restore query is given to *return* before
+  /// the attempt is reported as not completed.
+  ///
+  /// This bounds a different wait from [_restoreSettleWindow]. The settle
+  /// window starts after the query has returned and gives the stream time to
+  /// deliver. This one covers the query itself, which on Android is "wait for
+  /// the billing service connection, then read the cached purchases" — and
+  /// the plugin waits for that connection without limit, re-connecting and
+  /// re-issuing the query for as long as the service keeps disconnecting.
+  /// Left unbounded, one such stall would leave this controller in
+  /// [PurchasePhase.restoring] forever: every purchase and restore action
+  /// disabled, and no message to say why.
+  ///
+  /// Fifteen seconds is the cold-connection budget: a billing service bind
+  /// completes in well under five seconds on a healthy device, and the two
+  /// purchase reads behind it are local cache reads, so a query still
+  /// outstanding at fifteen seconds is not going to answer in a way worth
+  /// holding the screen for. Timing out here does not cancel the platform
+  /// call. If it does answer later, its purchases still arrive on the stream
+  /// and are verified exactly as any other delivery — see
+  /// [_verifyWithBackend], which is what keeps a late answer safe.
+  final Duration _restoreTimeout;
+
   /// Whether the provider delivered anything verifiable since the current
   /// restore began. Reset at the start of each restore.
   bool _restoreDeliveredPurchase = false;
+
+  /// Purchase tokens whose backend verification is currently in flight.
+  ///
+  /// The provider can deliver the same purchase twice in close succession —
+  /// a restore query that answered late landing beside a fresh one is the
+  /// concrete case — and each delivery would otherwise start its own
+  /// verification. The server's activation is idempotent on the purchase, so
+  /// a repeat would not grant twice, but there is no reason to spend two round
+  /// trips and race two state updates for one piece of evidence. Only the
+  /// token is held, never the evidence; it is removed the moment the
+  /// verification settles either way.
+  final Set<String> _verifying = {};
 
   StreamSubscription<PurchaseUpdate>? _updates;
 
@@ -139,6 +176,7 @@ class PurchaseController extends StateNotifier<PurchaseState> {
       phase: PurchasePhase.starting,
       plan: plan,
       clearMessage: true,
+      viaRestore: false,
     );
 
     try {
@@ -174,10 +212,23 @@ class PurchaseController extends StateNotifier<PurchaseState> {
       phase: PurchasePhase.restoring,
       clearMessage: true,
       clearPlan: true,
+      viaRestore: true,
     );
 
     try {
-      await _store.restorePurchases();
+      await _store.restorePurchases().timeout(_restoreTimeout);
+    } on TimeoutException {
+      if (!mounted) return;
+      // The provider may have delivered before its query returned; if so the
+      // handler has already moved the phase on and this attempt is theirs.
+      if (state.phase != PurchasePhase.restoring) return;
+      state = state.copyWith(
+        phase: PurchasePhase.failed,
+        message:
+            'Google Play did not respond while checking your previous '
+            'purchases. Please try again in a moment.',
+      );
+      return;
     } on Object {
       if (!mounted) return;
       state = state.copyWith(
@@ -216,6 +267,7 @@ class PurchaseController extends StateNotifier<PurchaseState> {
           : PurchasePhase.unavailable,
       clearMessage: true,
       clearPlan: true,
+      viaRestore: false,
     );
   }
 
@@ -277,6 +329,11 @@ class PurchaseController extends StateNotifier<PurchaseState> {
       return;
     }
 
+    // One verification per piece of evidence at a time. A second delivery of
+    // the same purchase while the first is still with the server is dropped
+    // here; the first's outcome is the outcome for both.
+    if (!_verifying.add(evidence.purchaseToken)) return;
+
     state = state.copyWith(
       phase: PurchasePhase.verifying,
       plan: update.planCode,
@@ -284,38 +341,42 @@ class PurchaseController extends StateNotifier<PurchaseState> {
     );
 
     try {
-      await _verification().verify(evidence);
-    } on SubscriptionStateFailure catch (failure) {
-      if (!mounted) return;
-      // The purchase stays unacknowledged on purpose. Google refunds an
-      // unacknowledged purchase automatically, which is the correct outcome for
-      // a purchase nothing was able to verify.
-      state = state.copyWith(
-        phase: PurchasePhase.failed,
-        message: failure.message,
-      );
-      return;
-    } on Object {
-      if (!mounted) return;
-      state = state.copyWith(
-        phase: PurchasePhase.failed,
-        message: 'Your purchase could not be confirmed. Please try again.',
-      );
-      return;
-    }
+      try {
+        await _verification().verify(evidence);
+      } on SubscriptionStateFailure catch (failure) {
+        if (!mounted) return;
+        // The purchase stays unacknowledged on purpose. Google refunds an
+        // unacknowledged purchase automatically, which is the correct outcome
+        // for a purchase nothing was able to verify.
+        state = state.copyWith(
+          phase: PurchasePhase.failed,
+          message: failure.message,
+        );
+        return;
+      } on Object {
+        if (!mounted) return;
+        state = state.copyWith(
+          phase: PurchasePhase.failed,
+          message: 'Your purchase could not be confirmed. Please try again.',
+        );
+        return;
+      }
 
-    // Verified. Only now may the provider be told the purchase was handled.
-    if (update.awaitingCompletion) {
-      await _store.completeVerifiedPurchase(evidence);
-    }
+      // Verified. Only now may the provider be told the purchase was handled.
+      if (update.awaitingCompletion) {
+        await _store.completeVerifiedPurchase(evidence);
+      }
 
-    // Ask the server what the account actually has. Nothing here decides it.
-    await _refreshSubscription();
-    if (!mounted) return;
-    state = state.copyWith(
-      phase: PurchasePhase.verified,
-      message: 'Your purchase is confirmed.',
-    );
+      // Ask the server what the account actually has. Nothing here decides it.
+      await _refreshSubscription();
+      if (!mounted) return;
+      state = state.copyWith(
+        phase: PurchasePhase.verified,
+        message: 'Your purchase is confirmed.',
+      );
+    } finally {
+      _verifying.remove(evidence.purchaseToken);
+    }
   }
 
   @override

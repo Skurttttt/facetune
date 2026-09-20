@@ -61,6 +61,7 @@ class PurchaseState {
     this.storeAvailable = false,
     this.plan,
     this.message,
+    this.viaRestore = false,
   });
 
   final PurchasePhase phase;
@@ -77,6 +78,14 @@ class PurchaseState {
 
   /// Sanitized, user-facing copy. Never a provider payload, never a token.
   final String? message;
+
+  /// Whether the current attempt began with Restore rather than with a plan.
+  ///
+  /// A presentation hint only: it decides *where* the outcome is shown (next
+  /// to the Restore control rather than above the plan cards), never what the
+  /// outcome is. It carries no plan, allowance, or expiry, and a restore that
+  /// found something still goes through the same verification as a purchase.
+  final bool viaRestore;
 
   /// Whether a purchase attempt is in flight and the UI should not start
   /// another.
@@ -101,11 +110,13 @@ class PurchaseState {
     String? message,
     bool clearMessage = false,
     bool clearPlan = false,
+    bool? viaRestore,
   }) => PurchaseState(
     phase: phase ?? this.phase,
     storeAvailable: storeAvailable ?? this.storeAvailable,
     plan: clearPlan ? null : (plan ?? this.plan),
     message: clearMessage ? null : (message ?? this.message),
+    viaRestore: viaRestore ?? this.viaRestore,
   );
 
   @override

@@ -52,6 +52,24 @@ class SubscriptionPage extends ConsumerWidget {
     PurchasePhase.cancelled => 'Purchase',
   };
 
+  /// Heads the restore notice, shown beside the Restore control.
+  ///
+  /// The same rule as [_purchaseNoticeTitle]: each title names the step that
+  /// just finished. "Purchase confirmed" after a restore means the server
+  /// verified what Google Play returned, not that anything was granted here.
+  static String _restoreNoticeTitle(PurchasePhase phase) => switch (phase) {
+    PurchasePhase.restoring => 'Checking your purchases',
+    PurchasePhase.restoredNothing => 'Nothing to restore',
+    PurchasePhase.verifying => 'Confirming your purchase',
+    PurchasePhase.verified => 'Purchase confirmed',
+    PurchasePhase.failed => 'Restore not completed',
+    PurchasePhase.idle ||
+    PurchasePhase.unavailable ||
+    PurchasePhase.starting ||
+    PurchasePhase.awaitingPayment ||
+    PurchasePhase.cancelled => 'Restore purchases',
+  };
+
   /// The plans shown under the page lead, in catalog order.
   static List<SubscriptionPlanCode> get _consumerPlans => PlanPresentation
       .comparisonPlans
@@ -197,9 +215,14 @@ class SubscriptionPage extends ConsumerWidget {
               // The purchase notice. It is the *result* of something the user
               // just did, so it is announced when it appears, and it eases
               // in and out for the same reason the price slot does.
+              //
+              // Only attempts that began on a plan card are reported here. A
+              // restore's outcome is shown beside the Restore control at the
+              // foot of the page, where the tap happened, so the answer is
+              // never a full page of plans away from the question.
               _StateSlot(
                 key: const ValueKey('paywall-purchase-slot'),
-                child: purchase.message == null
+                child: purchase.message == null || purchase.viaRestore
                     ? const SizedBox.shrink(
                         key: ValueKey('paywall-purchase-status-empty'),
                       )
@@ -278,19 +301,76 @@ class SubscriptionPage extends ConsumerWidget {
               // it recovers is evidence, and the server decides the rest.
               //
               // Left-aligned and inline rather than stretched across the list,
-              // the way every other utility action in the app sits.
+              // the way every other utility action in the app sits. While the
+              // provider is being asked, the button itself carries the
+              // progress — its label and a spinner in place of the icon — and
+              // the outcome lands directly beneath it, so nothing about a
+              // restore is reported anywhere the user is not looking.
               Align(
                 alignment: Alignment.centerLeft,
                 child: TertiaryButton(
                   key: const ValueKey('paywall-restore-purchases'),
-                  label: 'Restore purchases',
+                  label: purchase.phase == PurchasePhase.restoring
+                      ? 'Checking your purchases…'
+                      : 'Restore purchases',
                   icon: Icons.restore_rounded,
+                  isLoading: purchase.phase == PurchasePhase.restoring,
                   onPressed: purchase.canPurchase
                       ? () => ref
                             .read(purchaseControllerProvider.notifier)
                             .restore()
                       : null,
                 ),
+              ),
+
+              // A disabled utility button in a text style is easy to mistake
+              // for a live one, so a resting disabled state says in words why
+              // it is not live. Nothing is shown while an attempt is in flight:
+              // the button's own progress already explains that.
+              if (!purchase.canPurchase && !purchase.isBusy)
+                Padding(
+                  key: const ValueKey('paywall-restore-unavailable'),
+                  padding: const EdgeInsets.only(
+                    left: AppSpacing.sm,
+                    top: AppSpacing.xxs,
+                  ),
+                  child: Text(
+                    'Restore is available once Google Play is ready on this '
+                    'device.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.muted(context),
+                    ),
+                  ),
+                ),
+
+              // The restore outcome, beside the control that asked for it.
+              _StateSlot(
+                key: const ValueKey('paywall-restore-slot'),
+                child: purchase.message == null || !purchase.viaRestore
+                    ? const SizedBox.shrink(
+                        key: ValueKey('paywall-restore-status-empty'),
+                      )
+                    : Padding(
+                        key: const ValueKey('paywall-restore-status'),
+                        padding: const EdgeInsets.only(top: AppSpacing.sm),
+                        child: AppNotice(
+                          title: _restoreNoticeTitle(purchase.phase),
+                          message: purchase.message!,
+                          tone: purchase.phase == PurchasePhase.failed
+                              ? AppTone.warning
+                              : AppTone.info,
+                          liveRegion: true,
+                          actions: [
+                            if (!purchase.isBusy)
+                              TertiaryButton(
+                                label: 'Dismiss',
+                                onPressed: () => ref
+                                    .read(purchaseControllerProvider.notifier)
+                                    .acknowledgeMessage(),
+                              ),
+                          ],
+                        ),
+                      ),
               ),
               const SizedBox(height: AppSpacing.lg),
             ],

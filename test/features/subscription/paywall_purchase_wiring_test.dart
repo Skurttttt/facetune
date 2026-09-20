@@ -418,4 +418,188 @@ void main() {
       expect(find.text('Purchase confirmed'), findsOneWidget);
     });
   });
+
+  group('restore reports beside its own control', () {
+    const restoreKey = ValueKey('paywall-restore-purchases');
+    const restoreSlot = ValueKey('paywall-restore-slot');
+    const restoreStatus = ValueKey('paywall-restore-status');
+    const purchaseStatus = ValueKey('paywall-purchase-status');
+
+    const restoredPlus = PurchaseUpdate(
+      status: PurchaseUpdateStatus.restored,
+      awaitingCompletion: true,
+      planCode: SubscriptionPlanCode.plus,
+      evidence: PurchaseEvidence(
+        provider: BillingProvider.googlePlay,
+        providerProductId: 'facetune_plus',
+        purchaseToken: 'restored-token',
+      ),
+    );
+
+    testWidgets('a tap shows progress on the button itself', (tester) async {
+      await pumpPaywall(tester);
+
+      await tester.tap(find.byKey(restoreKey));
+      await tester.pump();
+
+      // Inside the provider's settle window: the button is the progress.
+      final button = tester.widget<TertiaryButton>(find.byKey(restoreKey));
+      expect(button.label, 'Checking your purchases…');
+      expect(button.isLoading, isTrue);
+      expect(
+        find.descendant(
+          of: find.byKey(restoreKey),
+          matching: find.byType(ButtonProgress),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<TextButton>(
+              find.descendant(
+                of: find.byKey(restoreKey),
+                matching: find.bySubtype<TextButton>(),
+              ),
+            )
+            .enabled,
+        isFalse,
+      );
+      // Nothing is reported at the top of the page for a restore.
+      expect(find.byKey(purchaseStatus), findsNothing);
+
+      // Let the window close so no timer outlives the test.
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('an empty restore answers directly below the button', (
+      tester,
+    ) async {
+      final store = await pumpPaywall(tester);
+
+      await tester.tap(find.byKey(restoreKey));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpAndSettle();
+
+      expect(store.restoreCount, 1);
+      final status = find.descendant(
+        of: find.byKey(restoreSlot),
+        matching: find.byKey(restoreStatus),
+      );
+      expect(status, findsOneWidget);
+      expect(find.text('Nothing to restore'), findsOneWidget);
+      expect(
+        find.textContaining('no previous FaceTune subscription'),
+        findsOneWidget,
+      );
+      expect(find.byKey(purchaseStatus), findsNothing);
+
+      // Below the control, not above the plans.
+      expect(
+        tester
+            .getTopLeft(
+              find.descendant(of: status, matching: find.byType(AppNotice)),
+            )
+            .dy,
+        greaterThan(tester.getBottomLeft(find.byKey(restoreKey)).dy),
+      );
+
+      // The button is live again, with its resting label.
+      final button = tester.widget<TertiaryButton>(find.byKey(restoreKey));
+      expect(button.label, 'Restore purchases');
+      expect(button.isLoading, isFalse);
+      expect(button.onPressed, isNotNull);
+    });
+
+    testWidgets('a restored purchase is confirmed beside the button', (
+      tester,
+    ) async {
+      final store = await pumpPaywall(tester);
+      store.restoreDelivers = [restoredPlus];
+
+      await tester.tap(find.byKey(restoreKey));
+      await settleInFlight(tester);
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpAndSettle();
+
+      // The same route as a purchase: verified, then acknowledged.
+      expect(store.completed.single.purchaseToken, 'restored-token');
+      expect(
+        find.descendant(
+          of: find.byKey(restoreSlot),
+          matching: find.text('Purchase confirmed'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(purchaseStatus), findsNothing);
+    });
+
+    testWidgets('a refused provider query is a retryable notice', (
+      tester,
+    ) async {
+      final store = await pumpPaywall(tester);
+      store.restoreThrows = Exception('play unavailable');
+
+      await tester.tap(find.byKey(restoreKey));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(restoreSlot),
+          matching: find.text('Restore not completed'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('play unavailable'), findsNothing);
+      expect(
+        tester.widget<TertiaryButton>(find.byKey(restoreKey)).onPressed,
+        isNotNull,
+        reason: 'a failed restore can be tried again',
+      );
+
+      // Dismiss clears the notice from beside the button.
+      await tester.tap(find.text('Dismiss'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(restoreStatus), findsNothing);
+    });
+
+    testWidgets('a disabled Restore says so in words, not colour alone', (
+      tester,
+    ) async {
+      await pumpPaywall(tester, storeAvailable: false);
+
+      expect(
+        tester.widget<TertiaryButton>(find.byKey(restoreKey)).onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<TextButton>(
+              find.descendant(
+                of: find.byKey(restoreKey),
+                matching: find.bySubtype<TextButton>(),
+              ),
+            )
+            .enabled,
+        isFalse,
+      );
+      expect(
+        find.byKey(const ValueKey('paywall-restore-unavailable')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('once Google Play is ready'), findsOneWidget);
+    });
+
+    testWidgets('a live Restore carries no unavailable caption', (
+      tester,
+    ) async {
+      await pumpPaywall(tester);
+
+      expect(
+        find.byKey(const ValueKey('paywall-restore-unavailable')),
+        findsNothing,
+      );
+    });
+  });
 }

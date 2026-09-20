@@ -71,13 +71,19 @@ class FakeStoreBillingGateway implements StoreBillingGateway {
   /// for the purchases Play already holds for the account.
   List<PurchaseUpdate> restoreDelivers = const [];
 
+  /// When set, the provider query does not return until the test completes
+  /// it — a stalled billing connection, from the controller's point of view.
+  /// Whatever [restoreDelivers] holds at completion time is delivered then.
+  Completer<void>? restoreGate;
+
   @override
   Future<void> restorePurchases() async {
     restoreCount++;
     final failure = restoreThrows;
     if (failure != null) throw failure;
+    await restoreGate?.future;
     for (final update in restoreDelivers) {
-      updates.add(update);
+      if (!updates.isClosed) updates.add(update);
     }
   }
 
@@ -98,14 +104,19 @@ class FakeStoreBillingGateway implements StoreBillingGateway {
 /// [failure], when set, is thrown to stand in for a server that refused or
 /// could not be reached — the case that must never end in a granted plan.
 class FakePurchaseVerificationGateway implements PurchaseVerificationGateway {
-  FakePurchaseVerificationGateway({this.failure});
+  FakePurchaseVerificationGateway({this.failure, this.gate});
 
   final Object? failure;
   final List<PurchaseEvidence> received = [];
 
+  /// When set, a verification is recorded at once but does not answer until
+  /// the test completes it — so a second delivery can arrive mid-flight.
+  final Completer<void>? gate;
+
   @override
   Future<void> verify(PurchaseEvidence evidence) async {
     received.add(evidence);
+    await gate?.future;
     final thrown = failure;
     if (thrown != null) throw thrown;
   }
