@@ -1,3 +1,4 @@
+import 'package:facetune/features/subscription/domain/entities/allowance_unit.dart';
 import 'package:facetune/features/subscription/domain/entities/billing_provider.dart';
 import 'package:facetune/features/subscription/domain/entities/entitlement_status.dart';
 import 'package:facetune/features/subscription/domain/entities/reset_policy.dart';
@@ -24,6 +25,8 @@ SubscriptionSummary summary({
   DateTime? expiresAt,
   bool hasEntitlement = true,
   String? denialReason,
+  AllowanceUnit unit = AllowanceUnit.aiLook,
+  bool tutorialEnabled = true,
 }) => SubscriptionSummary(
   hasEntitlement: hasEntitlement,
   planCode: plan,
@@ -42,6 +45,8 @@ SubscriptionSummary summary({
   status: status,
   billingProvider: provider,
   resetPolicy: resetPolicy,
+  allowanceUnit: unit,
+  tutorialEnabled: tutorialEnabled,
   resetAt: resetAt,
   expiresAt: expiresAt,
   denialReason: denialReason,
@@ -76,6 +81,7 @@ SubscriptionSummary salonPilot({int committed = 0, int allowance = 30}) =>
     );
 
 void main() {
+  previewOnlyCopyTests();
   group('Free', () {
     test('unused reads as one complimentary look', () {
       final copy = AiLookAllowanceCopy.forSummary(free());
@@ -457,6 +463,64 @@ void main() {
       for (final leak in ['operation', 'entitlement_id', 'uuid', '-4', 'id=']) {
         expect(rendered.toLowerCase(), isNot(contains(leak)));
       }
+    });
+  });
+}
+
+/// SUB-12B: a Preview-only plan counts Final Preview Credits, and the copy
+/// says so — never "AI Looks", which would imply the Tutorial.
+void previewOnlyCopyTests() {
+  SubscriptionSummary plusPreview({int committed = 0}) => summary(
+    plan: SubscriptionPlanCode.plusPreview,
+    displayName: 'FaceTune Plus Preview',
+    allowance: 30,
+    committed: committed,
+    resetAt: DateTime.utc(2026, 10, 7),
+    unit: AllowanceUnit.finalPreviewCredit,
+    tutorialEnabled: false,
+  );
+
+  group('Preview-only plans name their own unit', () {
+    test('remaining line counts Final Preview Credits', () {
+      final copy = AiLookAllowanceCopy.forSummary(plusPreview(committed: 1));
+      expect(copy.remainingLine, '29 of 30 Final Preview Credits remaining');
+      expect(copy.compactLine, '29 Final Preview Credits remaining this month');
+      expect(copy.unit, AllowanceUnit.finalPreviewCredit);
+      expect(copy.renewalLine, 'Resets Oct 7');
+    });
+
+    test('the last credit is singular', () {
+      final copy = AiLookAllowanceCopy.forSummary(plusPreview(committed: 29));
+      expect(copy.compactLine, '1 Final Preview Credit remaining this month');
+      expect(copy.tone, AppTone.warning);
+    });
+
+    test('exhaustion names the unit and the verified reset date', () {
+      final copy = AiLookAllowanceCopy.forSummary(plusPreview(committed: 30));
+      expect(copy.headline, 'You have used all your Final Preview Credits');
+      expect(copy.detail, 'Your allowance resets on Oct 7.');
+      expect(copy.upgradePrompt, isFalse);
+    });
+
+    test('no Preview-only line ever says AI Look', () {
+      for (final committed in [0, 1, 29, 30]) {
+        final copy = AiLookAllowanceCopy.forSummary(
+          plusPreview(committed: committed),
+        );
+        final rendered = [
+          copy.remainingLine,
+          copy.compactLine,
+          copy.headline ?? '',
+          copy.detail ?? '',
+        ].join(' ');
+        expect(rendered, isNot(contains('AI Look')), reason: '$committed');
+      }
+    });
+
+    test('a Tutorial plan still counts AI Looks', () {
+      final copy = AiLookAllowanceCopy.forSummary(plus(committed: 1));
+      expect(copy.remainingLine, '2 of 3 AI Looks remaining');
+      expect(copy.unit, AllowanceUnit.aiLook);
     });
   });
 }

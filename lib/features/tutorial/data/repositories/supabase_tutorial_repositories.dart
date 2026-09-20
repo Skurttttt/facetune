@@ -41,6 +41,9 @@ mixin TutorialErrorMapping {
         error.message,
         kind: switch (error.code) {
           'rate_limited' => TutorialFailureKind.quotaExceeded,
+          'tutorial_not_included' => TutorialFailureKind.notIncluded,
+          'entitlement_not_found' || 'tutorial_authorization_unavailable' =>
+            TutorialFailureKind.unavailable,
           'visual_comparison_unavailable' =>
             TutorialFailureKind.manifestUnavailable,
           'unsupported_inventory_category' =>

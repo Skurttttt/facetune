@@ -1,7 +1,8 @@
+import 'allowance_unit.dart';
 import 'reset_policy.dart';
 import 'subscription_plan_code.dart';
 
-/// The classification facts that define one Subscription V1 plan.
+/// The classification facts that define one plan.
 ///
 /// This is a plan *description*, not a purchase record and not an entitlement.
 /// It answers "what does Pro mean as a product?" — never "what is this user
@@ -20,14 +21,26 @@ import 'subscription_plan_code.dart';
 ///     Play" into a Flutter constructor would put purchase truth in the client.
 ///   * **Provider product ids.** Mapping a store product to a plan code is a
 ///     server responsibility; a client-side map would be a way to claim a plan.
+///
+/// Capability — [allowanceUnit] and [tutorialEnabled] — is present, as a
+/// description of the product for the paywall to explain. It is not what
+/// authorizes anything: the server enforces Tutorial access from its own
+/// product configuration, and a resolved `SubscriptionSummary` carries the
+/// server's answer for the account.
 class SubscriptionPlanDefinition {
   const SubscriptionPlanDefinition({
     required this.planCode,
     required this.displayName,
     required this.publiclyPurchasable,
-    required this.baseAiLookAllowance,
+    required this.baseAllowance,
     required this.resetPolicy,
-  }) : assert(baseAiLookAllowance >= 0, 'A plan allowance cannot be negative.');
+    required this.allowanceUnit,
+    required this.tutorialEnabled,
+  }) : assert(baseAllowance >= 0, 'A plan allowance cannot be negative.'),
+       assert(
+         allowanceUnit != AllowanceUnit.finalPreviewCredit || !tutorialEnabled,
+         'A Final Preview Credit never authorizes a Tutorial.',
+       );
 
   /// The plan's stable identity.
   final SubscriptionPlanCode planCode;
@@ -39,20 +52,26 @@ class SubscriptionPlanDefinition {
 
   /// Whether the plan can be bought from the app's purchase UI.
   ///
-  /// `false` for Salon Pilot, which is admin granted and must never appear in a
-  /// public purchase flow.
+  /// `false` for Free, which has nothing to buy, and for Salon Pilot, which is
+  /// admin granted and must never appear in a public purchase flow.
   final bool publiclyPurchasable;
 
-  /// The plan's configured AI Look allowance, before any administrative
-  /// adjustment.
+  /// The plan's configured allowance, in [allowanceUnit], before any
+  /// administrative adjustment.
   ///
   /// For recurring plans this is the allowance per verified billing period. For
   /// Free it is the one-time complimentary look, and for Salon Pilot it is the
   /// default initial grant.
-  final int baseAiLookAllowance;
+  final int baseAllowance;
 
   /// Whether and how the allowance replenishes.
   final ResetPolicy resetPolicy;
+
+  /// What one unit of [baseAllowance] is.
+  final AllowanceUnit allowanceUnit;
+
+  /// Whether the plan includes the Step-by-Step Tutorial for its results.
+  final bool tutorialEnabled;
 
   @override
   bool operator ==(Object other) =>
@@ -60,20 +79,25 @@ class SubscriptionPlanDefinition {
       other.planCode == planCode &&
       other.displayName == displayName &&
       other.publiclyPurchasable == publiclyPurchasable &&
-      other.baseAiLookAllowance == baseAiLookAllowance &&
-      other.resetPolicy == resetPolicy;
+      other.baseAllowance == baseAllowance &&
+      other.resetPolicy == resetPolicy &&
+      other.allowanceUnit == allowanceUnit &&
+      other.tutorialEnabled == tutorialEnabled;
 
   @override
   int get hashCode => Object.hash(
     planCode,
     displayName,
     publiclyPurchasable,
-    baseAiLookAllowance,
+    baseAllowance,
     resetPolicy,
+    allowanceUnit,
+    tutorialEnabled,
   );
 
   @override
   String toString() =>
       'SubscriptionPlanDefinition(${planCode.code}, '
-      '$baseAiLookAllowance AI Looks, ${resetPolicy.code})';
+      '$baseAllowance ${allowanceUnit.label(baseAllowance)}, '
+      '${resetPolicy.code}, tutorial: $tutorialEnabled)';
 }

@@ -194,10 +194,19 @@ class ResultBottomCta extends StatelessWidget {
     required this.label,
     required this.onPressed,
     super.key,
-  });
+  }) : child = null;
+
+  /// The same strip holding something other than the one button — a notice
+  /// that the plan does not include what the button would start, for
+  /// instance. Same frame, same rule, same safe area; only the content
+  /// differs, so the screen's layout never changes with the plan.
+  const ResultBottomCta.custom({required Widget this.child, super.key})
+    : label = '',
+      onPressed = null;
 
   final String label;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
+  final Widget? child;
 
   @override
   Widget build(BuildContext context) {
@@ -230,12 +239,14 @@ class ResultBottomCta extends StatelessWidget {
                 AppSpacing.gutter,
                 AppSpacing.sm,
               ),
-              child: PrimaryButton(
-                key: const ValueKey('result-show-tutorial'),
-                label: label,
-                icon: Icons.auto_stories_outlined,
-                onPressed: onPressed,
-              ),
+              child:
+                  child ??
+                  PrimaryButton(
+                    key: const ValueKey('result-show-tutorial'),
+                    label: label,
+                    icon: Icons.auto_stories_outlined,
+                    onPressed: onPressed,
+                  ),
             ),
           ),
         ),

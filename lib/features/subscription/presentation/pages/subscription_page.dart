@@ -70,21 +70,12 @@ class SubscriptionPage extends ConsumerWidget {
     PurchasePhase.cancelled => 'Restore purchases',
   };
 
-  /// The plans shown under the page lead, in catalog order.
-  static List<SubscriptionPlanCode> get _consumerPlans => PlanPresentation
-      .comparisonPlans
-      .where(
-        (plan) => PlanPresentation.emphasis(plan) != PlanEmphasis.professional,
-      )
-      .toList(growable: false);
-
-  /// The plans shown under the professional heading, in catalog order.
-  static List<SubscriptionPlanCode> get _professionalPlans => PlanPresentation
-      .comparisonPlans
-      .where(
-        (plan) => PlanPresentation.emphasis(plan) == PlanEmphasis.professional,
-      )
-      .toList(growable: false);
+  /// The page's sections, in reading order: the Tutorial-enabled consumer
+  /// plans under the page lead, then the Preview-only consumer plans under
+  /// their own heading, then the professional pair under theirs. Which plan
+  /// belongs where comes from the presentation contract, which reads the
+  /// catalog's capability — not from a second, hand-written list of plans.
+  static const List<PaywallSection> _sections = PaywallSection.values;
 
   /// What the in-flight plan's button says during each busy phase.
   ///
@@ -249,46 +240,40 @@ class SubscriptionPage extends ConsumerWidget {
                       ),
               ),
 
-              // Consumer plans first, then the professional plan under its
-              // own heading. Which is which comes from the presentation
-              // contract, not from a second, hand-written list of plans: the
-              // same catalog-derived order, split by weight.
-              for (final plan in _consumerPlans)
-                _planCard(
-                  ref,
-                  plan,
-                  currentPlan,
-                  paywall,
-                  purchase,
-                  purchaseAvailable,
-                ),
-
-              if (_professionalPlans.isNotEmpty) ...[
-                const _ProfessionalSectionHeader(),
-                for (final plan in _professionalPlans)
-                  _planCard(
-                    ref,
-                    plan,
-                    currentPlan,
-                    paywall,
-                    purchase,
-                    purchaseAvailable,
-                  ),
-              ],
+              // Section by section. The leading section has no heading; the
+              // Preview-only and professional sections each announce what sets
+              // them apart before their first card, so the two offer styles
+              // are told apart structurally and not only by a line on a card.
+              for (final section in _sections)
+                if (PlanPresentation.plansIn(section).isNotEmpty) ...[
+                  if (PlanPresentation.sectionTitle(section) != null)
+                    _SectionHeaderBlock(section: section),
+                  for (final plan in PlanPresentation.plansIn(section))
+                    _planCard(
+                      ref,
+                      plan,
+                      currentPlan,
+                      paywall,
+                      purchase,
+                      purchaseAvailable,
+                    ),
+                ],
 
               // What an AI Look is, in the page's own words, on the page's
               // own notice surface — so it reads as guidance rather than as
               // small print.
               const AppNotice(
                 key: ValueKey('paywall-ai-look-info'),
-                title: 'What counts as an AI Look',
+                title: 'What counts as an AI Look or a Final Preview Credit',
                 message:
-                    'One AI Look is used each time FaceTune creates a '
-                    'finished Final Makeup Preview for you. Reopening it '
-                    'from History or Saved Looks, following a Tutorial, or '
-                    'sharing it never uses another. Your Beauty Profile and '
-                    'makeup plan are always included, and if a preview '
-                    'cannot be created, nothing is used.',
+                    'One AI Look, or one Final Preview Credit, is used each '
+                    'time FaceTune creates a finished Final Makeup Preview '
+                    'for you. Reopening it from History or Saved Looks, or '
+                    'sharing it, never uses another. An AI Look also includes '
+                    'the Step-by-Step Tutorial for that look; a Final Preview '
+                    'Credit does not. Your Beauty Profile and makeup plan are '
+                    'always included, and if a preview cannot be created, '
+                    'nothing is used.',
                 icon: Icons.face_retouching_natural_outlined,
                 tone: AppTone.info,
               ),
@@ -450,12 +435,20 @@ class _PlansLead extends StatelessWidget {
 /// The supporting line claims only what the catalog defines: one makeup
 /// artist account, and a larger monthly pool of AI Looks. No client tooling,
 /// no seats, no licence — none of those exist.
-class _ProfessionalSectionHeader extends StatelessWidget {
-  const _ProfessionalSectionHeader();
+/// A section heading on the paywall, with one line on what sets the section
+/// apart.
+///
+/// Keyed per section so tests and assistive technology can find each, and
+/// worded by the presentation contract, so the page carries no copy of its
+/// own about what a section contains.
+class _SectionHeaderBlock extends StatelessWidget {
+  const _SectionHeaderBlock({required this.section});
+
+  final PaywallSection section;
 
   @override
   Widget build(BuildContext context) => Padding(
-    key: const ValueKey('paywall-professional-section'),
+    key: ValueKey('paywall-${section.name}-section'),
     padding: const EdgeInsets.only(top: AppSpacing.xs, bottom: AppSpacing.md),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -463,15 +456,17 @@ class _ProfessionalSectionHeader extends StatelessWidget {
         const Divider(height: AppSpacing.lg),
         Semantics(
           header: true,
-          child: const SectionHeader('For makeup professionals'),
+          child: SectionHeader(PlanPresentation.sectionTitle(section)!),
         ),
-        const SizedBox(height: AppSpacing.xxs),
-        Text(
-          'A larger monthly pool of AI Looks for one makeup artist account.',
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: AppColors.muted(context)),
-        ),
+        if (PlanPresentation.sectionLead(section) case final lead?) ...[
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            lead,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppColors.muted(context)),
+          ),
+        ],
       ],
     ),
   );

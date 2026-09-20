@@ -37,8 +37,11 @@ abstract final class StoreProductCatalog {
   /// live store product the day someone renamed a plan code.
   static const Map<SubscriptionPlanCode, String> _productIds = {
     SubscriptionPlanCode.plus: 'facetune_plus',
+    SubscriptionPlanCode.plusPreview: 'facetune_plus_preview',
     SubscriptionPlanCode.pro: 'facetune_pro',
+    SubscriptionPlanCode.proPreview: 'facetune_pro_preview',
     SubscriptionPlanCode.salonPro: 'facetune_salon_pro',
+    SubscriptionPlanCode.salonPreview: 'facetune_salon_preview',
   };
 
   /// The product identifiers to query from the store, in plan order.

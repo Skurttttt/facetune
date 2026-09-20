@@ -64,6 +64,38 @@ amounts.
 > location as prerequisites; the Play Billing setup guide says to upload first.
 > Uploading to Internal Testing before creating the products satisfies both.
 
+### 3a. Preview-only subscriptions (SUB-12B)
+
+Three more subscriptions, one per Tutorial-enabled plan, each with a
+**monthly** base plan at the **same price** as its sibling:
+
+| Product ID | Plan | Final Preview Credits / period | Sibling |
+| --- | --- | --- | --- |
+| `facetune_plus_preview` | FaceTune Plus Preview | 30 | `facetune_plus` |
+| `facetune_pro_preview` | FaceTune Pro Preview | 80 | `facetune_pro` |
+| `facetune_salon_preview` | Salon Preview | 350 | `facetune_salon_pro` |
+
+These are distinct products, not offers on the existing ones: a purchase is
+told apart from its same-price sibling by product id alone, and the server
+maps each id to its plan in `subscription_products` (migration
+`20260921000100`). The mapping, the allowances and the capability (no
+Tutorial) are already deployed with that migration; until the products exist
+in Play Console the paywall shows each Preview plan with "Price shown at
+checkout" and a disabled action, and nothing can be verified against them.
+
+Manual steps, in Play Console → Monetize → Subscriptions:
+
+1. Create each subscription with the exact product id above and a base plan
+   `monthly` (auto-renewing, P1M), priced identically to its sibling.
+2. Activate the base plans.
+3. Add the license-tester account to the internal testing track if it is not
+   already there, then confirm each id resolves in the app's paywall (a price
+   appears and the action enables).
+
+Do not change the existing three products, and do not add the Preview plans
+as offers or base plans *under* them: Google would then report the sibling's
+product id, and the server would grant the sibling's plan.
+
 ---
 
 ## 4. Google Cloud service account

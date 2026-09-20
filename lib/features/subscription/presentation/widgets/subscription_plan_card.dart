@@ -72,6 +72,7 @@ class SubscriptionPlanCard extends StatelessWidget {
     final theme = Theme.of(context);
     final definition = SubscriptionPlanCatalog.definitionFor(plan);
     final allowanceLine = PlanPresentation.allowanceLine(plan);
+    final capabilityLine = PlanPresentation.capabilityLine(plan);
     final tagline = PlanPresentation.tagline(plan);
     // The theme's accent, resolved per brightness: rose on the light card and
     // the lightened tone on the dark one, where raw rose falls under 3:1.
@@ -98,6 +99,7 @@ class SubscriptionPlanCard extends StatelessWidget {
         if (isCurrentPlan) 'Your current plan',
         if (_showsRecommendation) 'Recommended',
         allowanceLine,
+        capabilityLine,
         priceLabel,
         tagline,
       ].join('. '),
@@ -176,6 +178,16 @@ class SubscriptionPlanCard extends StatelessWidget {
             // Allowance — the number a person is actually choosing between.
             const SizedBox(height: AppSpacing.sm),
             _AllowanceRow(plan: plan, line: allowanceLine),
+            // Capability — the other thing the two offer styles differ in.
+            // Stated on every card, in the same place, so a Preview-only
+            // card is never mistaken for a Tutorial one by what it omits.
+            const SizedBox(height: AppSpacing.xs),
+            _CapabilityRow(
+              key: ValueKey('plan-capability-${plan.code}'),
+              line: capabilityLine,
+              includesTutorial: definition.tutorialEnabled,
+              accent: accent,
+            ),
             // Benefits.
             const SizedBox(height: AppSpacing.md),
             for (final feature in PlanPresentation.features(plan))
@@ -432,6 +444,55 @@ class _FeatureRow extends StatelessWidget {
           Expanded(child: Text(feature, style: style)),
         ],
       ),
+    );
+  }
+}
+
+/// The plan's Tutorial capability, stated in one line under the allowance.
+///
+/// Drawn as a labelled row rather than a coloured hint, so the difference
+/// between "Tutorial included" and "no Tutorial" is carried by a glyph and
+/// words together. The glyph is the tutorial's own (`auto_stories`) when the
+/// plan includes it and a plain "not included" mark when it does not; neither
+/// is decoration, and neither is a check that could read as a benefit.
+class _CapabilityRow extends StatelessWidget {
+  const _CapabilityRow({
+    required this.line,
+    required this.includesTutorial,
+    required this.accent,
+    super.key,
+  });
+
+  final String line;
+  final bool includesTutorial;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          includesTutorial
+              ? Icons.auto_stories_outlined
+              : Icons.do_not_disturb_on_outlined,
+          size: AppIconSizes.sm,
+          color: includesTutorial ? accent : AppColors.muted(context),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: Text(
+            line,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: includesTutorial
+                  ? theme.colorScheme.onSurface
+                  : AppColors.muted(context),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

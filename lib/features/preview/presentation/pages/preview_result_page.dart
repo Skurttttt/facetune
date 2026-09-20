@@ -24,8 +24,7 @@ import '../../../tutorial/data/providers/tutorial_providers.dart';
 import '../../../tutorial/domain/catalog/realized_look_filter.dart';
 import '../../../tutorial/domain/entities/canonical_preview_ref.dart';
 import '../../../tutorial/presentation/controllers/realized_look_controller.dart';
-import '../../../tutorial/presentation/pages/tutorial_page.dart';
-import '../../../tutorial/presentation/utils/tutorial_labels.dart';
+import '../../../tutorial/presentation/widgets/tutorial_access_cta.dart';
 import '../../../results/presentation/widgets/recommended_palette.dart';
 import '../../../results/presentation/widgets/result_actions.dart';
 import '../../../results/presentation/widgets/result_shell.dart';
@@ -127,17 +126,14 @@ class PreviewResultPage extends ConsumerWidget {
       // than floating over the content. This is what keeps the tabs reachable:
       // the body is measured against what is left after the bar, so nothing
       // can ever be scrolled to a position the bar is covering.
+      // The Tutorial action, or — on a plan that does not include the
+      // Tutorial and for a look that has none — the notice that says so. The
+      // widget reads the server-resolved plan; the server decides again when
+      // the action is used.
       bottomNavigationBar: hasResult
-          ? ResultBottomCta(
-              key: const ValueKey('result-primary-actions'),
-              label: TutorialLabels.startTutorial,
-              onPressed: () => context.push(
-                AppConstants.tutorialRoute,
-                extra: TutorialPageArgs(
-                  preview: CanonicalPreviewRef.standard(result.preview.id),
-                  finalPreviewUrl: result.preview.generatedImageUrl,
-                ),
-              ),
+          ? TutorialAccessCta(
+              preview: CanonicalPreviewRef.standard(result.preview.id),
+              finalPreviewUrl: result.preview.generatedImageUrl,
             )
           : null,
       body: SafeArea(

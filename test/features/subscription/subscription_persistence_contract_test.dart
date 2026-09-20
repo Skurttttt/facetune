@@ -567,10 +567,24 @@ void main() {
   });
 
   group('server and client agree on the V1 baseline', () {
+    /// The SUB-12B migration seeds the three Preview-only plans the same way
+    /// this migration seeds the V1 five. Both seeds must agree with the one
+    /// Flutter catalog, so a plan's row is looked up in whichever migration
+    /// seeds it.
+    final expansion = collapse(
+      source('supabase/migrations/20260921000100_preview_only_paid_offers.sql')
+          .split(RegExp(r'\r?\n'))
+          .where((line) => !line.trimLeft().startsWith('--'))
+          .join('\n'),
+    );
+
     /// The seeded product row for [plan], as a whitespace-collapsed string.
     String seedRowFor(SubscriptionPlanCode plan) {
-      final values = flattened.substring(
-        flattened.indexOf('insert into public.subscription_products'),
+      final seed = flattened.contains("'${plan.code}',")
+          ? flattened
+          : expansion;
+      final values = seed.substring(
+        seed.indexOf('insert into public.subscription_products'),
       );
       final start = values.indexOf("'${plan.code}',");
       expect(start, greaterThan(-1), reason: '${plan.code} must be seeded');
@@ -586,10 +600,10 @@ void main() {
         final definition = SubscriptionPlanCatalog.definitionFor(plan);
         expect(
           seedRowFor(plan),
-          contains(', ${definition.baseAiLookAllowance},'),
+          contains(', ${definition.baseAllowance},'),
           reason:
               '${plan.code} must be seeded with allowance '
-              '${definition.baseAiLookAllowance}',
+              '${definition.baseAllowance}',
         );
       }
     });
@@ -602,7 +616,7 @@ void main() {
             : "'none'";
         expect(
           seedRowFor(plan),
-          endsWith(expected),
+          contains(', $expected'),
           reason: '${plan.code} reset policy must match the catalog',
         );
       }

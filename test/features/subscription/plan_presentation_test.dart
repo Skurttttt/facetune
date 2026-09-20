@@ -1,3 +1,4 @@
+import 'package:facetune/features/subscription/domain/catalog/subscription_plan_catalog.dart';
 import 'package:facetune/features/subscription/domain/entities/subscription_plan_code.dart';
 import 'package:facetune/features/subscription/presentation/utils/plan_presentation.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,7 +25,7 @@ void main() {
       expect(PlanPresentation.purchasablePlans, contains(recommended.single));
     });
 
-    test('exactly one plan is professional, and it is purchasable', () {
+    test('exactly the two Salon offers are professional, and purchasable', () {
       final professional = SubscriptionPlanCode.values
           .where(
             (plan) =>
@@ -32,8 +33,81 @@ void main() {
           )
           .toList();
 
-      expect(professional, [SubscriptionPlanCode.salonPro]);
-      expect(PlanPresentation.purchasablePlans, contains(professional.single));
+      expect(professional, [
+        SubscriptionPlanCode.salonPro,
+        SubscriptionPlanCode.salonPreview,
+      ]);
+      for (final plan in professional) {
+        expect(PlanPresentation.purchasablePlans, contains(plan));
+      }
+    });
+
+    test('sections follow capability, never a hand-written list', () {
+      expect(PlanPresentation.plansIn(PaywallSection.tutorial), [
+        SubscriptionPlanCode.free,
+        SubscriptionPlanCode.plus,
+        SubscriptionPlanCode.pro,
+      ]);
+      expect(PlanPresentation.plansIn(PaywallSection.previewOnly), [
+        SubscriptionPlanCode.plusPreview,
+        SubscriptionPlanCode.proPreview,
+      ]);
+      expect(PlanPresentation.plansIn(PaywallSection.professional), [
+        SubscriptionPlanCode.salonPro,
+        SubscriptionPlanCode.salonPreview,
+      ]);
+      // Salon Pilot is in no section: it is not on the paywall at all.
+      for (final section in PaywallSection.values) {
+        expect(
+          PlanPresentation.plansIn(section),
+          isNot(contains(SubscriptionPlanCode.salonPilot)),
+        );
+      }
+    });
+
+    test('every card states its Tutorial capability in plain words', () {
+      for (final plan in PlanPresentation.comparisonPlans) {
+        final definition = SubscriptionPlanCatalog.definitionFor(plan);
+        final line = PlanPresentation.capabilityLine(plan);
+        if (definition.tutorialEnabled) {
+          expect(line, contains('Tutorial included'), reason: plan.code);
+        } else {
+          expect(line, contains('no Tutorial'), reason: plan.code);
+          expect(
+            PlanPresentation.features(plan),
+            contains('Step-by-Step Tutorial not included'),
+            reason: plan.code,
+          );
+          expect(
+            PlanPresentation.features(plan).join(' '),
+            isNot(contains('Tutorial included')),
+            reason: plan.code,
+          );
+        }
+      }
+    });
+
+    test('allowance lines name the unit the plan actually counts', () {
+      expect(
+        PlanPresentation.allowanceLine(SubscriptionPlanCode.plus),
+        '3 AI Looks per month',
+      );
+      expect(
+        PlanPresentation.allowanceLine(SubscriptionPlanCode.plusPreview),
+        '30 Final Preview Credits per month',
+      );
+      expect(
+        PlanPresentation.allowanceLine(SubscriptionPlanCode.proPreview),
+        '80 Final Preview Credits per month',
+      );
+      expect(
+        PlanPresentation.allowanceLine(SubscriptionPlanCode.salonPreview),
+        '350 Final Preview Credits per month',
+      );
+      expect(
+        PlanPresentation.allowanceLine(SubscriptionPlanCode.free),
+        '1 one-time AI Look',
+      );
     });
 
     test('Free and Pro are drawn plainly', () {

@@ -5,6 +5,13 @@ import {
   isOwnedGeneratedPreviewPath,
   isOwnedOriginalPath,
 } from "../_shared/storage_ownership.ts";
+import {
+  authorizeTutorialForPreview,
+  tutorialDenialCode,
+  tutorialDenialMessage,
+  tutorialDenialRetryable,
+  tutorialDenialStatus,
+} from "../_shared/tutorial_authorization.ts";
 import { requestGeminiManifest } from "./gemini_client.ts";
 import { TUTORIAL_MANIFEST_PROMPT_VERSION } from "./prompt.ts";
 import { TUTORIAL_MANIFEST_SCHEMA_VERSION } from "./schema.ts";
@@ -214,6 +221,26 @@ Deno.serve(async (request: Request) => {
           items: items ?? [],
         },
       });
+    }
+
+    // SUB-12B: a NEW tutorial needs the account's governing plan to include
+    // the Tutorial, and the preview to have been made under a Tutorial-capable
+    // allowance unit. Decided server-side, from product capability, before any
+    // download or paid analysis. It sits after the reuse branch above on
+    // purpose: an accepted manifest is historical content and is returned to
+    // every plan.
+    const tutorialAccess = await authorizeTutorialForPreview(
+      client,
+      sourceMode,
+      previewId,
+    );
+    if (!tutorialAccess.authorized) {
+      throw new FunctionFailure(
+        tutorialDenialStatus(tutorialAccess.denialReason),
+        tutorialDenialCode(tutorialAccess.denialReason),
+        tutorialDenialMessage(tutorialAccess),
+        tutorialDenialRetryable(tutorialAccess.denialReason),
+      );
     }
 
     const { data: analysis, error: analysisError } = await client

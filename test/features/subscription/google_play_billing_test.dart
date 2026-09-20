@@ -190,11 +190,17 @@ harness({
 void main() {
   // -------------------------------------------------------------------------
   group('approved store products', () {
-    test('exactly the three approved product ids are configured', () {
+    test('exactly the six approved product ids are configured', () {
+      // The three V1 products, and the three Preview-only target products the
+      // Expansion Source of Truth fixes for SUB-12B. Same-price siblings are
+      // distinct products: a purchase is told apart by its product id alone.
       expect(StoreProductCatalog.purchasableProductIds, {
         'facetune_plus',
+        'facetune_plus_preview',
         'facetune_pro',
+        'facetune_pro_preview',
         'facetune_salon_pro',
+        'facetune_salon_preview',
       });
     });
 

@@ -1,3 +1,4 @@
+import '../../domain/entities/allowance_unit.dart';
 import '../../domain/entities/billing_provider.dart';
 import '../../domain/entities/entitlement_status.dart';
 import '../../domain/entities/reset_policy.dart';
@@ -54,6 +55,19 @@ abstract final class SubscriptionSummaryDto {
       throw const FormatException('The reset policy is not recognised.');
     }
 
+    // An unknown unit is a malformed payload, never coerced to the
+    // Tutorial-capable one. An absent unit is a payload from before the unit
+    // existed, when every allowance was an AI Look. The capability flags read
+    // fail-closed, exactly as `generationAuthorized` does: absent is false. The
+    // server is the gate either way — these only decide what the UI claims.
+    final unitValue = data['allowanceUnit'];
+    final allowanceUnit = unitValue == null
+        ? AllowanceUnit.aiLook
+        : AllowanceUnit.fromCode(unitValue.toString());
+    if (allowanceUnit == null) {
+      throw const FormatException('The allowance unit is not recognised.');
+    }
+
     // Clamped at zero before construction. The server already refuses to
     // report negative capacity; this makes a malformed payload impossible to
     // turn into an assertion crash in release-mode arithmetic.
@@ -74,6 +88,9 @@ abstract final class SubscriptionSummaryDto {
       status: status,
       billingProvider: billingProvider,
       resetPolicy: resetPolicy,
+      allowanceUnit: allowanceUnit,
+      tutorialEnabled: data['tutorialEnabled'] == true,
+      finalPreviewEnabled: data['finalPreviewEnabled'] == true,
       periodStart: _time(data, 'periodStart'),
       periodEnd: _time(data, 'periodEnd'),
       startsAt: _time(data, 'startsAt'),

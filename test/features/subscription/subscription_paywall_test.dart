@@ -87,7 +87,9 @@ Future<void> pumpPaywall(
   Map<SubscriptionPlanCode, PlanPrice> prices = const {},
   bool pricesFail = false,
   bool purchaseAvailable = false,
-  Size size = const Size(393, 4000),
+  // Tall enough that every section of the eight-plan paywall is built at
+  // once; tests that want a real viewport pass their own size.
+  Size size = const Size(393, 7000),
   double textScale = 1.0,
   ThemeData? theme,
   bool reduceMotion = false,
@@ -189,8 +191,11 @@ void main() {
       expect(PlanPresentation.comparisonPlans, [
         SubscriptionPlanCode.free,
         SubscriptionPlanCode.plus,
+        SubscriptionPlanCode.plusPreview,
         SubscriptionPlanCode.pro,
+        SubscriptionPlanCode.proPreview,
         SubscriptionPlanCode.salonPro,
+        SubscriptionPlanCode.salonPreview,
       ]);
     });
 
@@ -201,11 +206,18 @@ void main() {
       expect(find.text('3 AI Looks per month'), findsOneWidget);
       expect(find.text('8 AI Looks per month'), findsOneWidget);
       expect(find.text('35 AI Looks per month'), findsOneWidget);
+      // The Preview-only siblings count a different unit, and say so.
+      expect(find.text('30 Final Preview Credits per month'), findsOneWidget);
+      expect(find.text('80 Final Preview Credits per month'), findsOneWidget);
+      expect(find.text('350 Final Preview Credits per month'), findsOneWidget);
     });
 
-    testWidgets('Salon Pro names the makeup artist account', (tester) async {
+    testWidgets('both Salon offers name the makeup artist account', (
+      tester,
+    ) async {
       await pumpPaywall(tester);
-      expect(find.text('1 Makeup Artist Account'), findsOneWidget);
+      // Salon Pro and Salon Preview: one makeup artist account each.
+      expect(find.text('1 Makeup Artist Account'), findsNWidgets(2));
     });
   });
 
@@ -269,10 +281,7 @@ void main() {
           purchaseAvailable: true,
         );
 
-        expect(
-          find.byKey(const ValueKey('plan-current-plus')),
-          findsOneWidget,
-        );
+        expect(find.byKey(const ValueKey('plan-current-plus')), findsOneWidget);
         final current = tester.widget<SecondaryButton>(
           find.byKey(const ValueKey('plan-action-plus')),
         );
@@ -365,7 +374,9 @@ void main() {
     ) async {
       await pumpPaywall(tester);
 
-      expect(find.text('Price shown at checkout'), findsNWidgets(3));
+      // One per purchasable plan: the three V1 plans and their three
+      // Preview-only siblings.
+      expect(find.text('Price shown at checkout'), findsNWidgets(6));
       expect(
         find.byKey(const ValueKey('paywall-prices-unavailable')),
         findsOneWidget,
@@ -422,7 +433,7 @@ void main() {
       );
       for (final plan in ['plus', 'pro', 'salon_pro']) {
         expect(
-          planActionOf(tester, plan),
+          await planActionOf(tester, plan),
           isNull,
           reason: '$plan must not offer a button that silently does nothing',
         );
@@ -730,7 +741,8 @@ void main() {
       expect(
         find.bySemanticsLabel(
           'FaceTune Plus. Your current plan. 3 AI Looks per month. '
-          'XTS 1.00 / month. For refining a look you already have in mind.',
+          'Tutorial included with every AI Look. XTS 1.00 / month. '
+          'For refining a look you already have in mind.',
         ),
         findsOneWidget,
       );
@@ -746,9 +758,9 @@ void main() {
         prices: const {SubscriptionPlanCode.plus: plusPrice},
       );
 
-      expect(planActionOf(tester, 'plus'), isNotNull);
+      expect(await planActionOf(tester, 'plus'), isNotNull);
       // Pro has no store product, so it must still be unbuyable.
-      expect(planActionOf(tester, 'pro'), isNull);
+      expect(await planActionOf(tester, 'pro'), isNull);
     });
   });
 
@@ -820,7 +832,7 @@ void main() {
         tester.widget(find.byKey(const ValueKey('plan-action-pro'))),
         isA<SecondaryButton>(),
       );
-      expect(planActionOf(tester, 'pro'), isNotNull);
+      expect(await planActionOf(tester, 'pro'), isNotNull);
       expect(find.text('Choose FaceTune Pro'), findsOneWidget);
     });
 
@@ -883,13 +895,13 @@ void main() {
 
       expect(find.byKey(const ValueKey('plan-current-pro')), findsOneWidget);
       expect(cardOf(tester, 'pro').emphasized, isTrue);
-      expect(planActionOf(tester, 'pro'), isNull);
+      expect(await planActionOf(tester, 'pro'), isNull);
       expect(
         find.byKey(const ValueKey('plan-recommended-plus')),
         findsOneWidget,
       );
       expect(cardOf(tester, 'plus').emphasized, isTrue);
-      expect(planActionOf(tester, 'plus'), isNotNull);
+      expect(await planActionOf(tester, 'plus'), isNotNull);
       // Exactly one badge per card, never two.
       expect(find.byType(Chip), findsNWidgets(2));
     });
@@ -933,7 +945,7 @@ void main() {
           find.byKey(const ValueKey('plan-recommended-plus')),
           findsOneWidget,
         );
-        expect(planActionOf(tester, 'plus'), isNotNull);
+        expect(await planActionOf(tester, 'plus'), isNotNull);
         expect(find.byType(Chip), findsNWidgets(2));
       },
     );
@@ -1359,7 +1371,7 @@ void stateAndMotionTests() {
         findsOneWidget,
       );
       for (final plan in ['plus', 'pro', 'salon_pro']) {
-        expect(planActionOf(tester, plan), isNull);
+        expect(await planActionOf(tester, plan), isNull);
       }
       // Nothing is spinning: unavailable is a settled state.
       expect(find.byType(ButtonProgress), findsNothing);
@@ -1475,7 +1487,7 @@ void sectionAndUtilityTests() {
         tester.getTopLeft(find.byKey(key)).dy;
 
     testWidgets(
-      'consumer plans, then the professional heading, then Salon Pro',
+      'consumer plans, then the professional heading, then the Salon pair',
       (tester) async {
         await pumpPaywall(tester);
 
@@ -1491,12 +1503,33 @@ void sectionAndUtilityTests() {
             reason: '$plan is a consumer plan and sits above the heading',
           );
         }
-        expect(
-          topOf(tester, const ValueKey('plan-card-salon_pro')),
-          greaterThan(headingTop),
+        for (final plan in ['salon_pro', 'salon_preview']) {
+          expect(
+            topOf(tester, ValueKey('plan-card-$plan')),
+            greaterThan(headingTop),
+            reason: '$plan is a professional plan and sits below the heading',
+          );
+        }
+        // The Preview-only consumer plans have a heading of their own, above
+        // the professional one and below the Tutorial-enabled plans.
+        final previewHeadingTop = topOf(
+          tester,
+          const ValueKey('paywall-previewOnly-section'),
         );
-        // Exactly one professional plan, and no second list of plans anywhere:
-        // the section is derived from the presentation contract.
+        expect(
+          previewHeadingTop,
+          greaterThan(topOf(tester, const ValueKey('plan-card-pro'))),
+        );
+        expect(
+          previewHeadingTop,
+          lessThan(topOf(tester, const ValueKey('plan-card-plus_preview'))),
+        );
+        expect(
+          headingTop,
+          greaterThan(topOf(tester, const ValueKey('plan-card-pro_preview'))),
+        );
+        // Exactly the Salon pair is professional, and no second list of plans
+        // anywhere: the sections are derived from the presentation contract.
         expect(
           PlanPresentation.comparisonPlans
               .where(
@@ -1505,7 +1538,7 @@ void sectionAndUtilityTests() {
                     PlanEmphasis.professional,
               )
               .toList(),
-          [SubscriptionPlanCode.salonPro],
+          [SubscriptionPlanCode.salonPro, SubscriptionPlanCode.salonPreview],
         );
       },
     );
@@ -1522,7 +1555,8 @@ void sectionAndUtilityTests() {
       );
       expect(
         find.text(
-          'A larger monthly pool of AI Looks for one makeup artist account.',
+          'A larger monthly pool for one makeup artist account, with the '
+          'Tutorial or without it.',
         ),
         findsOneWidget,
       );
@@ -1550,7 +1584,7 @@ void sectionAndUtilityTests() {
       );
       expect(card.color, isNull, reason: 'no black/gold or any other theme');
       expect(card.emphasized, isFalse);
-      expect(find.text('1 Makeup Artist Account'), findsOneWidget);
+      expect(find.text('1 Makeup Artist Account'), findsNWidgets(2));
       expect(find.text('35 AI Looks per month'), findsOneWidget);
     });
 
@@ -1562,7 +1596,15 @@ void sectionAndUtilityTests() {
       final notice = find.byKey(const ValueKey('paywall-ai-look-info'));
       expect(notice, findsOneWidget);
       expect(tester.widget(notice), isA<AppNotice>());
-      expect(find.text('What counts as an AI Look'), findsOneWidget);
+      expect(
+        find.text('What counts as an AI Look or a Final Preview Credit'),
+        findsOneWidget,
+      );
+      // The notice draws the one line that separates the two units.
+      expect(
+        find.textContaining('a Final Preview Credit does not'),
+        findsOneWidget,
+      );
       expect(
         find.textContaining('finished Final Makeup Preview'),
         findsOneWidget,
@@ -1575,7 +1617,8 @@ void sectionAndUtilityTests() {
         'reserv',
         'ledger',
         'token',
-        'credit',
+        // 'credit' is no longer internal vocabulary: "Final Preview Credit"
+        // is the user-facing unit of the Preview-only plans.
         'cost',
       ]) {
         expect(
@@ -1624,9 +1667,11 @@ void sectionAndUtilityTests() {
       tester,
     ) async {
       await pumpPaywall(tester, size: const Size(320, 640), textScale: 2);
+      // Eight cards at 2x on a 640-point screen is a long way down.
       await tester.scrollUntilVisible(
         find.byKey(const ValueKey('paywall-restore-purchases')),
         400,
+        maxScrolls: 400,
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();

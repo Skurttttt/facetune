@@ -49,6 +49,12 @@ const approvedProductIds = new Set([
   "facetune_plus",
   "facetune_pro",
   "facetune_salon_pro",
+  // SUB-12B Preview-only offers. Same-price siblings of the three above,
+  // distinct products: which of the two a purchase is for is decided by the
+  // provider product id and never by price.
+  "facetune_plus_preview",
+  "facetune_pro_preview",
+  "facetune_salon_preview",
 ]);
 
 function jsonResponse(body: unknown, status = 200): Response {

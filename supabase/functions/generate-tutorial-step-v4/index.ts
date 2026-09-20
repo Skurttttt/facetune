@@ -2,6 +2,13 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 import { consumeAiQuota, quotaMessage } from "../_shared/ai_quota.ts";
 import {
+  authorizeTutorialForSession,
+  tutorialDenialCode,
+  tutorialDenialMessage,
+  tutorialDenialRetryable,
+  tutorialDenialStatus,
+} from "../_shared/tutorial_authorization.ts";
+import {
   GUIDELINE_LOCK_TIMEOUT_MS,
   guidelineStoragePath,
   isRenderableCategory,
@@ -176,6 +183,25 @@ Deno.serve(async (request: Request) => {
         },
         products: presentation,
       });
+    }
+
+    // SUB-12B: rendering a step is new Tutorial generation. The account's
+    // governing plan must include the Tutorial and the session's preview must
+    // carry Tutorial-capable provenance — decided server-side from product
+    // capability, after the ready-step reuse above (a rendered step is
+    // historical content and is returned to every plan) and before the claim,
+    // the quota, and the paid render.
+    const tutorialAccess = await authorizeTutorialForSession(
+      client,
+      context.tutorialSessionId,
+    );
+    if (!tutorialAccess.authorized) {
+      throw new FunctionFailure(
+        tutorialDenialStatus(tutorialAccess.denialReason),
+        tutorialDenialCode(tutorialAccess.denialReason),
+        tutorialDenialMessage(tutorialAccess),
+        tutorialDenialRetryable(tutorialAccess.denialReason),
+      );
     }
 
     // A concurrent request holds the step. Client cancellation never proves

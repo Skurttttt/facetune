@@ -154,11 +154,11 @@ void main() {
       final catalog = source(
         '$domainRoot/catalog/subscription_plan_catalog.dart',
       );
-      for (final allowance in ['1', '3', '8', '35', '30']) {
+      for (final allowance in ['1', '3', '30', '8', '80', '35', '350']) {
         expect(
           catalog,
-          contains('baseAiLookAllowance: $allowance,'),
-          reason: 'the approved V1 allowance $allowance must be declared once',
+          contains('baseAllowance: $allowance,'),
+          reason: 'the locked allowance $allowance must be declared once',
         );
       }
 
@@ -170,7 +170,7 @@ void main() {
         final content = file.readAsStringSync().replaceAll('\r\n', '\n');
         expect(
           content,
-          isNot(contains('baseAiLookAllowance:')),
+          isNot(contains('baseAllowance:')),
           reason: '${file.path} must not declare a second allowance value',
         );
       }

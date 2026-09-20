@@ -1,4 +1,5 @@
 import '../errors/subscription_error_code.dart';
+import 'allowance_unit.dart';
 import 'billing_provider.dart';
 import 'entitlement_status.dart';
 import 'reset_policy.dart';
@@ -30,6 +31,9 @@ class SubscriptionSummary {
     this.status,
     this.billingProvider = BillingProvider.none,
     this.resetPolicy = ResetPolicy.none,
+    this.allowanceUnit = AllowanceUnit.aiLook,
+    this.tutorialEnabled = true,
+    this.finalPreviewEnabled = true,
     this.periodStart,
     this.periodEnd,
     this.startsAt,
@@ -74,6 +78,21 @@ class SubscriptionSummary {
 
   final BillingProvider billingProvider;
   final ResetPolicy resetPolicy;
+
+  /// What one unit of the governing plan's allowance is. Server-reported from
+  /// the plan's product configuration; copy that names the unit reads it here.
+  final AllowanceUnit allowanceUnit;
+
+  /// Whether the governing plan includes new Step-by-Step Tutorial generation.
+  ///
+  /// The server's statement of the plan's capability, for the UI to reflect.
+  /// It is not the gate: every Tutorial request is authorized again
+  /// server-side, against the plan and against the preview's own provenance,
+  /// so a stale or forged `true` here cannot produce a Tutorial.
+  final bool tutorialEnabled;
+
+  /// Whether the governing plan can generate new Final Previews at all.
+  final bool finalPreviewEnabled;
 
   /// Verified billing period, for recurring plans.
   final DateTime? periodStart;
@@ -147,6 +166,9 @@ class SubscriptionSummary {
       other.status == status &&
       other.billingProvider == billingProvider &&
       other.resetPolicy == resetPolicy &&
+      other.allowanceUnit == allowanceUnit &&
+      other.tutorialEnabled == tutorialEnabled &&
+      other.finalPreviewEnabled == finalPreviewEnabled &&
       other.periodStart == periodStart &&
       other.periodEnd == periodEnd &&
       other.startsAt == startsAt &&
@@ -168,6 +190,7 @@ class SubscriptionSummary {
     status,
     billingProvider,
     resetPolicy,
+    Object.hash(allowanceUnit, tutorialEnabled, finalPreviewEnabled),
     Object.hash(
       periodStart,
       periodEnd,

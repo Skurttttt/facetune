@@ -69,7 +69,10 @@ Future<FakeStoreBillingGateway> pumpPaywall(
   );
   addTearDown(store.dispose);
 
-  tester.view.physicalSize = const Size(393, 4000);
+  // Tall enough for every section of the eight-plan paywall to be built at
+  // once, so a notice at the head of the page and the Restore control at
+  // its tail are both on screen together.
+  tester.view.physicalSize = const Size(393, 7000);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 
@@ -134,7 +137,7 @@ void main() {
 
       for (final plan in ['pro', 'salon_pro']) {
         expect(
-          planActionOf(tester, plan),
+          await planActionOf(tester, plan),
           isNull,
           reason: '$plan has no store product in this fixture',
         );
@@ -152,7 +155,7 @@ void main() {
         findsOneWidget,
       );
       for (final plan in ['plus', 'pro', 'salon_pro']) {
-        expect(planActionOf(tester, plan), isNull);
+        expect(await planActionOf(tester, plan), isNull);
       }
     });
 

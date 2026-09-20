@@ -35,6 +35,15 @@ enum TutorialFailureKind {
   /// A server-enforced AI usage quota rejected the request.
   quotaExceeded,
 
+  /// The server refused to generate a NEW tutorial because the account's
+  /// governing plan does not include the Step-by-Step Tutorial, or because
+  /// the look was created with a Final Preview Credit, which never carries
+  /// one. Not retryable: nothing the client does changes the plan.
+  ///
+  /// Historical tutorials are never refused this way — an already-generated
+  /// manifest or step is returned before the server decides anything.
+  notIncluded,
+
   unknown,
 }
 

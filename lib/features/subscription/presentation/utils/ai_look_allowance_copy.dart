@@ -1,4 +1,5 @@
 import '../../../../theme/app_semantics.dart';
+import '../../domain/entities/allowance_unit.dart';
 import '../../domain/entities/entitlement_status.dart';
 import '../../domain/entities/subscription_plan_code.dart';
 import '../../domain/entities/subscription_summary.dart';
@@ -25,6 +26,7 @@ class AiLookAllowanceCopy {
     this.headline,
     this.detail,
     this.upgradePrompt = false,
+    this.unit = AllowanceUnit.aiLook,
   });
 
   /// Product name, e.g. "FaceTune Plus". Server-supplied.
@@ -53,8 +55,13 @@ class AiLookAllowanceCopy {
   /// send the user to buy something unrelated to their entitlement.
   final bool upgradePrompt;
 
-  /// AI Looks left, as reported by the server.
+  /// Allowance units left, as reported by the server.
   final int remaining;
+
+  /// What [remaining] counts. Server-reported from the governing plan; the
+  /// words for the unit come from it and nowhere else, so a Preview-only
+  /// allowance is never called AI Looks.
+  final AllowanceUnit unit;
 
   /// Whether the allowance is scoped to a billing period, which decides
   /// whether "this month" is true.
@@ -69,10 +76,10 @@ class AiLookAllowanceCopy {
   /// more useful thing to say.
   String get compactLine {
     if (headline != null) return headline!;
-    final unit = remaining == 1 ? 'AI Look' : 'AI Looks';
+    final unitLabel = unit.label(remaining);
     return periodScoped
-        ? '$remaining $unit remaining this month'
-        : '$remaining $unit remaining';
+        ? '$remaining $unitLabel remaining this month'
+        : '$remaining $unitLabel remaining';
   }
 
   /// Builds the copy for [state], or null when there is nothing honest to say.
@@ -98,10 +105,11 @@ class AiLookAllowanceCopy {
     final isFree = summary.planCode == SubscriptionPlanCode.free;
     final qualifier = isSalonPilot ? 'Research Access' : null;
 
-    final unit = allowance == 1 ? 'AI Look' : 'AI Looks';
+    final unit = summary.allowanceUnit;
+    final unitLabel = unit.label(allowance);
     final remainingLine = isFree
-        ? '$remaining of $allowance complimentary $unit remaining'
-        : '$remaining of $allowance $unit remaining';
+        ? '$remaining of $allowance complimentary $unitLabel remaining'
+        : '$remaining of $allowance $unitLabel remaining';
 
     // "Resets" and "Expires" are different promises and must not be swapped: a
     // recurring plan replenishes on its renewal date, while an admin grant
@@ -124,6 +132,7 @@ class AiLookAllowanceCopy {
       detail: detail,
       tone: tone,
       upgradePrompt: upgradePrompt,
+      unit: unit,
     );
 
     // A blocked entitlement outranks the count. Saying "you have run out" to
@@ -173,7 +182,7 @@ class AiLookAllowanceCopy {
 
     final resetsOn = _formatDate(summary.resetAt, summary);
     return build(
-      headline: 'You have used all your AI Looks',
+      headline: 'You have used all your ${unit.plural}',
       detail: resetsOn == null
           ? 'Your allowance will replenish with your next billing period.'
           : 'Your allowance resets on $resetsOn.',

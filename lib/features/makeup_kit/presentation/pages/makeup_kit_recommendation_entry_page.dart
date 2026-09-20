@@ -29,8 +29,8 @@ import '../../../tutorial/domain/catalog/realized_look_filter.dart';
 import '../../../tutorial/domain/entities/canonical_preview_ref.dart';
 import '../../../tutorial/presentation/controllers/realized_look_controller.dart';
 import '../../domain/entities/kit_makeup_recommendation.dart';
-import '../../../tutorial/presentation/pages/tutorial_page.dart';
 import '../../../tutorial/presentation/utils/tutorial_labels.dart';
+import '../../../tutorial/presentation/widgets/tutorial_access_cta.dart';
 
 class MakeupKitRecommendationEntryPage extends ConsumerWidget {
   const MakeupKitRecommendationEntryPage({super.key});
@@ -115,16 +115,11 @@ class MakeupKitRecommendationEntryPage extends ConsumerWidget {
       // preview reference, which is what carries the source mode through to the
       // tutorial's manifest and steps. No Standard crossover.
       bottomNavigationBar: resultReady
-          ? ResultBottomCta(
-              key: const ValueKey('result-primary-actions'),
-              label: TutorialLabels.startTutorial,
-              onPressed: () => context.push(
-                AppConstants.tutorialRoute,
-                extra: TutorialPageArgs(
-                  preview: CanonicalPreviewRef.myMakeupKit(preview!.id),
-                  finalPreviewUrl: preview.generatedImageUrl,
-                ),
-              ),
+          // Plan-aware: the Tutorial action, or the notice that the account's
+          // plan does not include it. See `TutorialAccessCta`.
+          ? TutorialAccessCta(
+              preview: CanonicalPreviewRef.myMakeupKit(preview!.id),
+              finalPreviewUrl: preview.generatedImageUrl,
             )
           : null,
       body: SafeArea(

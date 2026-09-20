@@ -22,12 +22,17 @@ void main() {
       expect(SubscriptionPlanCode.salonPilot.code, 'salon_pilot');
     });
 
-    test('has no members beyond the canonical five', () {
+    test('has no members beyond the canonical eight', () {
+      // The V1 five plus the three Preview-only codes the Expansion Source of
+      // Truth adds from SUB-12 onward.
       expect(SubscriptionPlanCode.values.map((plan) => plan.code).toSet(), {
         'free',
         'plus',
+        'plus_preview',
         'pro',
+        'pro_preview',
         'salon_pro',
+        'salon_preview',
         'salon_pilot',
       });
     });
@@ -48,6 +53,11 @@ void main() {
         'salon_research',
         'research_salon',
         'salon_trial',
+        // Forbidden aliases for the Preview-only offers.
+        'plus_no_tutorial',
+        'preview_plus',
+        'pro_no_tutorial',
+        'salon_preview_only',
       ];
       for (final code in forbidden) {
         expect(

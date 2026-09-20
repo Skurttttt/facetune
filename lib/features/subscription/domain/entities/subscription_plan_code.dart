@@ -1,22 +1,27 @@
-/// The canonical Subscription V1 plan identities.
+/// The canonical plan identities.
 ///
 /// [code] is the stable identifier shared by Flutter, the backend, and the
 /// future Web Admin. It is the plan's *identity* — never a display label, never
-/// a price, never a limit.
+/// a price, never a limit, and never a capability.
 ///
 /// A plan must always be carried explicitly. It must never be inferred from:
-/// price, localized store text, AI Look limit, whether an expiration date
-/// exists, a boolean such as `isPremium`, a UI label, or a product title
-/// returned by a billing provider.
+/// price, localized store text, allowance, whether an expiration date exists, a
+/// boolean such as `isPremium`, a UI label, or a product title returned by a
+/// billing provider. Plus and Plus Preview share a price by design; only their
+/// provider product identity and their configured capability tell them apart.
 ///
 /// Substitute names such as `premium`, `premium_plus`, `professional`, `salon`,
-/// `salon_test`, `salon_research`, or `salon_trial` are forbidden without an
-/// approved revision of the Subscription/Admin Shared Contract.
+/// `salon_test`, `salon_research`, `salon_trial`, `plus_no_tutorial`, or
+/// `preview_plus` are forbidden without an approved revision of the
+/// Subscription Expansion Source of Truth.
 enum SubscriptionPlanCode {
   free('free'),
   plus('plus'),
+  plusPreview('plus_preview'),
   pro('pro'),
+  proPreview('pro_preview'),
   salonPro('salon_pro'),
+  salonPreview('salon_preview'),
   salonPilot('salon_pilot');
 
   const SubscriptionPlanCode(this.code);
