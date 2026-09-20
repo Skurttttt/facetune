@@ -94,13 +94,17 @@ class SubscriptionSummaryCard extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: AppSpacing.sm),
-            // The count and the date read as one statement to a screen reader,
-            // rather than as two unrelated fragments.
+            // The count, the date, and any purchased credits read as one
+            // statement to a screen reader, rather than as unrelated
+            // fragments. The purchased line sits under the plan's own figure
+            // and is never added to it.
             Semantics(
               container: true,
-              label: copy.renewalLine == null
-                  ? copy.remainingLine
-                  : '${copy.remainingLine}. ${copy.renewalLine}',
+              label: [
+                copy.remainingLine,
+                ?copy.renewalLine,
+                ?copy.purchasedLine,
+              ].join('. '),
               child: ExcludeSemantics(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -113,6 +117,14 @@ class SubscriptionSummaryCard extends ConsumerWidget {
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: AppColors.muted(context),
                         ),
+                      ),
+                    ],
+                    if (copy.purchasedLine != null) ...[
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        key: const ValueKey('subscription-summary-purchased'),
+                        copy.purchasedLine!,
+                        style: theme.textTheme.bodyMedium,
                       ),
                     ],
                   ],

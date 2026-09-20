@@ -2,6 +2,7 @@ import '../errors/subscription_error_code.dart';
 import 'allowance_unit.dart';
 import 'billing_provider.dart';
 import 'entitlement_status.dart';
+import 'purchased_credit_summary.dart';
 import 'reset_policy.dart';
 import 'subscription_plan_code.dart';
 import 'subscription_usage_summary.dart';
@@ -42,6 +43,7 @@ class SubscriptionSummary {
     this.autoRenew = false,
     this.denialReason,
     this.verifiedAt,
+    this.purchasedCredits = PurchasedCreditSummary.none,
   });
 
   /// Whether an entitlement row exists for this account at all.
@@ -117,6 +119,12 @@ class SubscriptionSummary {
   /// When the backend last verified this against the billing provider.
   final DateTime? verifiedAt;
 
+  /// Purchased top-up credits stored on the account (SUB-13B), and whether the
+  /// governing plan may spend them. Server-derived, separate from [usage], and
+  /// never added to it: the included allowance and purchased credits are
+  /// different money and stay different numbers.
+  final PurchasedCreditSummary purchasedCredits;
+
   /// Whether this plan's allowance ever replenishes.
   bool get replenishes => resetPolicy == ResetPolicy.billingPeriod;
 
@@ -176,7 +184,8 @@ class SubscriptionSummary {
       other.resetAt == resetAt &&
       other.autoRenew == autoRenew &&
       other.denialReason == denialReason &&
-      other.verifiedAt == verifiedAt;
+      other.verifiedAt == verifiedAt &&
+      other.purchasedCredits == purchasedCredits;
 
   @override
   int get hashCode => Object.hash(
@@ -201,6 +210,7 @@ class SubscriptionSummary {
       denialReason,
       verifiedAt,
     ),
+    purchasedCredits,
   );
 
   @override

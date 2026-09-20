@@ -27,6 +27,8 @@ class AiLookAllowanceCopy {
     this.detail,
     this.upgradePrompt = false,
     this.unit = AllowanceUnit.aiLook,
+    this.purchasedLine,
+    this.nextPurchasedUnit,
   });
 
   /// Product name, e.g. "FaceTune Plus". Server-supplied.
@@ -69,17 +71,59 @@ class AiLookAllowanceCopy {
 
   final AppTone tone;
 
+  /// Purchased top-up credits stored on the account, e.g. "Plus 2 purchased
+  /// AI Looks and 10 purchased Final Preview Credits", or null when none.
+  ///
+  /// Counts are server-reported. Shown beneath the plan's own figure and
+  /// never added to it: the two are different money and stay different
+  /// numbers. When the plan cannot spend them right now, the line says so
+  /// rather than promising capacity the server would refuse.
+  final String? purchasedLine;
+
   /// The compact line shown beside the Generate action, e.g.
   /// "2 AI Looks remaining this month".
   ///
   /// When access is blocked or the allowance is spent, the headline is the
-  /// more useful thing to say.
+  /// more useful thing to say. When the plan's own allowance is spent but a
+  /// purchased credit will be used, the line says which kind — so a person on
+  /// a Tutorial plan is told, before spending it, that a Preview-only credit
+  /// carries no Tutorial.
   String get compactLine {
     if (headline != null) return headline!;
+    if (nextPurchasedUnit case final purchasedUnit?) {
+      return purchasedUnit == AllowanceUnit.aiLook
+          ? 'Next look uses a purchased AI Look'
+          : 'Next look uses a purchased Final Preview Credit (no Tutorial)';
+    }
     final unitLabel = unit.label(remaining);
     return periodScoped
         ? '$remaining $unitLabel remaining this month'
         : '$remaining $unitLabel remaining';
+  }
+
+  /// The unit the next generation would spend from a purchased credit, when
+  /// the plan's own allowance is used up and a credit is available. Null when
+  /// the next look comes from the plan or nothing is available.
+  final AllowanceUnit? nextPurchasedUnit;
+
+  /// The purchased-credit line for [summary], or null when there is none.
+  static String? purchasedCreditsLine(SubscriptionSummary summary) {
+    final credits = summary.purchasedCredits;
+    if (!credits.hasAny) return null;
+    final parts = <String>[
+      if (credits.tutorialCapableRemaining > 0)
+        '${credits.tutorialCapableRemaining} purchased '
+            '${AllowanceUnit.aiLook.label(credits.tutorialCapableRemaining)}',
+      if (credits.previewOnlyRemaining > 0)
+        '${credits.previewOnlyRemaining} purchased '
+            '${AllowanceUnit.finalPreviewCredit.label(credits.previewOnlyRemaining)}',
+    ];
+    final stored = 'Plus ${parts.join(' and ')}';
+    // A blocked, lapsed, Free, or Salon Pilot account keeps its credits and
+    // is told they are waiting, not that they can be spent.
+    return credits.usable
+        ? stored
+        : '$stored — kept for you, usable while a paid plan is active';
   }
 
   /// Builds the copy for [state], or null when there is nothing honest to say.
@@ -115,6 +159,14 @@ class AiLookAllowanceCopy {
     // recurring plan replenishes on its renewal date, while an admin grant
     // simply ends. Both dates are server-verified.
     final renewalLine = _renewalLine(summary);
+    final purchasedLine = purchasedCreditsLine(summary);
+    // Whether the next look would spend a purchased credit rather than the
+    // plan's own allowance — the server's answer, carried for wording only.
+    final credits = summary.purchasedCredits;
+    final nextPurchasedUnit =
+        credits.nextDrawsFromPurchased && credits.availableCompatible > 0
+        ? credits.nextAllowanceUnit
+        : null;
 
     AiLookAllowanceCopy build({
       String? headline,
@@ -133,6 +185,8 @@ class AiLookAllowanceCopy {
       tone: tone,
       upgradePrompt: upgradePrompt,
       unit: unit,
+      purchasedLine: purchasedLine,
+      nextPurchasedUnit: nextPurchasedUnit,
     );
 
     // A blocked entitlement outranks the count. Saying "you have run out" to
@@ -157,6 +211,13 @@ class AiLookAllowanceCopy {
 
     if (remaining > 0) {
       return build(tone: remaining == 1 ? AppTone.warning : AppTone.info);
+    }
+
+    // The plan's own allowance is spent, but the server will draw the next
+    // look from a purchased credit. Not exhausted, then: the compact line
+    // names the credit that will be used, and nothing here says "used all".
+    if (nextPurchasedUnit != null) {
+      return build(tone: AppTone.info);
     }
 
     // Exhausted. What to say next differs by plan, because what the user can

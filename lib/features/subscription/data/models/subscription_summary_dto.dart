@@ -1,6 +1,7 @@
 import '../../domain/entities/allowance_unit.dart';
 import '../../domain/entities/billing_provider.dart';
 import '../../domain/entities/entitlement_status.dart';
+import '../../domain/entities/purchased_credit_summary.dart';
 import '../../domain/entities/reset_policy.dart';
 import '../../domain/entities/subscription_plan_code.dart';
 import '../../domain/entities/subscription_summary.dart';
@@ -77,6 +78,29 @@ abstract final class SubscriptionSummaryDto {
       reservedUsage: _count(data, 'reservedUsage'),
     );
 
+    // SUB-13B purchased credits. Absent keys are a payload from before top-ups
+    // existed: no credits, nothing usable. The next-source and next-unit
+    // fields read fail-closed like the capability flags — an unrecognised
+    // value is null, never coerced to the Tutorial-capable unit — and none of
+    // this is the gate: the server reserves from its own figures.
+    final nextSourceValue = data['nextAllowanceSource'];
+    final nextUnitValue = data['nextAllowanceUnit'];
+    final purchasedCredits = PurchasedCreditSummary(
+      tutorialCapableRemaining: _count(
+        data,
+        'purchasedTutorialCreditsRemaining',
+      ),
+      previewOnlyRemaining: _count(data, 'purchasedPreviewCreditsRemaining'),
+      usable: data['purchasedCreditsUsable'] == true,
+      availableCompatible: _count(data, 'availablePurchasedCredits'),
+      nextAllowanceSource: nextSourceValue == null
+          ? null
+          : AllowanceSource.fromCode(nextSourceValue.toString()),
+      nextAllowanceUnit: nextUnitValue == null
+          ? null
+          : AllowanceUnit.fromCode(nextUnitValue.toString()),
+    );
+
     return SubscriptionSummary(
       hasEntitlement: hasEntitlement,
       planCode: planCode,
@@ -99,6 +123,7 @@ abstract final class SubscriptionSummaryDto {
       autoRenew: data['autoRenew'] == true,
       denialReason: _optionalString(data, 'denialReason'),
       verifiedAt: _time(data, 'verifiedAt'),
+      purchasedCredits: purchasedCredits,
     );
   }
 

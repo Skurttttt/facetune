@@ -4,8 +4,11 @@ import 'package:facetune/features/subscription/domain/entities/purchase_evidence
 import 'package:facetune/features/subscription/domain/entities/purchase_update.dart';
 import 'package:facetune/features/subscription/domain/entities/store_product.dart';
 import 'package:facetune/features/subscription/domain/entities/subscription_plan_code.dart';
+import 'package:facetune/features/subscription/domain/entities/top_up_pack.dart';
+import 'package:facetune/features/subscription/domain/entities/top_up_store_product.dart';
 import 'package:facetune/features/subscription/domain/repositories/purchase_verification_gateway.dart';
 import 'package:facetune/features/subscription/domain/repositories/store_billing_gateway.dart';
+import 'package:facetune/features/subscription/domain/repositories/top_up_verification_gateway.dart';
 
 /// A billing provider driven entirely from a test.
 ///
@@ -16,11 +19,13 @@ class FakeStoreBillingGateway implements StoreBillingGateway {
   FakeStoreBillingGateway({
     this.available = true,
     this.products = const [],
+    this.topUpProducts = const [],
     this.startThrows,
   });
 
   final bool available;
   final List<StoreProduct> products;
+  final List<TopUpStoreProduct> topUpProducts;
 
   /// Thrown from [startPurchase] to simulate a provider that would not open.
   final Object? startThrows;
@@ -92,6 +97,40 @@ class FakeStoreBillingGateway implements StoreBillingGateway {
     completed.add(evidence);
   }
 
+  /// Top-up packs whose purchase sheet was asked for.
+  final List<TopUpPack> startedTopUps = [];
+
+  /// Top-up purchases completed after server verification, with whether the
+  /// server had already consumed each — so a test can prove the device only
+  /// consumes as the second chance.
+  final List<({PurchaseEvidence evidence, bool consumedByServer})>
+  completedTopUps = [];
+
+  @override
+  Future<List<TopUpStoreProduct>> loadTopUpProducts() async => topUpProducts;
+
+  @override
+  Future<void> startTopUpPurchase(
+    TopUpPack pack, {
+    String? obfuscatedAccountId,
+  }) async {
+    final failure = startThrows;
+    if (failure != null) throw failure;
+    startedTopUps.add(pack);
+    accountIds.add(obfuscatedAccountId);
+  }
+
+  @override
+  Future<void> completeVerifiedTopUp(
+    PurchaseEvidence evidence, {
+    required bool consumedByServer,
+  }) async {
+    completedTopUps.add((
+      evidence: evidence,
+      consumedByServer: consumedByServer,
+    ));
+  }
+
   @override
   Future<void> dispose() async {
     disposeCount++;
@@ -124,5 +163,39 @@ class FakePurchaseVerificationGateway implements PurchaseVerificationGateway {
     await gate?.future;
     final thrown = failure;
     if (thrown != null) throw thrown;
+  }
+}
+
+/// A top-up verification backend that records what it was asked to verify.
+///
+/// [failure], when set, is thrown to stand in for a server that refused or
+/// could not be reached — the case that must never end in a granted credit.
+/// [consumedByServer] is what a successful answer reports back.
+class FakeTopUpVerificationGateway implements TopUpVerificationGateway {
+  FakeTopUpVerificationGateway({
+    this.failure,
+    this.consumedByServer = true,
+    this.replayed = false,
+  });
+
+  final Object? failure;
+  final bool consumedByServer;
+  final bool replayed;
+  final List<PurchaseEvidence> received = [];
+  final List<PurchaseVerificationSource> sources = [];
+
+  @override
+  Future<TopUpVerificationResult> verify(
+    PurchaseEvidence evidence, {
+    PurchaseVerificationSource source = PurchaseVerificationSource.purchase,
+  }) async {
+    received.add(evidence);
+    sources.add(source);
+    final thrown = failure;
+    if (thrown != null) throw thrown;
+    return TopUpVerificationResult(
+      consumedByServer: consumedByServer,
+      replayed: replayed,
+    );
   }
 }

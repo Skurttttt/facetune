@@ -6,9 +6,11 @@ import '../../../authentication/presentation/controllers/auth_controller.dart';
 import '../../data/providers/subscription_providers.dart';
 import '../../domain/entities/purchase_update.dart';
 import '../../domain/entities/subscription_plan_code.dart';
+import '../../domain/entities/top_up_pack.dart';
 import '../../domain/errors/subscription_state_failure.dart';
 import '../../domain/repositories/purchase_verification_gateway.dart';
 import '../../domain/repositories/store_billing_gateway.dart';
+import '../../domain/repositories/top_up_verification_gateway.dart';
 import 'purchase_state.dart';
 import 'subscription_controller.dart';
 
@@ -35,6 +37,10 @@ final purchaseControllerProvider =
         // build that cannot reach one still shows the paywall and its prices
         // rather than failing to render it.
         verification: () => ref.read(purchaseVerificationGatewayProvider),
+        // The top-up verifier, resolved the same lazy way. A separate gateway
+        // and a separate Edge Function, so pack evidence and plan evidence can
+        // never take each other's path.
+        topUpVerification: () => ref.read(topUpVerificationGatewayProvider),
         // Read at call time rather than watched: refreshing authoritative state
         // is an action taken after a verified purchase, and watching the
         // subscription controller here would rebuild the billing connection
@@ -61,11 +67,13 @@ class PurchaseController extends StateNotifier<PurchaseState> {
     required StoreBillingGateway store,
     required PurchaseVerificationGateway Function() verification,
     required Future<void> Function() refreshSubscription,
+    TopUpVerificationGateway Function()? topUpVerification,
     String? accountId,
     Duration restoreSettleWindow = const Duration(seconds: 5),
     Duration restoreTimeout = const Duration(seconds: 15),
   }) : _store = store,
        _verification = verification,
+       _topUpVerification = topUpVerification,
        _refreshSubscription = refreshSubscription,
        _accountId = accountId,
        _restoreSettleWindow = restoreSettleWindow,
@@ -77,6 +85,11 @@ class PurchaseController extends StateNotifier<PurchaseState> {
   /// Resolved on demand rather than held, so constructing this controller
   /// never requires a backend connection. See the provider above.
   final PurchaseVerificationGateway Function() _verification;
+
+  /// The top-up counterpart of [_verification]. Optional so a build without
+  /// top-ups wired still runs the subscription flow; a pack purchase arriving
+  /// with none configured is refused rather than sent to the plan verifier.
+  final TopUpVerificationGateway Function()? _topUpVerification;
   final Future<void> Function() _refreshSubscription;
   final String? _accountId;
 
@@ -194,6 +207,40 @@ class PurchaseController extends StateNotifier<PurchaseState> {
     }
   }
 
+  /// Opens Google Play's purchase sheet for a top-up [pack].
+  ///
+  /// The same shape as [buy]: the sheet is opened and nothing else happens
+  /// here. The purchase arrives on the provider stream carrying the pack as a
+  /// routing hint, is verified by the server, and the credits it grants are
+  /// read back — never counted here.
+  ///
+  /// The paywall only offers a pack to an account the server says may use
+  /// one, but that is a courtesy, not the gate: the server refuses a grant to
+  /// an ineligible account, and Google refunds the unconsumed purchase.
+  Future<void> buyTopUp(TopUpPack pack) async {
+    if (!state.canPurchase) return;
+
+    state = state.copyWith(
+      phase: PurchasePhase.starting,
+      // Naming the pack clears any plan hint; see `PurchaseState.copyWith`.
+      topUpPack: pack,
+      clearMessage: true,
+      viaRestore: false,
+    );
+
+    try {
+      await _store.startTopUpPurchase(pack, obfuscatedAccountId: _accountId);
+    } on Object {
+      if (!mounted) return;
+      state = state.copyWith(
+        phase: PurchasePhase.failed,
+        message:
+            'Google Play could not open the purchase. Please try again in a '
+            'moment.',
+      );
+    }
+  }
+
   /// Recovers a subscription this account already owns.
   ///
   /// The path a restored purchase takes is deliberately the same one a fresh
@@ -279,9 +326,12 @@ class PurchaseController extends StateNotifier<PurchaseState> {
         state = state.copyWith(
           phase: PurchasePhase.awaitingPayment,
           plan: update.planCode,
-          message:
-              'Google Play is waiting for your payment to complete. Your plan '
-              'starts once it does.',
+          topUpPack: update.topUpPack,
+          message: update.isTopUp
+              ? 'Google Play is waiting for your payment to complete. Your '
+                    'credits are added once it does.'
+              : 'Google Play is waiting for your payment to complete. Your '
+                    'plan starts once it does.',
         );
 
       case PurchaseUpdateStatus.purchased:
@@ -289,7 +339,11 @@ class PurchaseController extends StateNotifier<PurchaseState> {
         // Noted before verification starts, so a restore that found something
         // never also reports that it found nothing when its window closes.
         _restoreDeliveredPurchase = true;
-        await _verifyWithBackend(update);
+        if (update.isTopUp) {
+          await _verifyTopUpWithBackend(update);
+        } else {
+          await _verifyWithBackend(update);
+        }
 
       case PurchaseUpdateStatus.cancelled:
         state = state.copyWith(
@@ -378,6 +432,99 @@ class PurchaseController extends StateNotifier<PurchaseState> {
       state = state.copyWith(
         phase: PurchasePhase.verified,
         message: 'Your purchase is confirmed.',
+      );
+    } finally {
+      _verifying.remove(evidence.purchaseToken);
+    }
+  }
+
+  /// The only thing this app does with a successful top-up pack purchase.
+  ///
+  /// The same order as [_verifyWithBackend], for the same reason:
+  ///
+  /// ```text
+  /// verify + grant on the server  →  consume with the provider  →  re-read
+  /// ```
+  ///
+  /// Consuming first would tell Google the credits were delivered before
+  /// anything had checked that they should be, and would waive the automatic
+  /// refund that protects a purchase nothing was able to verify. Normally the
+  /// server consumes itself, immediately after the grant; the device consumes
+  /// only when the server reports it could not, and the grant already exists
+  /// either way. Nothing here counts a credit.
+  Future<void> _verifyTopUpWithBackend(PurchaseUpdate update) async {
+    final evidence = update.evidence;
+    if (evidence == null || !update.hasVerifiableEvidence) {
+      state = state.copyWith(
+        phase: PurchasePhase.failed,
+        message:
+            'Google Play did not return enough information to confirm this '
+            'purchase.',
+      );
+      return;
+    }
+
+    if (!_verifying.add(evidence.purchaseToken)) return;
+
+    state = state.copyWith(
+      phase: PurchasePhase.verifying,
+      topUpPack: update.topUpPack,
+      message: 'Confirming your purchase…',
+    );
+
+    try {
+      final verifier = _topUpVerification;
+      if (verifier == null) {
+        // Nothing can grant a credit in this build. The purchase is left
+        // unconsumed on purpose, so Google refunds it.
+        state = state.copyWith(
+          phase: PurchasePhase.failed,
+          message:
+              'Top-up packs cannot be confirmed yet. If you were charged, '
+              'Google Play will refund it automatically.',
+        );
+        return;
+      }
+
+      TopUpVerificationResult result;
+      try {
+        result = await verifier().verify(
+          evidence,
+          source: update.status == PurchaseUpdateStatus.restored
+              ? PurchaseVerificationSource.restore
+              : PurchaseVerificationSource.purchase,
+        );
+      } on SubscriptionStateFailure catch (failure) {
+        if (!mounted) return;
+        // Unconsumed on purpose: an unverified pack is refunded by Google.
+        state = state.copyWith(
+          phase: PurchasePhase.failed,
+          message: failure.message,
+        );
+        return;
+      } on Object {
+        if (!mounted) return;
+        state = state.copyWith(
+          phase: PurchasePhase.failed,
+          message: 'Your purchase could not be confirmed. Please try again.',
+        );
+        return;
+      }
+
+      // Granted. Only now may the provider be told the purchase was handled.
+      await _store.completeVerifiedTopUp(
+        evidence,
+        consumedByServer: result.consumedByServer,
+      );
+
+      // Ask the server what the account actually has. Nothing here decides it.
+      await _refreshSubscription();
+      if (!mounted) return;
+      state = state.copyWith(
+        phase: PurchasePhase.verified,
+        message: result.replayed
+            ? 'This purchase was already added to your account.'
+            : 'Your purchase is confirmed. Your credits have been added.',
       );
     } finally {
       _verifying.remove(evidence.purchaseToken);

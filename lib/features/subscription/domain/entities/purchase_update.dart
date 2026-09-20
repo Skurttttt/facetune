@@ -1,5 +1,6 @@
 import 'purchase_evidence.dart';
 import 'subscription_plan_code.dart';
+import 'top_up_pack.dart';
 
 /// What the provider last reported about a purchase the user started.
 ///
@@ -49,6 +50,7 @@ class PurchaseUpdate {
     required this.status,
     required this.awaitingCompletion,
     this.planCode,
+    this.topUpPack,
     this.evidence,
     this.message,
   });
@@ -69,6 +71,15 @@ class PurchaseUpdate {
   /// Never used to grant.
   final SubscriptionPlanCode? planCode;
 
+  /// Which top-up pack the purchased product maps to, when it is one — see
+  /// `TopUpPackCatalog.packFor`. A display and routing hint: it decides which
+  /// verifier the evidence is sent to, and nothing about what is granted.
+  /// Null for every subscription product.
+  final TopUpPack? topUpPack;
+
+  /// Whether this update concerns a top-up pack rather than a plan.
+  bool get isTopUp => topUpPack != null;
+
   /// Provider evidence for the backend to verify. Null unless the state could
   /// produce one.
   final PurchaseEvidence? evidence;
@@ -82,5 +93,6 @@ class PurchaseUpdate {
 
   @override
   String toString() =>
-      'PurchaseUpdate(${status.name}, plan: ${planCode?.code ?? '-'})';
+      'PurchaseUpdate(${status.name}, plan: ${planCode?.code ?? '-'}, '
+      'pack: ${topUpPack?.code ?? '-'})';
 }

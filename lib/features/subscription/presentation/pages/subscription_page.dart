@@ -5,13 +5,18 @@ import '../../../../shared/widgets/app_ui.dart';
 import '../../../../theme/app_semantics.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../domain/entities/subscription_plan_code.dart';
+import '../../domain/entities/subscription_summary.dart';
+import '../../domain/entities/top_up_pack.dart';
 import '../controllers/paywall_controller.dart';
 import '../controllers/paywall_state.dart';
 import '../controllers/purchase_controller.dart';
 import '../controllers/purchase_state.dart';
 import '../controllers/subscription_controller.dart';
+import '../controllers/top_up_offers_controller.dart';
+import '../utils/ai_look_allowance_copy.dart';
 import '../utils/plan_presentation.dart';
 import '../widgets/subscription_plan_card.dart';
+import '../widgets/top_up_pack_card.dart';
 
 /// The public plan comparison.
 ///
@@ -125,6 +130,29 @@ class SubscriptionPage extends ConsumerWidget {
     ),
   );
 
+  /// What a pack's button says during each busy phase of *its* purchase.
+  static String? _topUpInFlightLabel(PurchasePhase phase) => switch (phase) {
+    PurchasePhase.starting => 'Opening Google Play…',
+    PurchasePhase.awaitingPayment => 'Waiting for Google Play…',
+    PurchasePhase.verifying => 'Adding your credits…',
+    _ => null,
+  };
+
+  /// The packs offered to an account, or none.
+  ///
+  /// Offered only when the server says purchased credits are usable on the
+  /// governing plan — an active, eligible paid plan — and only the pack that
+  /// plan is approved to buy: Extra AI Look for the Tutorial-enabled plans,
+  /// Preview Boost for the Preview-only plans, nothing for Free and Salon
+  /// Pilot. A courtesy, not the gate: the server refuses an ineligible grant
+  /// regardless, and Google refunds the purchase.
+  static List<TopUpPack> _offeredPacks(SubscriptionSummary? summary) {
+    if (summary == null || !summary.purchasedCredits.usable) return const [];
+    return TopUpPack.values
+        .where((pack) => pack.isOfferedTo(summary.planCode))
+        .toList(growable: false);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final paywall = ref.watch(paywallControllerProvider);
@@ -135,6 +163,15 @@ class SubscriptionPage extends ConsumerWidget {
     // entitlement whose verified period has ended is not a current plan: its
     // card must offer the purchase again rather than a disabled "current".
     final currentPlan = subscription.summary?.currentPlan;
+    final offeredPacks = _offeredPacks(subscription.summary);
+    // Pack prices are only asked for when a pack is on offer, so an account
+    // that cannot buy one never queries the store for it.
+    final topUpOffers = offeredPacks.isEmpty
+        ? null
+        : ref.watch(topUpOffersControllerProvider);
+    final purchasedLine = subscription.summary == null
+        ? null
+        : AiLookAllowanceCopy.purchasedCreditsLine(subscription.summary!);
 
     return Scaffold(
       appBar: const FaceTuneTopBar(title: 'Plans'),
@@ -258,6 +295,67 @@ class SubscriptionPage extends ConsumerWidget {
                       purchaseAvailable,
                     ),
                 ],
+
+              // Top-up packs, for accounts that can use them. Structured like
+              // the plan sections — a hairline, a title, one line on what the
+              // section is — and absent entirely for everyone else, so Free
+              // and Salon Pilot are never shown a pack they cannot buy.
+              if (offeredPacks.isNotEmpty) ...[
+                Padding(
+                  key: const ValueKey('paywall-top-up-section'),
+                  padding: const EdgeInsets.only(
+                    top: AppSpacing.xs,
+                    bottom: AppSpacing.md,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Divider(height: AppSpacing.lg),
+                      Semantics(
+                        header: true,
+                        child: const SectionHeader('Top-up packs'),
+                      ),
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        'Add credits to your current plan. They are used '
+                        'after the AI Looks or Final Preview Credits your '
+                        'plan includes, and they stay on your account.',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppColors.muted(context),
+                        ),
+                      ),
+                      if (purchasedLine != null) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          key: const ValueKey('paywall-purchased-credits'),
+                          purchasedLine,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                for (final pack in offeredPacks)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                    child: TopUpPackCard(
+                      pack: pack,
+                      price: topUpOffers?.priceFor(pack),
+                      // Buyable only when the store is usable *and* returned
+                      // a product for this pack, exactly as a plan is.
+                      purchaseAvailable:
+                          purchaseAvailable &&
+                          topUpOffers?.priceFor(pack) != null,
+                      onSelect: () => ref
+                          .read(purchaseControllerProvider.notifier)
+                          .buyTopUp(pack),
+                      inFlightLabel:
+                          purchase.isBusy && purchase.topUpPack == pack
+                          ? _topUpInFlightLabel(purchase.phase)
+                          : null,
+                    ),
+                  ),
+              ],
 
               // What an AI Look is, in the page's own words, on the page's
               // own notice surface — so it reads as guidance rather than as

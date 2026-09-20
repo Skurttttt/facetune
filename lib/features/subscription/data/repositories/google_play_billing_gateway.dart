@@ -7,12 +7,15 @@ import 'package:in_app_purchase_android/billing_client_wrappers.dart';
 import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 
 import '../../domain/catalog/store_product_catalog.dart';
+import '../../domain/catalog/top_up_pack_catalog.dart';
 import '../../domain/entities/billing_provider.dart';
 import '../../domain/entities/plan_price.dart';
 import '../../domain/entities/purchase_evidence.dart';
 import '../../domain/entities/purchase_update.dart';
 import '../../domain/entities/store_product.dart';
 import '../../domain/entities/subscription_plan_code.dart';
+import '../../domain/entities/top_up_pack.dart';
+import '../../domain/entities/top_up_store_product.dart';
 import '../../domain/repositories/store_billing_gateway.dart';
 import '../data_sources/google_play_billing_data_source.dart';
 
@@ -103,6 +106,9 @@ class GooglePlayBillingGateway implements StoreBillingGateway {
   PurchaseUpdate _toUpdate(PurchaseDetails purchase) {
     final token = purchase.verificationData.serverVerificationData;
     final plan = StoreProductCatalog.planFor(purchase.productID);
+    // A product is either a plan or a pack, never both: the two catalogs hold
+    // disjoint identifiers, and a purchase of neither carries no hint at all.
+    final pack = TopUpPackCatalog.packFor(purchase.productID);
     final awaiting = purchase.pendingCompletePurchase;
 
     if (awaiting && token.isNotEmpty) {
@@ -124,28 +130,33 @@ class GooglePlayBillingGateway implements StoreBillingGateway {
         // no completion obligation is reported even if the flag were set.
         awaitingCompletion: false,
         planCode: plan,
+        topUpPack: pack,
       ),
       PurchaseStatus.purchased => PurchaseUpdate(
         status: PurchaseUpdateStatus.purchased,
         awaitingCompletion: awaiting,
         planCode: plan,
+        topUpPack: pack,
         evidence: evidence,
       ),
       PurchaseStatus.restored => PurchaseUpdate(
         status: PurchaseUpdateStatus.restored,
         awaitingCompletion: awaiting,
         planCode: plan,
+        topUpPack: pack,
         evidence: evidence,
       ),
       PurchaseStatus.canceled => PurchaseUpdate(
         status: PurchaseUpdateStatus.cancelled,
         awaitingCompletion: false,
         planCode: plan,
+        topUpPack: pack,
       ),
       PurchaseStatus.error => PurchaseUpdate(
         status: PurchaseUpdateStatus.failed,
         awaitingCompletion: awaiting,
         planCode: plan,
+        topUpPack: pack,
         evidence: evidence,
         // The provider's own message is not shown: it is not written for end
         // users and can name internal state. The purchase is simply reported as
@@ -314,6 +325,99 @@ class GooglePlayBillingGateway implements StoreBillingGateway {
     // replayed update.
     if (purchase == null) return;
     await _billing.complete(purchase);
+  }
+
+  // ---------------------------------------------------------------------------
+  // SUB-13B top-up packs
+  // ---------------------------------------------------------------------------
+
+  @override
+  Future<List<TopUpStoreProduct>> loadTopUpProducts() async {
+    final offers = await _billing.queryProducts(TopUpPackCatalog.productIds);
+
+    final products = <TopUpStoreProduct>[];
+    for (final pack in TopUpPack.values) {
+      final productId = TopUpPackCatalog.productIdFor(pack);
+      final offer = _oneTimeOfferFor(offers, productId);
+      if (offer == null) continue;
+
+      products.add(
+        TopUpStoreProduct(
+          pack: pack,
+          providerProductId: productId,
+          price: PlanPrice(
+            // The store's own localized string, verbatim, exactly as for a
+            // plan. A one-time product has no billing period.
+            formattedPrice: offer.price,
+            currencyCode: offer.currencyCode,
+          ),
+        ),
+      );
+    }
+    return products;
+  }
+
+  /// Picks the one-time offer for [productId].
+  ///
+  /// The plugin queries every identifier as both a subscription and a one-time
+  /// product and returns whichever the store knows. A pack is a one-time
+  /// product, so only an entry with one-time offer details — and no
+  /// subscription offer index — can be it; an identifier the store returned as
+  /// a subscription is not a pack and is ignored.
+  GooglePlayProductDetails? _oneTimeOfferFor(
+    List<GooglePlayProductDetails> offers,
+    String productId,
+  ) {
+    for (final offer in offers) {
+      if (offer.id != productId) continue;
+      if (offer.subscriptionIndex != null) continue;
+      if (offer.productDetails.oneTimePurchaseOfferDetails == null) continue;
+      return offer;
+    }
+    return null;
+  }
+
+  @override
+  Future<void> startTopUpPurchase(
+    TopUpPack pack, {
+    String? obfuscatedAccountId,
+  }) async {
+    final productId = TopUpPackCatalog.productIdFor(pack);
+
+    // Re-queried rather than reused, for the reason given in `startPurchase`.
+    final offers = await _billing.queryProducts({productId});
+    final offer = _oneTimeOfferFor(offers, productId);
+    if (offer == null) {
+      throw StoreQueryException(
+        'This pack is not available from Google Play right now.',
+      );
+    }
+
+    await _billing.buyTopUp(
+      GooglePlayPurchaseParam(
+        productDetails: offer,
+        // The same opaque account identifier a plan purchase carries, so the
+        // server can tie the pack back to the account that bought it.
+        applicationUserName: obfuscatedAccountId,
+      ),
+    );
+  }
+
+  @override
+  Future<void> completeVerifiedTopUp(
+    PurchaseEvidence evidence, {
+    required bool consumedByServer,
+  }) async {
+    final purchase = _awaitingCompletion.remove(evidence.purchaseToken);
+    // Nothing held is a normal outcome: the provider may have delivered this
+    // evidence from a replayed update, or the server may have consumed it on
+    // an earlier attempt. Either way there is nothing left to do here.
+    if (purchase == null || consumedByServer) return;
+    // The device-side second chance. The grant already exists; this only
+    // tells Google the purchase was delivered so it is not refunded and can
+    // be bought again. A refusal is deliberately not surfaced — the next
+    // verification of the same purchase retries the consumption server-side.
+    await _billing.consume(purchase);
   }
 
   @override

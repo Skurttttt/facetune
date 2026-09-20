@@ -1,13 +1,19 @@
 // Authenticated access to the Google Play Developer API.
 //
-// Two calls are made:
+// Four calls are made:
 //
 //   purchases.subscriptionsv2.get        read the verified subscription
 //   purchases.subscriptions.acknowledge  tell Google the purchase was handled
+//   purchases.productsv2.get             read a verified one-time product
+//                                        purchase (SUB-13B top-ups)
+//   purchases.products.consume           tell Google a one-time product was
+//                                        delivered, so it can be bought again
 //
 // `purchases.subscriptions.get` (v1) is deprecated in favour of
 // `subscriptionsv2`; `acknowledge` has no v2 replacement and is not deprecated,
-// so the two live at different API versions on purpose.
+// so the two live at different API versions on purpose. The same split holds
+// for one-time products: `productsv2` reads by token alone, while `consume`
+// exists only at v1 and needs the product id the read established.
 //
 // The service account credential is read from the environment and never
 // leaves this module. It is not logged, not returned, and not passed to the
@@ -65,7 +71,10 @@ export function parseServiceAccount(raw: string): ServiceAccount {
 function base64Url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(
+    /=+$/,
+    "",
+  );
 }
 
 function base64UrlText(value: string): string {
@@ -127,7 +136,10 @@ export class GooglePlayApi {
   private async accessToken(): Promise<string> {
     const now = Math.floor(Date.now() / 1000);
     const cached = this.cachedToken;
-    if (cached && cached.expiresAtEpochSeconds - tokenExpirySafetyMarginSeconds > now) {
+    if (
+      cached &&
+      cached.expiresAtEpochSeconds - tokenExpirySafetyMarginSeconds > now
+    ) {
       return cached.accessToken;
     }
 
@@ -266,6 +278,104 @@ export class GooglePlayApi {
       );
     }
     return body;
+  }
+
+  /// Reads the one-time product purchase behind [purchaseToken].
+  ///
+  /// SUB-13B top-ups. Same shape of contract as [getSubscription]: scoped to
+  /// this package, token-only lookup, the same sanitized failures. A token
+  /// that belongs to a subscription rather than a product resolves to a 404
+  /// here, which is refused exactly like a fabricated one.
+  async getProductPurchase(purchaseToken: string): Promise<unknown> {
+    const token = await this.accessToken();
+    const url =
+      `${androidPublisherBase}/${encodeURIComponent(this.packageName)}` +
+      `/purchases/productsv2/tokens/${encodeURIComponent(purchaseToken)}`;
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+    } catch {
+      throw new VerificationFailure(
+        503,
+        "TEMPORARY_BACKEND_FAILURE",
+        "Google Play could not be reached. Please try again.",
+        true,
+      );
+    }
+
+    if (response.status === 404 || response.status === 400) {
+      throw new VerificationFailure(
+        409,
+        "PURCHASE_VERIFICATION_FAILED",
+        "Google Play does not recognise this purchase.",
+      );
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new VerificationFailure(
+        503,
+        "TEMPORARY_BACKEND_FAILURE",
+        "Purchase verification is temporarily unavailable.",
+        true,
+      );
+    }
+    if (!response.ok) {
+      throw new VerificationFailure(
+        503,
+        "TEMPORARY_BACKEND_FAILURE",
+        "Google Play could not confirm this purchase. Please try again.",
+        true,
+      );
+    }
+
+    const body = await response.json().catch(() => null);
+    if (body === null || typeof body !== "object") {
+      throw new VerificationFailure(
+        503,
+        "TEMPORARY_BACKEND_FAILURE",
+        "Google Play returned an unreadable response.",
+        true,
+      );
+    }
+    return body;
+  }
+
+  /// Consumes a one-time product purchase with Google.
+  ///
+  /// Consumption is what makes a top-up pack purchasable again, and it also
+  /// counts as acknowledgement, so an unconsumed purchase is refunded after
+  /// three days just as an unacknowledged subscription is. It runs only once
+  /// the credits have actually been granted, so a consumption can never
+  /// outrun the grant it is confirming.
+  ///
+  /// Returns whether it succeeded. A failure is not fatal: the grant is
+  /// recorded, the client consumes as a second chance, and the next
+  /// verification of the same purchase replays the grant and tries again.
+  async consumeProduct(
+    purchaseToken: string,
+    productId: string,
+  ): Promise<boolean> {
+    let token: string;
+    try {
+      token = await this.accessToken();
+    } catch {
+      return false;
+    }
+    const url =
+      `${androidPublisherBase}/${encodeURIComponent(this.packageName)}` +
+      `/purchases/products/${encodeURIComponent(productId)}` +
+      `/tokens/${encodeURIComponent(purchaseToken)}:consume`;
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
   }
 
   /// Acknowledges the purchase with Google.

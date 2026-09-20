@@ -2,6 +2,8 @@ import '../entities/purchase_evidence.dart';
 import '../entities/purchase_update.dart';
 import '../entities/store_product.dart';
 import '../entities/subscription_plan_code.dart';
+import '../entities/top_up_pack.dart';
+import '../entities/top_up_store_product.dart';
 
 /// The app's view of a billing provider.
 ///
@@ -76,6 +78,42 @@ abstract interface class StoreBillingGateway {
   /// call site. Acknowledging on client say-so would tell the provider the
   /// entitlement was delivered when nothing had checked that it should be.
   Future<void> completeVerifiedPurchase(PurchaseEvidence evidence);
+
+  // ---------------------------------------------------------------------------
+  // SUB-13B top-up packs. One-time products, sold beside the subscriptions.
+  // ---------------------------------------------------------------------------
+
+  /// The purchasable top-up packs as the store currently describes them.
+  ///
+  /// The same rule as [loadProducts]: only packs the store actually returned,
+  /// and never an invented price.
+  Future<List<TopUpStoreProduct>> loadTopUpProducts();
+
+  /// Opens the provider's purchase sheet for [pack].
+  ///
+  /// Like [startPurchase], the result arrives on [purchaseUpdates], carrying
+  /// the pack the product maps to as a display and routing hint. The purchase
+  /// is started as a consumable that is **not** auto-consumed: consuming
+  /// client-side before the server had verified and granted would waive the
+  /// automatic refund that protects a purchase nothing was able to verify.
+  Future<void> startTopUpPurchase(
+    TopUpPack pack, {
+    String? obfuscatedAccountId,
+  });
+
+  /// Consumes a top-up purchase the **server has already verified and
+  /// granted**.
+  ///
+  /// Normally the server consumes with Google itself, immediately after the
+  /// grant, and reports so; then this only releases the provider object held
+  /// for the purchase. When the server could not reach Google for the
+  /// consumption, [consumedByServer] is false and this consumes from the
+  /// device as the second chance — the grant already exists either way, so
+  /// nothing here decides what the account has.
+  Future<void> completeVerifiedTopUp(
+    PurchaseEvidence evidence, {
+    required bool consumedByServer,
+  });
 
   /// Releases the provider connection and the update subscription.
   Future<void> dispose();

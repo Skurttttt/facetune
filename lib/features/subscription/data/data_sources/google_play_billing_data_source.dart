@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:in_app_purchase/in_app_purchase.dart';
+// `BillingResponse` lives in the wrappers library, which the package exports
+// separately from its platform API.
+import 'package:in_app_purchase_android/billing_client_wrappers.dart';
 import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 
 /// The single place the Google Play Billing SDK is touched.
@@ -97,6 +100,45 @@ class GooglePlayBillingDataSource {
     final store = _store;
     if (store == null) return false;
     return store.buyNonConsumable(purchaseParam: purchaseParam);
+  }
+
+  /// Opens the provider's purchase sheet for a top-up pack.
+  ///
+  /// A pack is a consumable — it must be purchasable again — but it is bought
+  /// with `autoConsume: false` on purpose. Auto-consumption would consume on
+  /// the device the moment Play reported the purchase, before the server had
+  /// verified it or granted anything, and would waive the automatic refund
+  /// that protects a purchase nothing was able to verify. Consumption happens
+  /// server-side after the grant; see `consume` for the device-side fallback.
+  Future<bool> buyTopUp(PurchaseParam purchaseParam) async {
+    final store = _store;
+    if (store == null) return false;
+    return store.buyConsumable(
+      purchaseParam: purchaseParam,
+      autoConsume: false,
+    );
+  }
+
+  /// Consumes a top-up purchase with the provider from the device.
+  ///
+  /// Called only for purchases the backend has verified and granted, and only
+  /// when the backend itself could not reach Google to consume — see
+  /// `StoreBillingGateway.completeVerifiedTopUp`, which is the only caller.
+  /// Returns whether the provider accepted it; a refusal is not an error worth
+  /// surfacing, because the grant already exists and the next verification
+  /// retries the consumption server-side.
+  Future<bool> consume(PurchaseDetails purchase) async {
+    final store = _store;
+    if (store == null) return false;
+    try {
+      final addition = store
+          .getPlatformAddition<InAppPurchaseAndroidPlatformAddition?>();
+      if (addition == null) return false;
+      final result = await addition.consumePurchase(purchase);
+      return result.responseCode == BillingResponse.ok;
+    } on Object {
+      return false;
+    }
   }
 
   /// Asks the provider to re-deliver this account's existing purchases.

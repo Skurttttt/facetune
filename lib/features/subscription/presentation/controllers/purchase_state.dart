@@ -1,4 +1,5 @@
 import '../../domain/entities/subscription_plan_code.dart';
+import '../../domain/entities/top_up_pack.dart';
 
 /// Where a purchase attempt has got to on this device.
 ///
@@ -60,6 +61,7 @@ class PurchaseState {
     this.phase = PurchasePhase.idle,
     this.storeAvailable = false,
     this.plan,
+    this.topUpPack,
     this.message,
     this.viaRestore = false,
   });
@@ -75,6 +77,11 @@ class PurchaseState {
   /// The plan the in-flight attempt relates to, for wording a progress
   /// message. A display hint only; it grants nothing.
   final SubscriptionPlanCode? plan;
+
+  /// The top-up pack the in-flight attempt relates to, when it is a pack
+  /// purchase rather than a plan. The same kind of hint as [plan]: it decides
+  /// which card shows progress, and nothing about what the account holds.
+  final TopUpPack? topUpPack;
 
   /// Sanitized, user-facing copy. Never a provider payload, never a token.
   final String? message;
@@ -107,6 +114,7 @@ class PurchaseState {
     PurchasePhase? phase,
     bool? storeAvailable,
     SubscriptionPlanCode? plan,
+    TopUpPack? topUpPack,
     String? message,
     bool clearMessage = false,
     bool clearPlan = false,
@@ -114,7 +122,13 @@ class PurchaseState {
   }) => PurchaseState(
     phase: phase ?? this.phase,
     storeAvailable: storeAvailable ?? this.storeAvailable,
-    plan: clearPlan ? null : (plan ?? this.plan),
+    // An attempt is for a plan or for a pack, never both, and a restore is
+    // for neither: naming one hint clears the other, and `clearPlan` clears
+    // both.
+    plan: clearPlan ? null : (plan ?? (topUpPack != null ? null : this.plan)),
+    topUpPack: clearPlan
+        ? null
+        : (topUpPack ?? (plan != null ? null : this.topUpPack)),
     message: clearMessage ? null : (message ?? this.message),
     viaRestore: viaRestore ?? this.viaRestore,
   );
@@ -125,8 +139,10 @@ class PurchaseState {
       other.phase == phase &&
       other.storeAvailable == storeAvailable &&
       other.plan == plan &&
+      other.topUpPack == topUpPack &&
       other.message == message;
 
   @override
-  int get hashCode => Object.hash(phase, storeAvailable, plan, message);
+  int get hashCode =>
+      Object.hash(phase, storeAvailable, plan, topUpPack, message);
 }
