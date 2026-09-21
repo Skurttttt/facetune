@@ -16,8 +16,10 @@
 **Web Admin Authority:** `FACETUNE_WEB_ADMIN_SOURCE_OF_TRUTH.md`  
 **Subscription Phase Authority:** `FACETUNE_SUBSCRIPTION_PHASE_PROMPTS.md`  
 **Web Admin Phase Authority:** `FACETUNE_WEB_ADMIN_PHASE_PROMPTS.md`  
-**Contract Version:** `subscription_admin_contract_v1`  
-**Primary User-Facing Usage Unit:** AI Look  
+**Contract Version:** `subscription_admin_contract_v1.1`  
+**Supersedes:** `subscription_admin_contract_v1` (additive, backward-compatible amendment — see §124)  
+**Subscription Expansion Authority:** `FACETUNE_SUBSCRIPTION_EXPANSION_SOURCE_OF_TRUTH.md`  
+**Primary User-Facing Usage Units:** AI Look (Tutorial-capable plans) · Final Preview Credit (Preview-only plans)  
 **Primary V1 Professional Research Entitlement:** Salon Pilot  
 **Primary Public Professional Plan:** Salon Pro  
 
@@ -226,11 +228,13 @@ Never perform a broad rewrite when a smaller integration is sufficient.
 
 # 4. CONTRACT VERSION
 
-The V1 shared contract identifier is:
+The current shared contract identifier is:
 
 ```text
-subscription_admin_contract_v1
+subscription_admin_contract_v1.1
 ```
+
+`subscription_admin_contract_v1` (2026-09-07) remains the historical baseline. V1.1 (2026-09-21) is an **additive, backward-compatible** amendment that documents Subscription behavior already accepted and deployed by SUB-12, SUB-12B, SUB-13 and SUB-13B under `FACETUNE_SUBSCRIPTION_EXPANSION_SOURCE_OF_TRUTH.md`: the eight-plan matrix, plan capability fields, usage provenance fields, the concrete Final Preview lineage columns, and the purchased-credit read model. Every V1 meaning is preserved; §124 lists exactly what V1.1 adds. Nothing in V1.1 authorizes a Web Admin mutation of purchased credits.
 
 Both Subscription and Web Admin implementations must conform to the same contract version.
 
@@ -341,17 +345,20 @@ The Shared Contract does not move subscription authority into Flutter.
 
 # 7. CANONICAL PLAN CODES
 
-The canonical V1 plan codes are:
+The canonical plan codes (V1.1) are exactly:
 
 ```text
 free
 plus
+plus_preview
 pro
-salon_pilot
+pro_preview
 salon_pro
+salon_preview
+salon_pilot
 ```
 
-These are stable internal identities.
+These are stable internal identities. The three `*_preview` codes were added by V1.1 to match the deployed `subscription_products` / `user_entitlements` CHECK constraints and the Subscription Expansion SOT §4; the original five keep their V1 meaning unchanged.
 
 Do not use alternate identifiers such as:
 
@@ -364,6 +371,10 @@ salon_test
 salon_research
 research_salon
 salon_trial
+plus_no_tutorial
+preview_plus
+pro_no_tutorial
+salon_preview_only
 ```
 
 unless a future approved contract revision explicitly adds them.
@@ -384,19 +395,32 @@ Do not infer `plan_code` from:
 
 # 8. PLAN CLASSIFICATION
 
-V1 public plans:
+Public plans (V1.1):
 
 ```text
 free
 plus
+plus_preview
 pro
+pro_preview
 salon_pro
+salon_preview
 ```
 
-V1 non-public plan:
+Non-public plan:
 
 ```text
 salon_pilot
+```
+
+Capability split (V1.1). Plus and Plus Preview, Pro and Pro Preview, Salon Pro and Salon Preview are same-price siblings distinguished **only** by provider product identity and configured capability, never by price:
+
+```text
+Tutorial-capable   plus, pro, salon_pro, salon_pilot, free
+                     allowance_unit = ai_look, tutorial_enabled = true, final_preview_enabled = true
+
+Preview-only       plus_preview, pro_preview, salon_preview
+                     allowance_unit = final_preview_credit, tutorial_enabled = false, final_preview_enabled = true
 ```
 
 `salon_pilot` is:
@@ -417,30 +441,52 @@ Do not create public purchase UI for `salon_pilot`.
 
 The Shared Contract does not own pricing, but both systems must understand the current V1 allowance mapping authorized by the Subscription Source of Truth.
 
-Current compatibility assertions:
+Current compatibility assertions (values owned by the Subscription SOT and the Subscription Expansion SOT §3; V1.1 adds the Preview rows and the unit):
 
 ```text
 free
-  allowance = 1 one-time AI Look
+  allowance = 1 one-time AI Look                 unit = ai_look
   reset = none
 
 plus
-  allowance = 3 AI Looks per verified billing period
+  allowance = 3 AI Looks per verified billing period            unit = ai_look
+  reset = billing_period
+
+plus_preview
+  allowance = 30 Final Preview Credits per verified billing period   unit = final_preview_credit
   reset = billing_period
 
 pro
-  allowance = 8 AI Looks per verified billing period
+  allowance = 8 AI Looks per verified billing period            unit = ai_look
+  reset = billing_period
+
+pro_preview
+  allowance = 80 Final Preview Credits per verified billing period   unit = final_preview_credit
   reset = billing_period
 
 salon_pro
-  allowance = 35 AI Looks per verified billing period
+  allowance = 35 AI Looks per verified billing period           unit = ai_look
+  reset = billing_period
+
+salon_preview
+  allowance = 350 Final Preview Credits per verified billing period  unit = final_preview_credit
   reset = billing_period
 
 salon_pilot
-  initial/default grant = 30 AI Looks
+  initial/default grant = 30 AI Looks            unit = ai_look
   reset = none
   allowance = admin editable
 ```
+
+Canonical plan capability fields (V1.1). These live on the server-side product configuration row and are reported, never decided, by clients:
+
+```text
+allowance_unit          ai_look | final_preview_credit
+tutorial_enabled        may the plan generate NEW Tutorials
+final_preview_enabled   may the plan generate new Final Previews
+```
+
+A `final_preview_credit` plan can never have `tutorial_enabled = true`. Neither client may infer capability from a plan's name, price, or allowance; it is read from the resolved state.
 
 These are not permission to scatter literal values throughout Flutter or Web Admin.
 
@@ -502,10 +548,19 @@ free
 plus on Android
 → google_play
 
+plus_preview on Android
+→ google_play
+
 pro on Android
 → google_play
 
+pro_preview on Android
+→ google_play
+
 salon_pro on Android
+→ google_play
+
+salon_preview on Android
 → google_play
 
 salon_pilot
@@ -675,6 +730,8 @@ final_makeup_preview
 ```
 
 This is the shared technical identity for one AI Look consumption operation.
+
+V1.1 clarification: `final_makeup_preview` remains the **only** usage type. A Preview-only plan spends one Final Preview Credit, and a Tutorial-capable plan spends one AI Look, through the same reserve → generate → persist → commit operation; the ledger row records which unit (`allowance_unit`) and which bucket (`allowance_source`) it drew from. Neither is a second usage type.
 
 Do not create user-facing billable usage types such as:
 
@@ -1106,7 +1163,7 @@ none
 billing_period
 ```
 
-V1 mapping:
+Mapping (V1.1 adds the Preview plans):
 
 ```text
 free
@@ -1115,15 +1172,26 @@ free
 plus
 → billing_period
 
+plus_preview
+→ billing_period
+
 pro
+→ billing_period
+
+pro_preview
 → billing_period
 
 salon_pro
 → billing_period
 
+salon_preview
+→ billing_period
+
 salon_pilot
 → none
 ```
+
+Purchased credits (§74a) do not reset and are not part of any plan's allowance.
 
 Salon Pilot allowance changes are admin adjustments, not "resets."
 
@@ -1210,6 +1278,16 @@ created_at
 updated_at
 ```
 
+Concrete deployed fields (V1.1, `public.user_entitlements`), mapped to the conceptual names above:
+
+```text
+base_ai_look_limit          → base_ai_look_allowance
+(new) allowance_adjustment_total   sum of audited allowance adjustments; effective = base + total
+(new) version               optimistic-concurrency counter, bumped by every server writer
+```
+
+Plan capability (`allowance_unit`, `tutorial_enabled`, `final_preview_enabled`) is **not** an entitlement field; it is resolved from the plan's product configuration (§9) and carried in the read response (§74).
+
 Potential additional implementation fields may exist after schema inspection.
 
 Do not treat conceptual names as permission to duplicate existing valid schema.
@@ -1240,13 +1318,36 @@ created_at
 updated_at
 ```
 
+Usage provenance / accounting fields (V1.1, `public.usage_ledger`). These say *which bucket and unit* a row drew from; they do not change what `reserved` / `committed` / `released` mean or what one AI Look is:
+
+```text
+plan_code                   the governing plan at reservation time (stamped, never rewritten)
+allowance_unit              ai_look | final_preview_credit — the unit spent by this row
+allowance_source            subscription | purchased_credit
+purchased_credit_grant_id   set if and only if allowance_source = purchased_credit;
+                            (grant_id, user_id) → purchased_credit_grants(id, user_id)
+```
+
+Subscription figures (`committed_usage`, `reserved_usage`, `available_ai_looks`) count only `allowance_source = subscription` rows, so a purchased credit never appears to consume the included allowance.
+
+Canonical Final Preview lineage — concrete deployed form (V1.1). The conceptual `canonical_preview_id` is realized as three columns, because a canonical Final Preview lives in one of two tables (`generated_images` for Standard Mode, `kit_generated_images` for My Makeup Kit):
+
+```text
+source_mode                       standard | makeup_kit — explicit discriminator, set at commit, never cleared
+canonical_generated_image_id      (id, user_id) → generated_images, when source_mode = standard
+canonical_kit_generated_image_id  (id, user_id) → kit_generated_images, when source_mode = makeup_kit
+```
+
+Exactly one id is populated for a committed row; both are null for reserved/released rows. If the user later deletes the history item the id becomes null (`ON DELETE SET NULL`) while the committed row, `committed_at`, and `source_mode` survive — deletion never refunds. Web Admin read models must carry this as a discriminated reference, not a single id, and must never infer mode from which id happens to be set.
+
 Requirements:
 
 - `operation_id` must support idempotency
-- `canonical_preview_id` is required for committed usage when architecture permits
+- the canonical lineage above is required for committed usage
 - released usage must not count as committed
 - usage ownership must match entitlement ownership
 - period linkage must be stable for recurring plans
+- `plan_code`, `allowance_unit`, `allowance_source`, and `purchased_credit_grant_id` are fixed at reservation and are never rewritten
 
 ---
 
@@ -1774,6 +1875,8 @@ allowance adjustments
 entitlement history
 sanitized usage records
 admin audit history
+plan capability (allowance_unit, tutorial_enabled, final_preview_enabled)
+purchased-credit summary (§74a) — READ-ONLY
 ```
 
 Subscription Admin screens do not require private facial content.
@@ -2026,6 +2129,86 @@ auto_renew
 Fields not applicable to a plan may be null/absent according to the typed contract.
 
 Do not infer plan type from nulls.
+
+## Canonical wire shape (V1.1)
+
+The deployed read model is `public.resolve_subscription_state()` (Postgres RPC, `security definer`, identity from `auth.uid()`), returning one JSON object. Its **camelCase keys are the canonical wire spellings** for both Flutter and Web Admin; the snake_case names above are conceptual. WA-1 typed contracts must use these exact keys and must not introduce a second spelling.
+
+```text
+hasEntitlement                       boolean — false only when no entitlement row exists (broken provisioning)
+entitlementId                        uuid
+planCode                             §7
+planDisplayName                      text
+entitlementStatus                    §12 (stored status; see effective-status note below)
+billingProvider                      §11
+providerProductId                    text | null
+publiclyPurchasable                  boolean
+allowanceUnit                        ai_look | final_preview_credit
+tutorialEnabled                      boolean
+finalPreviewEnabled                  boolean
+periodStart, periodEnd               verified provider billing period | null
+startsAt, expiresAt                  admin-grant term | null
+autoRenew                            boolean
+resetPolicy                          none | billing_period
+resetAt                              = periodEnd when resetPolicy = billing_period, else null
+baseAllowance                        base_ai_look_allowance
+allowanceAdjustmentTotal             sum of audited adjustments
+effectiveAllowance                   max(0, base + adjustments)
+committedUsage                       subscription-sourced committed rows in the current period
+reservedUsage                        subscription-sourced active reservations
+availableAiLooks                     max(0, effective − committed − reserved)   ← authoritative for a NEW generation
+remainingAiLooks                     max(0, effective − committed)              ← user-facing "N of M"
+generationAuthorized                 boolean — server decision
+denialReason                         §71 code | null
+purchasedTutorialCreditsRemaining    §74a
+purchasedPreviewCreditsRemaining     §74a
+purchasedCreditsUsable               §74a
+availablePurchasedCredits            §74a
+nextAllowanceSource                  subscription | purchased_credit | null
+nextAllowanceUnit                    ai_look | final_preview_credit | null
+verifiedAt                           timestamptz | null
+resolvedAt                           timestamptz (server clock)
+```
+
+Effective-status note: `entitlementStatus` is the stored row status. An entitlement whose `expiresAt` or `periodEnd` has passed may still read `active` while `generationAuthorized = false` with `denialReason = SALON_PILOT_EXPIRED | ENTITLEMENT_EXPIRED`. Any Web Admin view that shows a status must derive the effective status server-side from `entitlementStatus` + dates + `denialReason`, never from the raw row alone.
+
+Because the resolver is `auth.uid()`-scoped, Web Admin cannot call it for another user. An admin read path must be a protected server operation that reuses the resolver's precedence and arithmetic for the target user; it must not re-implement the formula in a browser.
+
+---
+
+# 74a. PURCHASED-CREDIT READ MODEL (V1.1)
+
+Purchased top-up credits exist in the deployed Subscription system (SUB-13B): `top_up_packs` (server product mapping) and `purchased_credit_grants` (one immutable row per verified Google Play one-time purchase, revocable by provider refund/void). They belong to the **account**, not to an entitlement, are spendable only under an eligible paid plan, and are consumed after the included allowance. Their quantities, prices, product ids, eligibility, consumption ordering, and capability provenance are owned by the Subscription Expansion SOT and `docs/SUB_13B_PURCHASED_TOP_UP_CREDITS.md`; this contract only names the shared read fields.
+
+Credit classes (exact deployed vocabulary):
+
+```text
+tutorial_capable_ai_look        spendable as an AI Look under plus / pro / salon_pro
+preview_only_final_preview      spendable as a Final Preview Credit under plus_preview / pro_preview / salon_preview
+```
+
+Read fields, as returned by `resolve_subscription_state()`:
+
+```text
+purchasedTutorialCreditsRemaining   granted − committed for non-revoked tutorial_capable_ai_look grants (≥ 0)
+purchasedPreviewCreditsRemaining    granted − committed for non-revoked preview_only_final_preview grants (≥ 0)
+purchasedCreditsUsable              true only when the governing plan is an eligible paid store plan that is otherwise able to generate
+availablePurchasedCredits           credits compatible with the governing plan and not reserved, or 0 when not usable
+nextAllowanceSource                 which bucket the next reservation will draw from
+nextAllowanceUnit                   which unit it will be recorded as
+```
+
+**Web Admin V1 rule: READ-ONLY.** Web Admin V1 may display these fields and may list a user's `purchased_credit_grants` through a protected server read. Web Admin V1 must NOT:
+
+- grant consumer top-ups
+- fabricate or edit `purchased_credit_grants` rows or quantities
+- edit purchased-credit balances
+- convert one credit class into another
+- revoke purchased credits (provider refund/void is the only writer, via `revoke_top_up_purchase`) unless a later approved contract revision adds an explicit admin action
+- create fake Google Play one-time purchases
+- count purchased credits inside `effectiveAllowance`, `committedUsage`, or `availableAiLooks`
+
+Salon Pilot allowance adjustments (§43) and purchased credits are different ledgers with different provenance and must never be displayed, summed, or adjusted as one number.
 
 ---
 
@@ -2334,6 +2517,7 @@ Web Admin must not:
 - directly edit provider purchase state
 - forge public plan purchase
 - leak service-role credentials
+- grant, edit, convert, or revoke purchased credits (V1.1: read-only, §74a)
 
 ---
 
@@ -2856,7 +3040,7 @@ Shared fields/actions remain the same regardless of visual presentation.
 Do not implement through this Shared Contract:
 
 - annual plans
-- AI Look add-on packs
+- **Web Admin mutation of purchased credits / top-ups.** (V1.1 amendment: purchased-credit/top-up accounting *exists* and is part of the shared read contract, §74a. Web Admin V1 has read-only visibility into it unless a later approved contract revision explicitly authorizes admin mutations. Any new top-up pack, quantity, price, or product id remains a Subscription Expansion SOT decision, not a contract or admin decision.)
 - multi-seat Salon Pro
 - salon teams
 - salon branches
@@ -3121,7 +3305,7 @@ A vague completion report is not acceptable.
 
 The following rules are hard-locked for V1 unless the user explicitly approves a Source of Truth / contract revision:
 
-1. Canonical plan codes are `free`, `plus`, `pro`, `salon_pilot`, `salon_pro`.
+1. Canonical plan codes are `free`, `plus`, `plus_preview`, `pro`, `pro_preview`, `salon_pro`, `salon_preview`, `salon_pilot` (V1.1, §7).
 2. Salon Pilot is non-public and admin granted.
 3. Salon Pilot starts from the business-approved initial allowance and may be adjusted through audited admin actions.
 4. Salon Pro uses an AI Look pool, not client-session billing.
@@ -3148,7 +3332,7 @@ The following rules are hard-locked for V1 unless the user explicitly approves a
 25. No client identity tracking is required for Salon billing in V1.
 26. No client-session billing or per-client preview limit exists in V1.
 27. No automatic rollover exists in V1.
-28. No annual plans, add-on packs, multi-seat salon, wallet, unlimited AI, or enterprise billing are implemented through this contract.
+28. No annual plans, multi-seat salon, wallet, unlimited AI, or enterprise billing are implemented through this contract. Purchased top-up credits exist (SUB-13B) and are exposed **read-only** to Web Admin V1 under §74a; no admin mutation of purchased credits is implemented through this contract.
 29. Shared identifiers and semantics must remain compatible across Subscription and Web Admin.
 30. Every phase validates, reports, and STOPs before the next phase.
 
@@ -3204,6 +3388,45 @@ No frontend may invent a competing interpretation.
 No admin control may override subscription business authority.
 
 No shared-contract implementation may quietly redesign FaceTune's protected AI systems.
+
+---
+
+# 124. V1.1 COMPATIBILITY AMENDMENT RECORD
+
+**Version:** `subscription_admin_contract_v1.1`
+**Date:** 2026-09-21
+**Type:** additive, backward-compatible, documentation-only
+**Trigger:** `WA_0_BASELINE_AUDIT.md` §I found that `subscription_admin_contract_v1` (2026-09-07) predated SUB-12 / SUB-12B / SUB-13 / SUB-13B (2026-09-20/21) and no longer described the deployed Subscription system.
+**Authority for the described behavior:** `FACETUNE_SUBSCRIPTION_EXPANSION_SOURCE_OF_TRUTH.md` (§1.2 supersession, §4 plan codes, §23 shared-contract extension requirement) and the deployed migrations `20260920000100`, `20260921000100`, `20260922000100`, `20260923000100`, `20260924000100`.
+
+What V1.1 adds (section → change):
+
+```text
+Header, §4        contract version → v1.1; v1 kept as historical baseline
+§7, §8, §9, §11,  plan codes 5 → 8 (plus_preview, pro_preview, salon_preview); classification,
+§38, §122.1       capability split, allowance rows, provider mapping, reset mapping for the Preview plans
+§9                canonical plan capability fields: allowance_unit (ai_look | final_preview_credit),
+                  tutorial_enabled, final_preview_enabled
+§20               clarification: one usage type; unit and bucket are recorded on the ledger row
+§41               concrete entitlement fields: base_ai_look_allowance, allowance_adjustment_total, version
+§42               usage provenance fields: plan_code, allowance_unit, allowance_source,
+                  purchased_credit_grant_id; concrete canonical preview lineage: source_mode,
+                  canonical_generated_image_id, canonical_kit_generated_image_id
+§65, §74          Web Admin read scope and the exact camelCase wire shape of resolve_subscription_state()
+§74a (new)        purchased-credit read model; credit classes; READ-ONLY for Web Admin V1
+§88, §116,        Web Admin must not mutate purchased credits; add-on non-goal restated as deployed truth
+§122.28
+```
+
+What V1.1 does **not** change:
+
+- any V1 meaning: `free`/`plus`/`pro`/`salon_pro`/`salon_pilot` semantics, entitlement statuses, usage statuses, the AI Look definition (§21), reserve/commit/release (§28), capacity arithmetic (§29–§31), Salon Pilot semantics (§32–§33), adjustment semantics (§43–§44), admin action identifiers (§45), error codes (§71), mutation request/response shapes (§72–§73)
+- any price, allowance quantity, top-up quantity, price, or product id
+- Tutorial or Final Preview eligibility, reset or rollover policy, consumption ordering, capability provenance
+- Google Play authority, restore, RTDN, refund/void policy
+- any database column, function, migration, RLS policy, Edge Function, Flutter source, or remote state
+
+Compatibility rule: a reader of a V1 document may treat every V1 statement as still true for the five original plan codes; V1.1 statements extend, never contradict, them. Historical references to `subscription_admin_contract_v1` in accepted SUB-0 … SUB-14 reports and the frozen Subscription SOT remain correct as written.
 
 ---
 

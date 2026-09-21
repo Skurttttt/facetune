@@ -10,7 +10,7 @@
 **Shared contract authority:** `FACETUNE_SUBSCRIPTION_ADMIN_SHARED_CONTRACT.md`  
 **Web Admin authority:** `FACETUNE_WEB_ADMIN_SOURCE_OF_TRUTH.md`  
 **This phase file:** `FACETUNE_WEB_ADMIN_PHASE_PROMPTS.md`  
-**Shared contract version:** `subscription_admin_contract_v1`  
+**Shared contract version:** `subscription_admin_contract_v1.1` (additive amendment of `v1`; Shared Contract §124)  
 **Primary execution rule:** exactly ONE Web Admin phase at a time  
 **Automatic continuation:** PROHIBITED  
 
@@ -618,7 +618,7 @@ The Admin frontend is not trusted merely because it is private.
 Both systems must conform to:
 
 ```text
-subscription_admin_contract_v1
+subscription_admin_contract_v1.1
 ```
 
 If Web Admin expects a field that the Subscription backend does not expose:
@@ -647,15 +647,20 @@ Prefer a server-owned contract response.
 
 # 16. CANONICAL PLAN CODES
 
-Use only:
+Use only the codes of `subscription_admin_contract_v1.1` (Shared Contract §7):
 
 ```text
 free
 plus
+plus_preview
 pro
+pro_preview
 salon_pro
+salon_preview
 salon_pilot
 ```
+
+The `*_preview` plans are public Google Play plans with `allowance_unit = final_preview_credit`, `tutorial_enabled = false`, `final_preview_enabled = true`, distinguished from their same-price siblings only by provider product id and capability (Shared Contract §8–§9). Web Admin reads capability from the server; it never infers it from a name or price.
 
 Do not add aliases such as:
 
@@ -666,6 +671,8 @@ salon
 research
 pilot
 salon_test
+plus_no_tutorial
+preview_plus
 ```
 
 without an approved contract revision.
@@ -770,7 +777,7 @@ Do NOT implement:
 - referral system
 - promo-code manager
 - annual subscription manager
-- add-on AI Look packs
+- purchased-credit / top-up management of any kind (grant, edit, convert, revoke, fake purchase). Purchased credits exist in the deployed Subscription system and are exposed to Web Admin V1 **read-only** under `subscription_admin_contract_v1.1` §74a; new packs, quantities, prices, or product ids are Subscription Expansion SOT decisions
 - family plans
 - lifetime plans
 - unlimited AI
@@ -1439,7 +1446,7 @@ Especially apply:
 
 ## Objective
 
-Create the minimum strongly typed Web Admin domain/contracts required to consume `subscription_admin_contract_v1` without duplicating or redefining Subscription rules.
+Create the minimum strongly typed Web Admin domain/contracts required to consume `subscription_admin_contract_v1.1` without duplicating or redefining Subscription rules.
 
 ## Before coding
 
@@ -3289,8 +3296,11 @@ revoked
 ```text
 free
 plus
+plus_preview
 pro
+pro_preview
 salon_pro
+salon_preview
 salon_pilot
 ```
 

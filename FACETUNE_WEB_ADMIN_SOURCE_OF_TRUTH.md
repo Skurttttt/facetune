@@ -10,7 +10,7 @@
 **Shared Contract:** `FACETUNE_SUBSCRIPTION_ADMIN_SHARED_CONTRACT.md`  
 **This Document:** `FACETUNE_WEB_ADMIN_SOURCE_OF_TRUTH.md`  
 **Future Phase File:** `FACETUNE_WEB_ADMIN_PHASE_PROMPTS.md`  
-**Contract Compatibility Target:** `subscription_admin_contract_v1`  
+**Contract Compatibility Target:** `subscription_admin_contract_v1.1` (additive amendment of `v1`; Shared Contract §124)  
 **Primary Admin Target:** Desktop web browser  
 **V1 Primary Purpose:** Secure subscription, entitlement, Salon Pilot, usage, and audit administration  
 
@@ -2103,11 +2103,13 @@ Do not use manual overrides as normal billing infrastructure.
 
 Web Admin must declare compatibility with the Shared Contract version.
 
-Initial target:
+Current target:
 
 ```text
-subscription_admin_contract_v1
+subscription_admin_contract_v1.1
 ```
+
+(`subscription_admin_contract_v1` was the initial target; V1.1 is the additive amendment recorded in Shared Contract §124 that documents the eight-plan matrix, plan capability fields, usage provenance, concrete Final Preview lineage, and the read-only purchased-credit summary. It adds no Web Admin capability.)
 
 The exact field/mechanism may be code-level or documentation-level depending on repository architecture.
 
@@ -2796,6 +2798,6 @@ The following are non-negotiable for Web Admin V1:
 **Status:** V1 SOURCE OF TRUTH  
 **Scope:** FaceTune Web Admin  
 **Dependency:** Subscription system must be implemented and validated before full Web Admin implementation proceeds beyond audit/read-only foundations.  
-**Compatible Shared Contract:** `subscription_admin_contract_v1`  
+**Compatible Shared Contract:** `subscription_admin_contract_v1.1`  
 
-Any future addition such as annual plans, AI Look add-on packs, salon teams, multiple admin roles, enterprise plans, bulk operations, or product-management controls requires an explicit revision of the relevant Source of Truth and Shared Contract before implementation.
+Purchased top-up credits exist in the deployed Subscription system and are exposed to Web Admin V1 **read-only** (Shared Contract §74a). Any future addition such as annual plans, admin mutation of purchased credits, salon teams, multiple admin roles, enterprise plans, bulk operations, or product-management controls requires an explicit revision of the relevant Source of Truth and Shared Contract before implementation.
