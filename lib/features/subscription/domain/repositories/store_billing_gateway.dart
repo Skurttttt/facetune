@@ -52,6 +52,13 @@ abstract interface class StoreBillingGateway {
   /// [obfuscatedAccountId] is passed to the provider so a purchase can later be
   /// tied back to the account that started it. It must be an opaque, non-
   /// reversible identifier, never an email address.
+  ///
+  /// When the provider already holds an active subscription for the account,
+  /// the purchase is started as a *replacement* of it under the approved
+  /// `PlanSwitchPolicy`, never as a second subscription beside it. Throws a
+  /// `PlanSwitchConflict` — and opens nothing — when there is no safe
+  /// replacement to make: more than one active subscription, the same plan
+  /// already owned, or a switch the policy has not approved.
   Future<void> startPurchase(
     SubscriptionPlanCode plan, {
     String? obfuscatedAccountId,

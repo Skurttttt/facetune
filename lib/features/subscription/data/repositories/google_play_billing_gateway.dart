@@ -6,6 +6,7 @@ import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:in_app_purchase_android/billing_client_wrappers.dart';
 import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 
+import '../../domain/catalog/plan_switch_policy.dart';
 import '../../domain/catalog/store_product_catalog.dart';
 import '../../domain/catalog/top_up_pack_catalog.dart';
 import '../../domain/entities/billing_provider.dart';
@@ -16,6 +17,7 @@ import '../../domain/entities/store_product.dart';
 import '../../domain/entities/subscription_plan_code.dart';
 import '../../domain/entities/top_up_pack.dart';
 import '../../domain/entities/top_up_store_product.dart';
+import '../../domain/errors/plan_switch_conflict.dart';
 import '../../domain/repositories/store_billing_gateway.dart';
 import '../data_sources/google_play_billing_data_source.dart';
 
@@ -293,6 +295,13 @@ class GooglePlayBillingGateway implements StoreBillingGateway {
       );
     }
 
+    // New subscription or replacement? Decided from what the provider holds,
+    // never from the server's entitlement: Play replaces a subscription only
+    // when told which purchase it replaces, by that purchase's own details.
+    // Asked after the product query so a plan the store cannot sell fails on
+    // that, the more useful answer, before the account is examined.
+    final replacement = await _replacementFor(plan);
+
     await _billing.buy(
       GooglePlayPurchaseParam(
         productDetails: offer,
@@ -302,8 +311,82 @@ class GooglePlayBillingGateway implements StoreBillingGateway {
         // caller supplies an already-opaque id; no email or display name is
         // ever passed here.
         applicationUserName: obfuscatedAccountId,
+        changeSubscriptionParam: replacement,
       ),
     );
+  }
+
+  /// The replacement parameters a purchase of [plan] must carry, or `null`
+  /// when the account holds no active store subscription and this is a new
+  /// one.
+  ///
+  /// ## Why this exists
+  ///
+  /// Without it, Play sells the new plan as a second, independent
+  /// subscription beside the one the account already pays for. It then
+  /// reports both as active, and the server — which can only keep one live
+  /// paid entitlement per account — alternates between them on every
+  /// verification. A real sandbox run showed exactly that: Plus active, Plus
+  /// Preview bought, entitlement flipping between the two.
+  ///
+  /// ## Which purchase is replaced
+  ///
+  /// Only a purchase Play still reports as owned, for one of our own
+  /// subscription products, and settled rather than pending. Top-up packs are
+  /// one-time products, never subscriptions, and are ignored here; a pending
+  /// subscription is not yet a subscription to replace.
+  ///
+  /// - none: a new subscription.
+  /// - exactly one: the purchase to replace, with the mode the approved
+  ///   policy fixes for the pair. A switch the policy has not approved is
+  ///   refused — no replacement mode is guessed, and no second subscription is
+  ///   started.
+  /// - more than one: refused. Choosing one would leave the other running and
+  ///   charge for three; the user has to bring the account down to one first.
+  Future<ChangeSubscriptionParam?> _replacementFor(
+    SubscriptionPlanCode plan,
+  ) async {
+    final owned = await _billing.queryOwnedPurchases();
+
+    // Keyed by token so a purchase the plugin reports under two entries —
+    // it emits one per product on the purchase — counts once.
+    final active = <String, GooglePlayPurchaseDetails>{};
+    for (final purchase in owned) {
+      if (purchase.status != PurchaseStatus.purchased) continue;
+      if (!StoreProductCatalog.purchasableProductIds.contains(
+        purchase.productID,
+      )) {
+        continue;
+      }
+      final token = purchase.verificationData.serverVerificationData;
+      if (token.isEmpty) continue;
+      active[token] = purchase;
+    }
+
+    if (active.isEmpty) return null;
+    if (active.length > 1) {
+      throw const PlanSwitchConflict.multipleActiveSubscriptions();
+    }
+
+    final current = active.values.single;
+    // Non-null by the catalog filter above; the display-only mapping is
+    // enough here because nothing is granted from it — it only names the
+    // pair the policy classifies.
+    final currentPlan = StoreProductCatalog.planFor(current.productID)!;
+
+    return switch (PlanSwitchPolicy.classify(from: currentPlan, to: plan)) {
+      PlanSwitchKind.samePlan => throw const PlanSwitchConflict.alreadyOwned(),
+      PlanSwitchKind.unapproved => throw PlanSwitchConflict.unapprovedSwitch(
+        from: currentPlan,
+        to: plan,
+      ),
+      // The locked V1 equal-price switch: immediate, same billing cycle, no
+      // charge now, the new price (the same price) at the next renewal.
+      PlanSwitchKind.equalPriceReplacement => ChangeSubscriptionParam(
+        oldPurchaseDetails: current,
+        replacementMode: ReplacementMode.withoutProration,
+      ),
+    };
   }
 
   @override

@@ -83,11 +83,23 @@ class FakeBillingDataSource extends GooglePlayBillingDataSource {
     this.available = true,
     List<ProductDetailsWrapper> products = const [],
     this.queryThrows,
+    this.owned = const [],
+    this.ownedQueryThrows,
   }) : _products = products;
 
   final bool available;
   final List<ProductDetailsWrapper> _products;
   final Object? queryThrows;
+
+  /// What Play reports as currently owned for the account, standing in for
+  /// the billing service's cached purchases.
+  final List<GooglePlayPurchaseDetails> owned;
+
+  /// Thrown from [queryOwnedPurchases] to simulate a provider that could not
+  /// answer — the case that must not fall through to a new subscription.
+  final Object? ownedQueryThrows;
+
+  int ownedQueryCount = 0;
 
   final StreamController<List<PurchaseDetails>> controller =
       StreamController<List<PurchaseDetails>>.broadcast();
@@ -116,6 +128,14 @@ class FakeBillingDataSource extends GooglePlayBillingDataSource {
   Stream<List<PurchaseDetails>> get purchaseStream {
     streamReads++;
     return controller.stream;
+  }
+
+  @override
+  Future<List<GooglePlayPurchaseDetails>> queryOwnedPurchases() async {
+    ownedQueryCount++;
+    final failure = ownedQueryThrows;
+    if (failure != null) throw failure;
+    return owned;
   }
 
   @override

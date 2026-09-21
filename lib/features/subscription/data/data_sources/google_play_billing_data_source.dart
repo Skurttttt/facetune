@@ -91,11 +91,60 @@ class GooglePlayBillingDataSource {
   Stream<List<PurchaseDetails>> get purchaseStream =>
       _store?.purchaseStream ?? const Stream<List<PurchaseDetails>>.empty();
 
+  /// The purchases Google Play currently holds for this account on this
+  /// device, read synchronously from the billing service's cache.
+  ///
+  /// This is the only authoritative source for "which subscription would a
+  /// new purchase replace": a subscription purchase must name the purchase it
+  /// supersedes by the provider's own details, and those are not
+  /// reconstructible from anything the server holds. Play drops a purchase
+  /// from this answer once it is expired or replaced, so an entry here is one
+  /// the provider still considers owned.
+  ///
+  /// Fails closed. A provider that could not answer throws rather than
+  /// returning an empty list, because an empty list means "nothing to
+  /// replace" and would start an independent second subscription — the exact
+  /// defect this query exists to prevent. Off Android, where the plugin is
+  /// not usable at all, the answer is empty; nothing can be bought there
+  /// either, so nothing is at stake.
+  Future<List<GooglePlayPurchaseDetails>> queryOwnedPurchases() async {
+    final store = _store;
+    if (store == null) return const <GooglePlayPurchaseDetails>[];
+
+    final InAppPurchaseAndroidPlatformAddition? addition;
+    try {
+      addition = store
+          .getPlatformAddition<InAppPurchaseAndroidPlatformAddition?>();
+    } on Object {
+      throw const StoreQueryException(
+        'Google Play could not check your current subscription.',
+      );
+    }
+    if (addition == null) {
+      throw const StoreQueryException(
+        'Google Play could not check your current subscription.',
+      );
+    }
+
+    final response = await addition.queryPastPurchases();
+    if (response.error != null) {
+      throw const StoreQueryException(
+        'Google Play could not check your current subscription.',
+      );
+    }
+    return response.pastPurchases;
+  }
+
   /// Opens the provider's purchase sheet.
   ///
   /// Subscriptions go through `buyNonConsumable`: a subscription is not
   /// consumed and must never be re-purchasable by being consumed, which is what
   /// the consumable path would do.
+  ///
+  /// Whether this starts a new subscription or replaces one is entirely a
+  /// property of [purchaseParam]: a `GooglePlayPurchaseParam` carrying a
+  /// `changeSubscriptionParam` is a replacement, and one without is not. The
+  /// gateway decides which; see `GooglePlayBillingGateway.startPurchase`.
   Future<bool> buy(PurchaseParam purchaseParam) async {
     final store = _store;
     if (store == null) return false;

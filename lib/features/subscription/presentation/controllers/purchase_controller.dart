@@ -7,6 +7,7 @@ import '../../data/providers/subscription_providers.dart';
 import '../../domain/entities/purchase_update.dart';
 import '../../domain/entities/subscription_plan_code.dart';
 import '../../domain/entities/top_up_pack.dart';
+import '../../domain/errors/plan_switch_conflict.dart';
 import '../../domain/errors/subscription_state_failure.dart';
 import '../../domain/repositories/purchase_verification_gateway.dart';
 import '../../domain/repositories/store_billing_gateway.dart';
@@ -194,6 +195,16 @@ class PurchaseController extends StateNotifier<PurchaseState> {
 
     try {
       await _store.startPurchase(plan, obfuscatedAccountId: _accountId);
+    } on PlanSwitchConflict catch (conflict) {
+      if (!mounted) return;
+      // The gateway refused to open the sheet because of what the provider
+      // already holds — a second active subscription, the same plan, or a
+      // switch with no approved terms. Nothing was started, so the current
+      // plan is untouched; the copy says what the user can do about it.
+      state = state.copyWith(
+        phase: PurchasePhase.failed,
+        message: conflict.message,
+      );
     } on Object {
       if (!mounted) return;
       // Deliberately not the caught object's text: a provider or platform
