@@ -126,7 +126,7 @@ select is(
         'entitlement_allowance_adjustments', 'provider_purchase_verifications',
         'provider_notification_events', 'ai_operation_metrics',
         'subscription_products', 'top_up_packs', 'ai_usage_events',
-        'admin_audit_events')),
+        'admin_audit_events', 'admin_rate_limit_buckets')),
   null,
   'authenticated holds no write privilege on any monetization table'
 );
@@ -139,7 +139,7 @@ select is(
         'entitlement_allowance_adjustments', 'provider_purchase_verifications',
         'provider_notification_events', 'ai_operation_metrics',
         'subscription_products', 'top_up_packs', 'ai_usage_events',
-        'admin_audit_events')),
+        'admin_audit_events', 'admin_rate_limit_buckets')),
   null,
   'anon holds no privilege at all on any monetization table'
 );
@@ -158,7 +158,8 @@ select is(
   (select count(*) from information_schema.column_privileges
     where table_schema = 'public' and grantee = 'authenticated'
       and table_name in ('entitlement_allowance_adjustments', 'admin_audit_events',
-                         'provider_notification_events', 'ai_operation_metrics')),
+                         'admin_rate_limit_buckets', 'provider_notification_events',
+                         'ai_operation_metrics')),
   0::bigint,
   'admin adjustments, notification events and telemetry are not user-readable'
 );

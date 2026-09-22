@@ -59,6 +59,8 @@ function jsonResponse(
       "content-type": "application/json",
       "cache-control": "no-store",
       "x-request-id": correlationId,
+      // WA-12: a throttled admin request is a rate limit with a fixed window.
+      ...(status === 429 ? { "retry-after": "60" } : {}),
     },
   });
 }

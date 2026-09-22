@@ -407,3 +407,23 @@ Deno.test("lifecycle failures map to contract statuses under the writer's action
     );
   }
 });
+
+Deno.test("a throttled writer answer is a 429 rate limit, retryable, never a partial success", () => {
+  const response = mutationResponse(
+    {
+      success: false,
+      action: "increase_allowance",
+      errorCode: "TEMPORARY_BACKEND_FAILURE",
+      retryable: true,
+      throttled: true,
+    },
+    "increase_allowance",
+  );
+  assertEquals(response.status, 429);
+  assertEquals(response.outcome, "throttled");
+  assertEquals(response.body.errorCode, "TEMPORARY_BACKEND_FAILURE");
+  assertEquals(response.body.retryable, true);
+  assertEquals(response.body.throttled, true);
+  assertEquals(response.body.retryAfterSeconds, 60);
+  assert(String(response.body.message).includes("Too many"));
+});

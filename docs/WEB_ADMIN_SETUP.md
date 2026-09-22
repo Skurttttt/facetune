@@ -1,4 +1,4 @@
-# Web Admin setup (WA-2 through WA-11)
+# Web Admin setup (WA-2 through WA-12)
 
 The FaceTune Web Admin is a Flutter Web application built from a separate
 entrypoint in this repository. It shares the consumer app's Supabase Auth,
@@ -34,6 +34,8 @@ Contract: `subscription_admin_contract_v1.1`.
 | Flutter (WA-9) | `lib/admin/salon_pilot/` (lifecycle controller + page) | Protected per-user routes for expiration extension, suspend, reactivate, and revoke. User detail exposes state-appropriate controls only for an admin-granted Salon Pilot; provider-backed entitlements receive none. Every flow requires a reason and Preview → Confirm, freezes version/key/date at preview, reuses the key on retry, and displays the server result. Revoke additionally requires an explicit irreversible-action acknowledgement and an unambiguous **Revoke access** confirmation. |
 | Database (WA-10) | `public.admin_list_audit_events(...)`, `public.admin_get_audit_event(uuid)`, `public.admin_list_entitlement_history(uuid, text)` (migration `20261002000100_admin_audit_and_entitlement_history.sql`) | Roster-checked, read-only inspection. Audit list uses fixed newest-first keyset pages of 25 with filter-bound cursors and filters by admin, canonical action, target user, target entitlement, source, and half-open date range. Detail projects snapshots through a six-field allowlist. History merges entitlement-scoped admin events with successfully processed provider lifecycle events, sorted by authoritative event time. Provider message IDs, purchase references, notification types, and payloads never leave Postgres. Snapshot constraints prevent future writers from storing arbitrary JSON. No client receives table access and no WA-10 function writes data. |
 | Flutter (WA-10) | `lib/admin/audit/` | `/audit` filterable list, `/audit/:eventId` immutable detail, and `/entitlements/:entitlementId/history` readable lifecycle timeline. Entitlement and user pages link into the history/audit views. All decoders fail closed; the UI has no audit edit, delete, or rewrite controls. |
+| Database (WA-12) | `public.admin_rate_limit_buckets` (RLS on, no client grant), `public.admin_consume_budget(uuid, text)` (internal), and the four privileged writers plus `admin_search_users` re-created with one added check (migration `20261003000100_admin_abuse_protection.sql`) | Per-administrator request budgets consumed inside the transaction before any work: 30 mutations / minute, 60 account lookups / minute. Refused attempts count. A throttled request answers the contract's retryable `TEMPORARY_BACKEND_FAILURE` with `throttled: true` and writes nothing. Read listings stay bounded by their 25-row pages and are not counted. |
+| Edge / shared (WA-12) | `_shared/admin_mutations.ts`, the three mutation functions | A throttled writer answer is returned as HTTP 429 with `Retry-After: 60`; the browser shows the server message and offers a retry. |
 | Flutter (WA-3) | `lib/admin/shell/` | The protected shell: navigation rail (drawer below 760 px), identity + sign-out, and five live sections — Dashboard `/dashboard`, Users `/users`, Entitlements `/entitlements`, Usage `/usage`, Audit `/audit`. A refresh or sign-in returns to the protected section/detail route that was open (`?from=`, exact validated paths only). |
 
 Admin authority is a database row, not a JWT claim, so revoking it takes
@@ -86,7 +88,7 @@ MFA in Authentication settings before production use.
 ## Deploying the backend
 
 ```powershell
-supabase db push          # 20260925000100 through 20261002000100
+supabase db push          # 20260925000100 through 20261003000100
 supabase functions deploy admin-session
 supabase functions deploy admin-grant-salon-pilot
 supabase functions deploy admin-adjust-salon-pilot-allowance
@@ -136,8 +138,9 @@ persist a session in the browser. Hosting provider is not chosen by WA-2.
 ```powershell
 flutter test test/admin                     # controller, gateway, router/pages, source-scan security contract
 cd supabase/functions; deno test --allow-env --allow-net _shared/admin_auth_test.ts _shared/admin_mutations_test.ts
-supabase test db --local                    # includes WA-2 through WA-11 pgTAP suites
+supabase test db --local                    # includes WA-2 through WA-12 pgTAP suites
 bash supabase/tests/controlled/wa11_admin_concurrency.sh   # two-session admin races (local stack up)
+bash supabase/tests/controlled/wa12_admin_secret_scan.sh   # bundle + source secret/privacy scan
 ```
 
 ## Concurrency, idempotency and stale writes (WA-11)
@@ -171,6 +174,68 @@ No new backend or frontend hardening was needed: every scenario passed
 against the deployed WA-7–WA-9 writers as they were. What remains
 live-only is the HTTP layer (Edge Function timeout + browser retry), which
 reuses the same key and therefore the same database guarantees.
+
+## Security model (WA-12)
+
+The Web Admin is a Flutter Web bundle with a **token-based** Supabase
+session. Every request carries the admin's own JWT as a bearer header; no
+cookie is ever set, so there is no CSRF surface and the Edge Functions'
+`Access-Control-Allow-Origin: *` without credentials is safe. Authorization
+is decided only by `public.admin_users` — never by a JWT claim,
+`app_metadata`, a header, or a route — and is re-checked inside every RPC
+and every Edge Function on every call, so a revoked administrator is refused
+on their next request with no rebuild or token refresh.
+
+What holds, and where it is proven:
+
+| Control | Where |
+| --- | --- |
+| Unauthenticated, normal user, forged role / `app_metadata` / `is_admin` claims, revoked, banned and anonymous accounts are all refused by every admin RPC | `wa12_admin_security_test.sql` §1; `wa2_admin_identity_test.sql` |
+| The roster cannot be read or written by `anon`, `authenticated`, or `service_role`; an anonymous guest cannot even be placed on it | `wa12` §1e; WA-2 guard trigger |
+| Users (and admin sessions) cannot edit entitlements, the usage ledger, adjustments, the audit log, or the rate-limit counters through the API; RLS is enabled on every public table | `wa12` §2; `sub14_security_rls_test.sql` |
+| No admin read returns a selfie, preview, storage path, signed URL, image id, prompt, Gemini data, provider reference, purchase token, or JWT | `wa12` §3 (all eight reads scanned against planted secrets) |
+| Per-administrator budgets on every writer and on account search; reads bounded by fixed pages | `wa12` §4 |
+| Every client-callable admin function is `security definer`, locked `search_path`, roster-checked inside; `anon` and `service_role` can execute none | `wa12` §5 |
+| No service-role key, JWT, Gemini key, provider secret, purchase token, or signed-URL plumbing in the bundle, the admin Flutter tree, or the admin functions | `wa12_admin_secret_scan.sh`; `admin_security_contract_test.dart` |
+| No HTML / JS-interop / URL-launching sink in the admin tree; server text is rendered through `Text` only; no credentialed CORS; `cache-control: no-store`; every function behind `verify_jwt` | `admin_web_security_test.dart` |
+| Only exact section paths are honoured as a return target (no open redirect) | `admin_router_test.dart` |
+
+### Hosting requirements (not set by this repository)
+
+The bundle is static and shares `web/index.html` with the consumer app, so
+HTTP security headers must be set by the host that serves the admin
+origin. Before the admin origin goes live, configure:
+
+```text
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+X-Frame-Options: DENY                      (clickjacking)
+Content-Security-Policy: frame-ancestors 'none'; default-src 'self'; connect-src 'self' https://<project>.supabase.co; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; font-src 'self' https://fonts.gstatic.com
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Permissions-Policy: camera=(), microphone=(), geolocation=()
+Cache-Control: no-store                    (for index.html and flutter_bootstrap.js)
+```
+
+Verify the CSP against the built bundle in a browser before enforcing it
+(CanvasKit / WASM renderers need `'wasm-unsafe-eval'`; loosen only what the
+console proves necessary). Also add the admin origin to Supabase Auth → URL
+Configuration, and keep Supabase Auth's built-in sign-in rate limits on.
+
+### Known limitations
+
+- The session is stored by the Supabase SDK in browser storage (token-based
+  architecture); XSS is mitigated by Flutter's rendering model and the
+  sink-free admin tree, and by the hosting CSP above — it is not eliminated
+  by any single control.
+- The Shared Contract defines no rate-limit code; a throttled request uses
+  the retryable `TEMPORARY_BACKEND_FAILURE` (HTTP 429 at the Edge). A
+  dedicated `RATE_LIMITED` code is a candidate contract revision.
+- Budgets are per administrator per fixed UTC minute, not per IP or globally;
+  a compromised credential can still perform up to 30 mutations a minute
+  until revoked. Revocation takes effect on the next request.
+- Session expiry is enforced by Supabase Auth (JWT `exp`) and re-verified by
+  the app on every token refresh; it cannot be simulated at the database
+  level and is validated live only.
 
 ## Hard locks (enforced by tests)
 

@@ -184,17 +184,25 @@ export function mutationResponse(
   if (r.success === false) {
     const code = asSubscriptionErrorCode(r.errorCode);
     if (code !== null) {
+      // WA-12: a per-administrator budget refusal is a rate limit, not an
+      // outage. The writer marks it `throttled`; it is answered as 429 with
+      // the contract's retryable code so the browser treats it as "try
+      // again", and never as a partial write.
+      const throttled = r.throttled === true;
       return {
-        status: adminErrorStatus(code),
+        status: throttled ? 429 : adminErrorStatus(code),
         body: {
           success: false,
           contractVersion: SUBSCRIPTION_ADMIN_CONTRACT_VERSION,
           action: asAdminAction(r.action) ?? action,
           errorCode: code,
-          message: mutationMessage(code),
+          message: throttled
+            ? "Too many admin operations in the last minute. Wait a moment and try again."
+            : mutationMessage(code),
           retryable: adminErrorRetryable(code),
+          ...(throttled ? { throttled: true, retryAfterSeconds: 60 } : {}),
         },
-        outcome: code,
+        outcome: throttled ? "throttled" : code,
       };
     }
   }
