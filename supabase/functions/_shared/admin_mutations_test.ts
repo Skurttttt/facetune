@@ -150,3 +150,129 @@ Deno.test("zero and any positive integer allowance are accepted; no maximum is i
     assertEquals(parsed.value.initialAllowance, allowance);
   }
 });
+
+// ---------------------------------------------------------------------------
+// WA-8 — allowance adjustment
+// ---------------------------------------------------------------------------
+
+import {
+  adjustmentActionFor,
+  parseAdjustAllowanceRequest,
+} from "./admin_mutations.ts";
+
+const entitlement = "41000000-0000-4000-8000-000000000001";
+const validAdjust = () => ({
+  entitlementId: entitlement.toUpperCase(),
+  amount: 10,
+  reason: " Panel testing extension ",
+  idempotencyKey: "wa8-key-1",
+  expectedVersion: 3,
+});
+
+Deno.test("an adjustment request normalizes and keeps its sign", () => {
+  const parsed = parseAdjustAllowanceRequest(validAdjust());
+  assert(parsed.ok);
+  assertEquals(parsed.value, {
+    entitlementId: entitlement,
+    amount: 10,
+    reason: "Panel testing extension",
+    idempotencyKey: "wa8-key-1",
+    expectedVersion: 3,
+  });
+  const reduction = parseAdjustAllowanceRequest({
+    ...validAdjust(),
+    amount: -12,
+  });
+  assert(reduction.ok);
+  assertEquals(reduction.value.amount, -12);
+  assertEquals(adjustmentActionFor(10), "increase_allowance");
+  assertEquals(adjustmentActionFor(-12), "decrease_allowance");
+});
+
+Deno.test("expectedVersion is optional but must be a positive integer when given", () => {
+  const omitted = parseAdjustAllowanceRequest({
+    ...validAdjust(),
+    expectedVersion: undefined,
+  });
+  assert(omitted.ok);
+  assertEquals(omitted.value.expectedVersion, null);
+  const explicitNull = parseAdjustAllowanceRequest({
+    ...validAdjust(),
+    expectedVersion: null,
+  });
+  assert(explicitNull.ok);
+  assertEquals(explicitNull.value.expectedVersion, null);
+  for (const bad of [0, -1, 1.5, "3"]) {
+    const parsed = parseAdjustAllowanceRequest({
+      ...validAdjust(),
+      expectedVersion: bad,
+    });
+    assert(!parsed.ok, String(bad));
+    assertEquals(parsed.field, "expectedVersion");
+  }
+});
+
+Deno.test("adjustment fields are refused by name; no maximum is imposed", () => {
+  const cases: Array<[Record<string, unknown> | null, string]> = [
+    [null, "body"],
+    [{ ...validAdjust(), entitlementId: "nope" }, "entitlementId"],
+    [{ ...validAdjust(), amount: 0 }, "amount"],
+    [{ ...validAdjust(), amount: 2.5 }, "amount"],
+    [{ ...validAdjust(), amount: "10" }, "amount"],
+    [{ ...validAdjust(), reason: "  " }, "reason"],
+    [{ ...validAdjust(), idempotencyKey: "" }, "idempotencyKey"],
+  ];
+  for (const [body, field] of cases) {
+    const parsed = parseAdjustAllowanceRequest(body);
+    assert(!parsed.ok, field);
+    assertEquals(parsed.field, field);
+  }
+  for (const amount of [5, 10, 250, -1, 100_000]) {
+    assert(
+      parseAdjustAllowanceRequest({ ...validAdjust(), amount }).ok,
+      String(amount),
+    );
+  }
+});
+
+Deno.test("adjustment failures keep the writer's action and map to contract statuses", () => {
+  const expect: Array<[string, number]> = [
+    ["ENTITLEMENT_NOT_FOUND", 404],
+    ["INVALID_ALLOWANCE_ADJUSTMENT", 400],
+    ["ALLOWANCE_BELOW_COMMITTED_USAGE", 409],
+    ["ALLOWANCE_CONFLICTS_WITH_ACTIVE_RESERVATION", 409],
+    ["CONCURRENT_MODIFICATION", 409],
+    ["ENTITLEMENT_EXPIRED", 409],
+    ["ENTITLEMENT_REVOKED", 409],
+  ];
+  for (const [code, status] of expect) {
+    const response = mutationResponse(
+      {
+        success: false,
+        action: "decrease_allowance",
+        errorCode: code,
+        retryable: false,
+      },
+      "increase_allowance",
+    );
+    assertEquals(response.status, status, code);
+    assertEquals(response.body.action, "decrease_allowance", code);
+    assertEquals(response.body.errorCode, code);
+    assert(
+      typeof response.body.message === "string" &&
+        response.body.message.length > 0,
+      code,
+    );
+  }
+  assertEquals(
+    mutationResponse(null, "decrease_allowance").body.action,
+    "decrease_allowance",
+  );
+  assertEquals(
+    invalidRequestBody(
+      { ok: false, field: "amount", message: "m" },
+      "decrease_allowance",
+    ).action,
+    "decrease_allowance",
+  );
+});

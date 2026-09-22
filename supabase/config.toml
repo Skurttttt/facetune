@@ -47,3 +47,7 @@ verify_jwt = true
 # database writer verifies it again from the same session.
 [functions.admin-grant-salon-pilot]
 verify_jwt = true
+
+# WA-8. Allowance adjustment; same double gate as the grant.
+[functions.admin-adjust-salon-pilot-allowance]
+verify_jwt = true

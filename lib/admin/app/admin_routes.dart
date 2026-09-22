@@ -70,7 +70,7 @@ enum AdminSection {
   /// The section whose path is [path], or `null`.
   static AdminSection? fromPath(String path) {
     if (AdminRoutes.isUserDetailPath(path) ||
-        AdminRoutes.isGrantSalonPilotPath(path)) {
+        AdminRoutes.isUserActionPath(path)) {
       return AdminSection.users;
     }
     for (final section in values) {
@@ -108,15 +108,26 @@ abstract final class AdminRoutes {
   /// WA-7: the Salon Pilot grant workflow for one account.
   static const String grantSalonPilotSegment = 'grant-salon-pilot';
 
-  static final RegExp _grantSalonPilotPattern = RegExp(
-    r'^/users/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/grant-salon-pilot$',
+  /// WA-8: the Salon Pilot allowance adjustment workflow for one account.
+  static const String adjustAllowanceSegment = 'adjust-allowance';
+
+  /// The per-account privileged workflows under `/users/:userId/…`.
+  static final RegExp _userActionPattern = RegExp(
+    r'^/users/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/(grant-salon-pilot|adjust-allowance)$',
   );
 
   static String grantSalonPilot(String userId) =>
       '/users/$userId/$grantSalonPilotSegment';
 
+  static String adjustAllowance(String userId) =>
+      '/users/$userId/$adjustAllowanceSegment';
+
+  /// Whether [path] is one of the per-account privileged workflows.
+  static bool isUserActionPath(String path) =>
+      _userActionPattern.hasMatch(path);
+
   static bool isGrantSalonPilotPath(String path) =>
-      _grantSalonPilotPattern.hasMatch(path);
+      isUserActionPath(path) && path.endsWith('/$grantSalonPilotSegment');
 
   /// Query parameters the Entitlements and Usage sections accept as initial
   /// filters (WA-6). They are filters, not authority: the server re-checks
@@ -147,7 +158,7 @@ abstract final class AdminRoutes {
       path != null &&
           (AdminSection.values.any((section) => section.path == path) ||
               isUserDetailPath(path) ||
-              isGrantSalonPilotPath(path))
+              isUserActionPath(path))
       ? path
       : null;
 }

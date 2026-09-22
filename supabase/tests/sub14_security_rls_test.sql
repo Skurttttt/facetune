@@ -228,14 +228,15 @@ select is(
       and has_function_privilege('authenticated', p.oid, 'EXECUTE')),
   -- WA-2 added `current_user_is_admin()`, WA-4 dashboard metrics, WA-5 the
   -- two read-only account endpoints, WA-6 the two read-only listings, and
-  -- WA-7 the Salon Pilot grant. Each admin endpoint refuses inside unless
-  -- the session caller is on the active roster.
-  'admin_dashboard_metrics,admin_get_user,admin_grant_salon_pilot,' ||
+  -- WA-7 the Salon Pilot grant, WA-8 the allowance adjustment. Each admin
+  -- endpoint refuses inside unless the session caller is on the active roster.
+  'admin_adjust_salon_pilot_allowance,admin_dashboard_metrics,admin_get_user,' ||
+  'admin_grant_salon_pilot,' ||
   'admin_list_entitlements,admin_list_usage,admin_search_users,' ||
   'authorize_tutorial_generation,commit_ai_look,consume_ai_quota,' ||
   'current_user_is_admin,release_ai_look,reserve_ai_look,' ||
   'resolve_subscription_state',
-  'the user-callable security-definer surface is exactly the thirteen known RPCs'
+  'the user-callable security-definer surface is exactly the fourteen known RPCs'
 );
 -- No hidden special-casing of an account inside any function body.
 select is(

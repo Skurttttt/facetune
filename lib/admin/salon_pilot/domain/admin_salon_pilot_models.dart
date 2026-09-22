@@ -97,6 +97,14 @@ class AdminMutationOutcome {
 enum AdminMutationErrorCode {
   invalidRequest('invalid_request'),
   userNotFound('USER_NOT_FOUND'),
+  entitlementNotFound('ENTITLEMENT_NOT_FOUND'),
+  entitlementExpired('ENTITLEMENT_EXPIRED'),
+  entitlementRevoked('ENTITLEMENT_REVOKED'),
+  invalidAllowanceAdjustment('INVALID_ALLOWANCE_ADJUSTMENT'),
+  allowanceBelowCommittedUsage('ALLOWANCE_BELOW_COMMITTED_USAGE'),
+  allowanceConflictsWithActiveReservation(
+    'ALLOWANCE_CONFLICTS_WITH_ACTIVE_RESERVATION',
+  ),
   salonPilotAlreadyGranted('SALON_PILOT_ALREADY_GRANTED'),
   providerStateConflict('PROVIDER_STATE_CONFLICT'),
   idempotencyConflict('IDEMPOTENCY_CONFLICT'),
@@ -133,4 +141,76 @@ class AdminMutationFailure implements Exception {
 
   @override
   String toString() => 'AdminMutationFailure(${code.code})';
+}
+
+// ---------------------------------------------------------------------------
+// WA-8 — allowance adjustment
+// ---------------------------------------------------------------------------
+
+/// Quick actions the SOT recommends (§23). Custom amounts are typed.
+const salonPilotQuickAdjustments = [5, 10];
+
+/// What the admin intends: a signed, non-zero change to one entitlement's
+/// allowance. Positive is `increase_allowance`, negative is
+/// `decrease_allowance` (Shared Contract §43). [expectedVersion] is the
+/// entitlement version the admin was looking at; the server refuses the
+/// change if another writer moved it since (Web Admin SOT §47).
+class AdjustAllowanceIntent {
+  const AdjustAllowanceIntent({
+    required this.entitlementId,
+    required this.amount,
+    required this.reason,
+    required this.idempotencyKey,
+    required this.expectedVersion,
+  });
+
+  final String entitlementId;
+  final int amount;
+  final String reason;
+  final String idempotencyKey;
+  final int? expectedVersion;
+
+  bool get isIncrease => amount > 0;
+
+  Map<String, Object?> toRequestBody() => {
+    'entitlementId': entitlementId,
+    'amount': amount,
+    'reason': reason,
+    'idempotencyKey': idempotencyKey,
+    'expectedVersion': expectedVersion,
+  };
+}
+
+/// The informational preview shown before confirmation (Web Admin SOT §25).
+///
+/// Mirrors the arithmetic the Shared Contract fixes (§29, §31, §44) over
+/// figures the server already returned; it decides nothing. The server
+/// recomputes under the account lock and may still refuse — the page shows
+/// that refusal as the authoritative answer.
+class AllowanceAdjustmentPreview {
+  const AllowanceAdjustmentPreview({
+    required this.currentEffectiveAllowance,
+    required this.amount,
+    required this.committedUsage,
+    required this.reservedUsage,
+  });
+
+  final int currentEffectiveAllowance;
+  final int amount;
+  final int committedUsage;
+  final int reservedUsage;
+
+  int get newEffectiveAllowance => currentEffectiveAllowance + amount;
+
+  /// Expected `remainingAiLooks` after the change (effective − committed).
+  int get newRemaining => newEffectiveAllowance - committedUsage;
+
+  /// Expected `availableAiLooks` after the change (effective − committed − reserved).
+  int get newAvailable =>
+      newEffectiveAllowance - committedUsage - reservedUsage;
+
+  /// Whether the server's minimum (Shared Contract §44) would be met. Advisory.
+  bool get coversCommittedUsage => newEffectiveAllowance >= committedUsage;
+  bool get coversReservations =>
+      newEffectiveAllowance >= committedUsage + reservedUsage;
 }

@@ -276,6 +276,67 @@ void main() {
       expect(adminSources, contains("'admin-grant-salon-pilot'"));
     });
 
+    test(
+      'the WA-8 adjustment function is gated twice and writes only via the ledger',
+      () {
+        final function = File(
+          pathOf(
+            'supabase/functions/admin-adjust-salon-pilot-allowance/index.ts',
+          ),
+        ).readAsStringSync();
+        expect(function, isNot(contains('SERVICE_ROLE')));
+        expect(function, contains('SUPABASE_ANON_KEY'));
+        expect(function, contains('requireAdmin('));
+        expect(function, contains('admin_adjust_salon_pilot_allowance'));
+        expect(function, isNot(contains('p_admin_user_id')));
+        final config = File(
+          pathOf('supabase/config.toml'),
+        ).readAsStringSync().replaceAll('\r\n', '\n');
+        expect(
+          config,
+          contains(
+            '[functions.admin-adjust-salon-pilot-allowance]\nverify_jwt = true',
+          ),
+        );
+        // The writer never sets the adjustment total or touches usage rows
+        // itself: the audited ledger's trigger is the only path.
+        final writer = File(
+          pathOf(
+            'supabase/migrations/20260930000100_admin_adjust_salon_pilot_allowance.sql',
+          ),
+        ).readAsStringSync();
+        expect(
+          writer,
+          isNot(matches(RegExp(r'set\s+allowance_adjustment_total'))),
+        );
+        expect(
+          writer,
+          isNot(
+            matches(
+              RegExp(
+                r'(update|delete from|insert into)\s+public\.usage_ledger',
+              ),
+            ),
+          ),
+        );
+        expect(
+          writer,
+          contains('insert into public.entitlement_allowance_adjustments'),
+        );
+        final adminSources = Directory(pathOf('lib/admin'))
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((f) => f.path.endsWith('.dart'))
+            .map((f) => f.readAsStringSync())
+            .join('\n');
+        expect(
+          adminSources,
+          isNot(contains("'admin_adjust_salon_pilot_allowance'")),
+        );
+        expect(adminSources, contains("'admin-adjust-salon-pilot-allowance'"));
+      },
+    );
+
     test('the roster is unreadable by every client role', () {
       final migration = File(
         pathOf('supabase/migrations/20260925000100_admin_identity.sql'),

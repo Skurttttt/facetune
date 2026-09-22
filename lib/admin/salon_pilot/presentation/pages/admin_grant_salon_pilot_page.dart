@@ -478,7 +478,6 @@ class _Failure extends StatelessWidget {
       'This request was already submitted with different values.',
     AdminMutationErrorCode.concurrentModification =>
       'The entitlement changed while you were working.',
-    AdminMutationErrorCode.temporaryBackendFailure ||
-    AdminMutationErrorCode.unknown => 'The grant could not be completed.',
+    _ => 'The grant could not be completed.',
   };
 }

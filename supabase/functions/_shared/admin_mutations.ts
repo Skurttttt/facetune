@@ -11,8 +11,10 @@
  */
 
 import {
+  type AdminAction,
   adminErrorRetryable,
   adminErrorStatus,
+  asAdminAction,
   asSubscriptionErrorCode,
   SUBSCRIPTION_ADMIN_CONTRACT_VERSION,
   type SubscriptionErrorCode,
@@ -42,7 +44,10 @@ export interface GrantSalonPilotRequest {
 /** A request the server does not accept as sent. Names the field, never echoes its value. */
 export interface InvalidRequest {
   ok: false;
-  field: keyof GrantSalonPilotRequest | "body";
+  field:
+    | keyof GrantSalonPilotRequest
+    | keyof AdjustAllowanceRequest
+    | "body";
   message: string;
 }
 
@@ -131,11 +136,14 @@ export function parseGrantSalonPilotRequest(
 }
 
 /** The 400 body for a request the function refuses before calling the writer. */
-export function invalidRequestBody(failure: InvalidRequest) {
+export function invalidRequestBody(
+  failure: InvalidRequest,
+  action: AdminAction = "grant_salon_pilot",
+) {
   return {
     success: false,
     contractVersion: SUBSCRIPTION_ADMIN_CONTRACT_VERSION,
-    action: "grant_salon_pilot",
+    action,
     errorCode: "invalid_request",
     field: failure.field,
     message: failure.message,
@@ -157,9 +165,12 @@ export interface MutationResponse {
  * else — a shape the contract does not name — is a temporary backend failure,
  * never an invented success.
  */
-export function mutationResponse(result: unknown): MutationResponse {
+export function mutationResponse(
+  result: unknown,
+  action: AdminAction = "grant_salon_pilot",
+): MutationResponse {
   if (typeof result !== "object" || result === null) {
-    return backendFailure();
+    return backendFailure(action);
   }
   const r = result as Record<string, unknown>;
   if (r.success === true && typeof r.entitlementId === "string") {
@@ -177,7 +188,7 @@ export function mutationResponse(result: unknown): MutationResponse {
         body: {
           success: false,
           contractVersion: SUBSCRIPTION_ADMIN_CONTRACT_VERSION,
-          action: typeof r.action === "string" ? r.action : "grant_salon_pilot",
+          action: asAdminAction(r.action) ?? action,
           errorCode: code,
           message: mutationMessage(code),
           retryable: adminErrorRetryable(code),
@@ -186,17 +197,17 @@ export function mutationResponse(result: unknown): MutationResponse {
       };
     }
   }
-  return backendFailure();
+  return backendFailure(action);
 }
 
-function backendFailure(): MutationResponse {
+function backendFailure(action: AdminAction): MutationResponse {
   const code: SubscriptionErrorCode = "TEMPORARY_BACKEND_FAILURE";
   return {
     status: adminErrorStatus(code),
     body: {
       success: false,
       contractVersion: SUBSCRIPTION_ADMIN_CONTRACT_VERSION,
-      action: "grant_salon_pilot",
+      action,
       errorCode: code,
       message: mutationMessage(code),
       retryable: true,
@@ -218,8 +229,20 @@ export function mutationMessage(code: SubscriptionErrorCode): string {
       return "This account already holds a Salon Pilot entitlement that is in force.";
     case "PROVIDER_STATE_CONFLICT":
       return "This account has a store subscription in force. Salon Pilot cannot replace a paid subscription.";
+    case "ENTITLEMENT_NOT_FOUND":
+      return "No entitlement matches that id.";
+    case "INVALID_ALLOWANCE_ADJUSTMENT":
+      return "Only an admin-granted Salon Pilot allowance can be adjusted.";
+    case "ALLOWANCE_BELOW_COMMITTED_USAGE":
+      return "That reduction would put the allowance below usage already committed.";
+    case "ALLOWANCE_CONFLICTS_WITH_ACTIVE_RESERVATION":
+      return "That reduction would not cover an AI Look that is currently reserved. Try again after the reservation completes or is released.";
+    case "ENTITLEMENT_EXPIRED":
+      return "This entitlement has ended and cannot be adjusted.";
+    case "ENTITLEMENT_REVOKED":
+      return "This entitlement was revoked and cannot be adjusted.";
     case "IDEMPOTENCY_CONFLICT":
-      return "This request was already submitted with different values. Start a new grant.";
+      return "This request was already submitted with different values. Start a new one.";
     case "CONCURRENT_MODIFICATION":
       return "The entitlement changed while you were working. Reload and try again.";
     case "TEMPORARY_BACKEND_FAILURE":
@@ -227,4 +250,99 @@ export function mutationMessage(code: SubscriptionErrorCode): string {
     default:
       return "The request could not be completed.";
   }
+}
+
+// ---------------------------------------------------------------------------
+// WA-8 — allowance adjustment (Shared Contract §43, §44; Web Admin SOT §23–§26)
+// ---------------------------------------------------------------------------
+
+export interface AdjustAllowanceRequest {
+  entitlementId: string;
+  /** Signed, non-zero. Positive → increase_allowance, negative → decrease_allowance. */
+  amount: number;
+  reason: string;
+  idempotencyKey: string;
+  /** The entitlement version the admin acted on; null skips the stale-write check. */
+  expectedVersion: number | null;
+}
+
+export type ParsedAdjustRequest =
+  | { ok: true; value: AdjustAllowanceRequest }
+  | InvalidRequest;
+
+/** The canonical action an adjustment's sign implies (contract §43). */
+export function adjustmentActionFor(amount: number): AdminAction {
+  return amount > 0 ? "increase_allowance" : "decrease_allowance";
+}
+
+/**
+ * Validates the adjustment request body. The writer repeats every rule and
+ * owns the allowance arithmetic; nothing here computes a resulting balance.
+ */
+export function parseAdjustAllowanceRequest(
+  body: unknown,
+): ParsedAdjustRequest {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return invalid("body", "The request body must be a JSON object.");
+  }
+  const r = body as Record<string, unknown>;
+
+  const entitlementId = r.entitlementId;
+  if (typeof entitlementId !== "string" || !UUID.test(entitlementId)) {
+    return invalid("entitlementId", "entitlementId must be an entitlement id.");
+  }
+
+  const amount = r.amount;
+  if (
+    typeof amount !== "number" || !Number.isInteger(amount) || amount === 0
+  ) {
+    return invalid("amount", "amount must be a non-zero integer.");
+  }
+
+  const reason = typeof r.reason === "string" ? r.reason.trim() : "";
+  if (reason.length < 1 || reason.length > ADMIN_REASON_MAX_LENGTH) {
+    return invalid(
+      "reason",
+      `reason is required (1-${ADMIN_REASON_MAX_LENGTH} characters).`,
+    );
+  }
+
+  const idempotencyKey = typeof r.idempotencyKey === "string"
+    ? r.idempotencyKey.trim()
+    : "";
+  if (
+    idempotencyKey.length < 1 ||
+    idempotencyKey.length > ADMIN_IDEMPOTENCY_KEY_MAX_LENGTH
+  ) {
+    return invalid(
+      "idempotencyKey",
+      `idempotencyKey is required (1-${ADMIN_IDEMPOTENCY_KEY_MAX_LENGTH} characters).`,
+    );
+  }
+
+  const expectedVersion = r.expectedVersion === undefined ||
+      r.expectedVersion === null
+    ? null
+    : r.expectedVersion;
+  if (
+    expectedVersion !== null &&
+    (typeof expectedVersion !== "number" ||
+      !Number.isInteger(expectedVersion) || expectedVersion < 1)
+  ) {
+    return invalid(
+      "expectedVersion",
+      "expectedVersion must be a positive integer when supplied.",
+    );
+  }
+
+  return {
+    ok: true,
+    value: {
+      entitlementId: entitlementId.toLowerCase(),
+      amount,
+      reason,
+      idempotencyKey,
+      expectedVersion,
+    },
+  };
 }

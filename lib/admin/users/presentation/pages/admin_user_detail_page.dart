@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../features/subscription/domain/entities/billing_provider.dart';
 import '../../../../features/subscription/domain/entities/entitlement_status.dart';
+import '../../../../features/subscription/domain/entities/subscription_plan_code.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../../app/admin_routes.dart';
 import '../../domain/admin_user_models.dart';
@@ -133,6 +134,21 @@ class _Detail extends StatelessWidget {
               icon: const Icon(Icons.card_giftcard_outlined, size: 18),
               label: const Text('Grant Salon Pilot'),
             ),
+            // WA-8: only an admin-granted Salon Pilot has an editable
+            // allowance; the server re-checks this whatever the button says.
+            if (entitlement != null &&
+                entitlement.planCode == SubscriptionPlanCode.salonPilot &&
+                entitlement.billingProvider ==
+                    BillingProvider.adminGranted) ...[
+              const SizedBox(width: AppSpacing.xs),
+              FilledButton.tonalIcon(
+                key: const Key('admin-user-detail-adjust-allowance'),
+                onPressed: () =>
+                    context.go(AdminRoutes.adjustAllowance(detail.userId)),
+                icon: const Icon(Icons.tune_outlined, size: 18),
+                label: const Text('Adjust allowance'),
+              ),
+            ],
           ],
         ),
         const SizedBox(height: AppSpacing.sm),

@@ -20,13 +20,22 @@ class SupabaseAdminSalonPilotGateway implements AdminSalonPilotGateway {
   });
 
   static const functionName = 'admin-grant-salon-pilot';
+  static const adjustFunctionName = 'admin-adjust-salon-pilot-allowance';
 
   final SupabaseClient _client;
   final Duration operationTimeout;
 
   @override
-  Future<AdminMutationOutcome> grantSalonPilot(
-    GrantSalonPilotIntent intent,
+  Future<AdminMutationOutcome> grantSalonPilot(GrantSalonPilotIntent intent) =>
+      _invoke(functionName, intent.toRequestBody());
+
+  @override
+  Future<AdminMutationOutcome> adjustAllowance(AdjustAllowanceIntent intent) =>
+      _invoke(adjustFunctionName, intent.toRequestBody());
+
+  Future<AdminMutationOutcome> _invoke(
+    String function,
+    Map<String, Object?> body,
   ) async {
     if (_client.auth.currentSession == null) {
       throw const AdminAuthFailure(SubscriptionErrorCode.authRequired);
@@ -34,11 +43,7 @@ class SupabaseAdminSalonPilotGateway implements AdminSalonPilotGateway {
     Object? data;
     try {
       final response = await _client.functions
-          .invoke(
-            functionName,
-            method: HttpMethod.post,
-            body: intent.toRequestBody(),
-          )
+          .invoke(function, method: HttpMethod.post, body: body)
           .timeout(operationTimeout);
       data = response.data;
     } on FunctionException catch (error) {
