@@ -151,6 +151,12 @@ class _Detail extends StatelessWidget {
             ],
           ],
         ),
+        if (entitlement != null &&
+            entitlement.planCode == SubscriptionPlanCode.salonPilot &&
+            entitlement.billingProvider == BillingProvider.adminGranted) ...[
+          const SizedBox(height: AppSpacing.xs),
+          _LifecycleActions(detail: detail, entitlement: entitlement),
+        ],
         const SizedBox(height: AppSpacing.sm),
         if (entitlement == null)
           const _DetailNotice(
@@ -160,6 +166,74 @@ class _Detail extends StatelessWidget {
         else
           _EntitlementPanel(entitlement: entitlement),
       ],
+    );
+  }
+}
+
+class _LifecycleActions extends StatelessWidget {
+  const _LifecycleActions({required this.detail, required this.entitlement});
+
+  final AdminUserDetail detail;
+  final AdminEntitlementDetail entitlement;
+
+  bool get _canExtend =>
+      entitlement.storedStatus != EntitlementStatus.expired &&
+      entitlement.storedStatus != EntitlementStatus.revoked;
+
+  bool get _canSuspend =>
+      entitlement.effectiveStatus == EntitlementStatus.active ||
+      entitlement.effectiveStatus == EntitlementStatus.gracePeriod;
+
+  bool get _canReactivate =>
+      entitlement.storedStatus == EntitlementStatus.suspended;
+
+  bool get _canRevoke =>
+      entitlement.storedStatus == EntitlementStatus.active ||
+      entitlement.storedStatus == EntitlementStatus.gracePeriod ||
+      entitlement.storedStatus == EntitlementStatus.suspended;
+
+  @override
+  Widget build(BuildContext context) {
+    final actions = <Widget>[
+      if (_canExtend)
+        OutlinedButton.icon(
+          key: const Key('admin-user-detail-extend-expiration'),
+          onPressed: () =>
+              context.go(AdminRoutes.extendExpiration(detail.userId)),
+          icon: const Icon(Icons.event_outlined, size: 18),
+          label: const Text('Extend expiration'),
+        ),
+      if (_canSuspend)
+        OutlinedButton.icon(
+          key: const Key('admin-user-detail-suspend'),
+          onPressed: () =>
+              context.go(AdminRoutes.suspendEntitlement(detail.userId)),
+          icon: const Icon(Icons.pause_circle_outline, size: 18),
+          label: const Text('Suspend'),
+        ),
+      if (_canReactivate)
+        OutlinedButton.icon(
+          key: const Key('admin-user-detail-reactivate'),
+          onPressed: () =>
+              context.go(AdminRoutes.reactivateEntitlement(detail.userId)),
+          icon: const Icon(Icons.play_circle_outline, size: 18),
+          label: const Text('Reactivate'),
+        ),
+      if (_canRevoke)
+        OutlinedButton.icon(
+          key: const Key('admin-user-detail-revoke'),
+          onPressed: () =>
+              context.go(AdminRoutes.revokeEntitlement(detail.userId)),
+          icon: const Icon(Icons.block_outlined, size: 18),
+          label: const Text('Revoke access'),
+        ),
+    ];
+    if (actions.isEmpty) return const SizedBox.shrink();
+    return Wrap(
+      key: const Key('admin-user-detail-lifecycle-actions'),
+      spacing: AppSpacing.xs,
+      runSpacing: AppSpacing.xs,
+      children: actions,
     );
   }
 }

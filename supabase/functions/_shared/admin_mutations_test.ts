@@ -276,3 +276,134 @@ Deno.test("adjustment failures keep the writer's action and map to contract stat
     "decrease_allowance",
   );
 });
+
+// ---------------------------------------------------------------------------
+// WA-9 — Salon Pilot lifecycle
+// ---------------------------------------------------------------------------
+
+import { LIFECYCLE_ACTIONS, parseLifecycleRequest } from "./admin_mutations.ts";
+
+const lifecycleNow = new Date("2026-09-22T12:00:00Z");
+const validLifecycle = (action: string) => ({
+  action,
+  entitlementId: entitlement.toUpperCase(),
+  reason: " Pilot access paused for review ",
+  idempotencyKey: "wa9-key-1",
+  expectedVersion: 2,
+  newExpiresAt: "2027-03-31T23:59:59Z",
+});
+
+Deno.test("the four lifecycle actions parse; newExpiresAt is used only by extension", () => {
+  assertEquals([...LIFECYCLE_ACTIONS], [
+    "extend_expiration",
+    "suspend_entitlement",
+    "reactivate_entitlement",
+    "revoke_entitlement",
+  ]);
+  for (const action of LIFECYCLE_ACTIONS) {
+    const parsed = parseLifecycleRequest(validLifecycle(action), lifecycleNow);
+    assert(parsed.ok, action);
+    assertEquals(parsed.value.action, action);
+    assertEquals(parsed.value.entitlementId, entitlement);
+    assertEquals(parsed.value.reason, "Pilot access paused for review");
+    assertEquals(parsed.value.expectedVersion, 2);
+    assertEquals(
+      parsed.value.newExpiresAt,
+      action === "extend_expiration" ? "2027-03-31T23:59:59.000Z" : null,
+    );
+  }
+});
+
+Deno.test("lifecycle requests are refused by field, under their action where known", () => {
+  const unknown = parseLifecycleRequest(
+    validLifecycle("delete_entitlement"),
+    lifecycleNow,
+  );
+  assert(!unknown.ok);
+  assertEquals(unknown.field, "body");
+  assertEquals(unknown.action, null);
+
+  const cases: Array<[Record<string, unknown>, string, string]> = [
+    [
+      { ...validLifecycle("extend_expiration"), newExpiresAt: undefined },
+      "newExpiresAt",
+      "extend_expiration",
+    ],
+    [
+      { ...validLifecycle("extend_expiration"), newExpiresAt: "yesterday" },
+      "newExpiresAt",
+      "extend_expiration",
+    ],
+    [
+      {
+        ...validLifecycle("extend_expiration"),
+        newExpiresAt: "2026-09-22T11:59:59Z",
+      },
+      "newExpiresAt",
+      "extend_expiration",
+    ],
+    [
+      { ...validLifecycle("revoke_entitlement"), reason: "  " },
+      "reason",
+      "revoke_entitlement",
+    ],
+    [
+      { ...validLifecycle("suspend_entitlement"), entitlementId: "nope" },
+      "entitlementId",
+      "suspend_entitlement",
+    ],
+    [
+      { ...validLifecycle("reactivate_entitlement"), idempotencyKey: "" },
+      "idempotencyKey",
+      "reactivate_entitlement",
+    ],
+    [
+      { ...validLifecycle("suspend_entitlement"), expectedVersion: 0 },
+      "expectedVersion",
+      "suspend_entitlement",
+    ],
+  ];
+  for (const [body, field, action] of cases) {
+    const parsed = parseLifecycleRequest(body, lifecycleNow);
+    assert(!parsed.ok, field);
+    assertEquals(parsed.field, field);
+    assertEquals(parsed.action, action);
+  }
+  // A suspend request that happens to carry a date ignores it.
+  const suspend = parseLifecycleRequest(
+    { ...validLifecycle("suspend_entitlement"), newExpiresAt: "yesterday" },
+    lifecycleNow,
+  );
+  assert(suspend.ok);
+  assertEquals(suspend.value.newExpiresAt, null);
+});
+
+Deno.test("lifecycle failures map to contract statuses under the writer's action", () => {
+  for (
+    const [code, status] of [
+      ["INVALID_ENTITLEMENT_TRANSITION", 409],
+      ["PROVIDER_STATE_CONFLICT", 409],
+      ["ENTITLEMENT_REVOKED", 409],
+      ["ENTITLEMENT_EXPIRED", 409],
+      ["CONCURRENT_MODIFICATION", 409],
+      ["ENTITLEMENT_NOT_FOUND", 404],
+    ] as Array<[string, number]>
+  ) {
+    const response = mutationResponse(
+      {
+        success: false,
+        action: "revoke_entitlement",
+        errorCode: code,
+        retryable: false,
+      },
+      "revoke_entitlement",
+    );
+    assertEquals(response.status, status, code);
+    assertEquals(response.body.action, "revoke_entitlement");
+    assert(
+      typeof response.body.message === "string" &&
+        response.body.message.length > 0,
+      code,
+    );
+  }
+});

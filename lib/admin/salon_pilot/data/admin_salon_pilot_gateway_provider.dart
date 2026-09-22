@@ -33,4 +33,11 @@ class _UnavailableAdminSalonPilotGateway implements AdminSalonPilotGateway {
       AdminMutationErrorCode.temporaryBackendFailure,
     );
   }
+
+  @override
+  Future<AdminMutationOutcome> applyLifecycle(LifecycleIntent intent) async {
+    throw const AdminMutationFailure(
+      AdminMutationErrorCode.temporaryBackendFailure,
+    );
+  }
 }

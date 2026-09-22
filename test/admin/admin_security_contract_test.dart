@@ -337,6 +337,55 @@ void main() {
       },
     );
 
+    test('the WA-9 lifecycle function is gated twice and holds no secret', () {
+      final function = File(
+        pathOf('supabase/functions/admin-salon-pilot-lifecycle/index.ts'),
+      ).readAsStringSync();
+      expect(function, isNot(contains('SERVICE_ROLE')));
+      expect(function, contains('SUPABASE_ANON_KEY'));
+      expect(function, contains('requireAdmin('));
+      expect(function, contains('admin_extend_salon_pilot_expiration'));
+      expect(function, contains('admin_set_salon_pilot_lifecycle'));
+      expect(function, isNot(contains('p_admin_user_id')));
+
+      final config = File(
+        pathOf('supabase/config.toml'),
+      ).readAsStringSync().replaceAll('\r\n', '\n');
+      expect(
+        config,
+        contains('[functions.admin-salon-pilot-lifecycle]\nverify_jwt = true'),
+      );
+
+      // Browser presentation knows only the Edge Function name. The two
+      // security-definer writer names stay behind that server boundary.
+      final adminSources = Directory(pathOf('lib/admin'))
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.dart'))
+          .map((f) => f.readAsStringSync())
+          .join('\n');
+      expect(
+        adminSources,
+        isNot(contains("'admin_extend_salon_pilot_expiration'")),
+      );
+      expect(
+        adminSources,
+        isNot(contains("'admin_set_salon_pilot_lifecycle'")),
+      );
+      expect(adminSources, contains("'admin-salon-pilot-lifecycle'"));
+
+      final gateway = File(
+        pathOf(
+          'lib/admin/salon_pilot/data/supabase_admin_salon_pilot_gateway.dart',
+        ),
+      ).readAsStringSync();
+      expect(gateway, contains('applyLifecycle(LifecycleIntent intent)'));
+      expect(
+        gateway,
+        contains('_invoke(lifecycleFunctionName, intent.toRequestBody())'),
+      );
+    });
+
     test('the roster is unreadable by every client role', () {
       final migration = File(
         pathOf('supabase/migrations/20260925000100_admin_identity.sql'),

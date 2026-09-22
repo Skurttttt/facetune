@@ -58,6 +58,16 @@ class ScriptedSalonPilotGateway implements AdminSalonPilotGateway {
     adjustCalls.add(intent);
     return adjustResponses.removeAt(0)(intent);
   }
+
+  final List<Future<AdminMutationOutcome> Function(LifecycleIntent)>
+  lifecycleResponses = [];
+  final List<LifecycleIntent> lifecycleCalls = [];
+
+  @override
+  Future<AdminMutationOutcome> applyLifecycle(LifecycleIntent intent) {
+    lifecycleCalls.add(intent);
+    return lifecycleResponses.removeAt(0)(intent);
+  }
 }
 
 AdminGrantSalonPilotController controller(

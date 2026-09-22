@@ -47,6 +47,7 @@ export interface InvalidRequest {
   field:
     | keyof GrantSalonPilotRequest
     | keyof AdjustAllowanceRequest
+    | keyof LifecycleRequest
     | "body";
   message: string;
 }
@@ -238,9 +239,11 @@ export function mutationMessage(code: SubscriptionErrorCode): string {
     case "ALLOWANCE_CONFLICTS_WITH_ACTIVE_RESERVATION":
       return "That reduction would not cover an AI Look that is currently reserved. Try again after the reservation completes or is released.";
     case "ENTITLEMENT_EXPIRED":
-      return "This entitlement has ended and cannot be adjusted.";
+      return "This entitlement has ended. Extend its expiration first if it should continue.";
     case "ENTITLEMENT_REVOKED":
-      return "This entitlement was revoked and cannot be adjusted.";
+      return "This entitlement was revoked; revocation is terminal.";
+    case "INVALID_ENTITLEMENT_TRANSITION":
+      return "This action is not allowed from the entitlement's current status.";
     case "IDEMPOTENCY_CONFLICT":
       return "This request was already submitted with different values. Start a new one.";
     case "CONCURRENT_MODIFICATION":
@@ -343,6 +346,132 @@ export function parseAdjustAllowanceRequest(
       reason,
       idempotencyKey,
       expectedVersion,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// WA-9 — Salon Pilot lifecycle (Shared Contract §47–§50; Web Admin SOT §27–§31)
+// ---------------------------------------------------------------------------
+
+export const LIFECYCLE_ACTIONS = [
+  "extend_expiration",
+  "suspend_entitlement",
+  "reactivate_entitlement",
+  "revoke_entitlement",
+] as const;
+export type LifecycleAction = typeof LIFECYCLE_ACTIONS[number];
+
+export interface LifecycleRequest {
+  action: LifecycleAction;
+  entitlementId: string;
+  reason: string;
+  idempotencyKey: string;
+  expectedVersion: number | null;
+  /** ISO-8601 instant, required for and only meaningful to `extend_expiration`. */
+  newExpiresAt: string | null;
+}
+
+export type ParsedLifecycleRequest =
+  | { ok: true; value: LifecycleRequest }
+  | (InvalidRequest & { action: LifecycleAction | null });
+
+/**
+ * Validates a lifecycle request body. The action is validated first so a
+ * refusal can be reported under it. The writers repeat every rule.
+ */
+export function parseLifecycleRequest(
+  body: unknown,
+  now: Date = new Date(),
+): ParsedLifecycleRequest {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return {
+      ...invalid("body", "The request body must be a JSON object."),
+      action: null,
+    };
+  }
+  const r = body as Record<string, unknown>;
+  const action = typeof r.action === "string" &&
+      (LIFECYCLE_ACTIONS as readonly string[]).includes(r.action)
+    ? r.action as LifecycleAction
+    : null;
+  if (action === null) {
+    return {
+      ...invalid(
+        "body",
+        "action must be extend_expiration, suspend_entitlement, reactivate_entitlement, or revoke_entitlement.",
+      ),
+      action: null,
+    };
+  }
+  const fail = (field: InvalidRequest["field"], message: string) => ({
+    ...invalid(field, message),
+    action,
+  });
+
+  const entitlementId = r.entitlementId;
+  if (typeof entitlementId !== "string" || !UUID.test(entitlementId)) {
+    return fail("entitlementId", "entitlementId must be an entitlement id.");
+  }
+
+  const reason = typeof r.reason === "string" ? r.reason.trim() : "";
+  if (reason.length < 1 || reason.length > ADMIN_REASON_MAX_LENGTH) {
+    return fail(
+      "reason",
+      `reason is required (1-${ADMIN_REASON_MAX_LENGTH} characters).`,
+    );
+  }
+
+  const idempotencyKey = typeof r.idempotencyKey === "string"
+    ? r.idempotencyKey.trim()
+    : "";
+  if (
+    idempotencyKey.length < 1 ||
+    idempotencyKey.length > ADMIN_IDEMPOTENCY_KEY_MAX_LENGTH
+  ) {
+    return fail(
+      "idempotencyKey",
+      `idempotencyKey is required (1-${ADMIN_IDEMPOTENCY_KEY_MAX_LENGTH} characters).`,
+    );
+  }
+
+  const expectedVersion = r.expectedVersion === undefined ||
+      r.expectedVersion === null
+    ? null
+    : r.expectedVersion;
+  if (
+    expectedVersion !== null &&
+    (typeof expectedVersion !== "number" ||
+      !Number.isInteger(expectedVersion) || expectedVersion < 1)
+  ) {
+    return fail(
+      "expectedVersion",
+      "expectedVersion must be a positive integer when supplied.",
+    );
+  }
+
+  let newExpiresAt: string | null = null;
+  if (action === "extend_expiration") {
+    const raw = r.newExpiresAt;
+    const ms = typeof raw === "string" ? Date.parse(raw) : NaN;
+    if (typeof raw !== "string" || Number.isNaN(ms)) {
+      return fail("newExpiresAt", "newExpiresAt is required (ISO-8601).");
+    }
+    if (ms <= now.getTime()) {
+      return fail("newExpiresAt", "newExpiresAt must be in the future.");
+    }
+    newExpiresAt = new Date(ms).toISOString();
+  }
+
+  return {
+    ok: true,
+    value: {
+      action,
+      entitlementId: entitlementId.toLowerCase(),
+      reason,
+      idempotencyKey,
+      expectedVersion,
+      newExpiresAt,
     },
   };
 }

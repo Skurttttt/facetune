@@ -111,9 +111,15 @@ abstract final class AdminRoutes {
   /// WA-8: the Salon Pilot allowance adjustment workflow for one account.
   static const String adjustAllowanceSegment = 'adjust-allowance';
 
+  /// WA-9: the four Salon Pilot lifecycle workflows for one account.
+  static const String extendExpirationSegment = 'extend-expiration';
+  static const String suspendEntitlementSegment = 'suspend-entitlement';
+  static const String reactivateEntitlementSegment = 'reactivate-entitlement';
+  static const String revokeEntitlementSegment = 'revoke-entitlement';
+
   /// The per-account privileged workflows under `/users/:userId/…`.
   static final RegExp _userActionPattern = RegExp(
-    r'^/users/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/(grant-salon-pilot|adjust-allowance)$',
+    r'^/users/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/(grant-salon-pilot|adjust-allowance|extend-expiration|suspend-entitlement|reactivate-entitlement|revoke-entitlement)$',
   );
 
   static String grantSalonPilot(String userId) =>
@@ -122,12 +128,31 @@ abstract final class AdminRoutes {
   static String adjustAllowance(String userId) =>
       '/users/$userId/$adjustAllowanceSegment';
 
+  static String extendExpiration(String userId) =>
+      '/users/$userId/$extendExpirationSegment';
+
+  static String suspendEntitlement(String userId) =>
+      '/users/$userId/$suspendEntitlementSegment';
+
+  static String reactivateEntitlement(String userId) =>
+      '/users/$userId/$reactivateEntitlementSegment';
+
+  static String revokeEntitlement(String userId) =>
+      '/users/$userId/$revokeEntitlementSegment';
+
   /// Whether [path] is one of the per-account privileged workflows.
   static bool isUserActionPath(String path) =>
       _userActionPattern.hasMatch(path);
 
   static bool isGrantSalonPilotPath(String path) =>
       isUserActionPath(path) && path.endsWith('/$grantSalonPilotSegment');
+
+  static bool isLifecyclePath(String path) =>
+      isUserActionPath(path) &&
+      (path.endsWith('/$extendExpirationSegment') ||
+          path.endsWith('/$suspendEntitlementSegment') ||
+          path.endsWith('/$reactivateEntitlementSegment') ||
+          path.endsWith('/$revokeEntitlementSegment'));
 
   /// Query parameters the Entitlements and Usage sections accept as initial
   /// filters (WA-6). They are filters, not authority: the server re-checks

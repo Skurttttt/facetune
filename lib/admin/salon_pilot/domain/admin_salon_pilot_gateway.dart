@@ -7,4 +7,7 @@ abstract interface class AdminSalonPilotGateway {
 
   /// Submits an allowance adjustment (WA-8). Same failure contract.
   Future<AdminMutationOutcome> adjustAllowance(AdjustAllowanceIntent intent);
+
+  /// Submits a lifecycle change (WA-9). Same failure contract.
+  Future<AdminMutationOutcome> applyLifecycle(LifecycleIntent intent);
 }

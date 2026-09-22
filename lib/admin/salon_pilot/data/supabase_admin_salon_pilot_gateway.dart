@@ -21,6 +21,7 @@ class SupabaseAdminSalonPilotGateway implements AdminSalonPilotGateway {
 
   static const functionName = 'admin-grant-salon-pilot';
   static const adjustFunctionName = 'admin-adjust-salon-pilot-allowance';
+  static const lifecycleFunctionName = 'admin-salon-pilot-lifecycle';
 
   final SupabaseClient _client;
   final Duration operationTimeout;
@@ -32,6 +33,10 @@ class SupabaseAdminSalonPilotGateway implements AdminSalonPilotGateway {
   @override
   Future<AdminMutationOutcome> adjustAllowance(AdjustAllowanceIntent intent) =>
       _invoke(adjustFunctionName, intent.toRequestBody());
+
+  @override
+  Future<AdminMutationOutcome> applyLifecycle(LifecycleIntent intent) =>
+      _invoke(lifecycleFunctionName, intent.toRequestBody());
 
   Future<AdminMutationOutcome> _invoke(
     String function,

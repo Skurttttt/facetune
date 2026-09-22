@@ -51,3 +51,8 @@ verify_jwt = true
 # WA-8. Allowance adjustment; same double gate as the grant.
 [functions.admin-adjust-salon-pilot-allowance]
 verify_jwt = true
+
+# WA-9. Salon Pilot lifecycle (extend / suspend / reactivate / revoke); same
+# double gate as the grant.
+[functions.admin-salon-pilot-lifecycle]
+verify_jwt = true
