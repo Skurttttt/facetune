@@ -1,4 +1,4 @@
-# Web Admin setup (WA-2 through WA-6)
+# Web Admin setup (WA-2 through WA-7)
 
 The FaceTune Web Admin is a Flutter Web application built from a separate
 entrypoint in this repository. It shares the consumer app's Supabase Auth,
@@ -23,6 +23,9 @@ Contract: `subscription_admin_contract_v1.1`.
 | Flutter (WA-5) | `lib/admin/users/` | Exact account search, one-page-at-a-time results, and `/users/:userId` subscription detail. It never requests or models selfies, previews, tutorial images, storage URLs, prompts, Gemini payloads, or My Makeup Kit inventory. |
 | Database (WA-6) | `public.admin_list_entitlements(uuid, text, text, text, integer, text)` and `public.admin_list_usage(uuid, uuid, text, text, text, timestamptz, timestamptz, text)` (migration `20260928000100_admin_entitlements_and_usage.sql`) | Roster-checked, read-only listings. Entitlements: every `user_entitlements` row with the resolver's allowance/usage arithmetic applied per row on the server, an effective status (lapsed-but-stored-active reads `expired`), and optional filters by user, plan, effective status, provider, and `expires_at` window (1–365 days, server clock). Usage: every `usage_ledger` row in its canonical `reserved` / `committed` / `released` state with stamped provenance, lifecycle timestamps, and `sanitized_failure_code`; optional filters by user, entitlement, status, plan, allowance source, and `created_at` range. Both: fixed newest-first keyset pages of 25, cursor bound to the filters, filter values outside the contract vocabulary rejected (SQLSTATE 22023). No image ids, paths, URLs, prompts, or provider references leave the server. Adds `(created_at desc, id desc)` indexes on both tables. |
 | Flutter (WA-6) | `lib/admin/entitlements/`, `lib/admin/usage/`, `lib/admin/shared/` | `/entitlements` and `/usage` filter + table + Previous/Next pages (one server page in memory), a shared keyset-list controller, strict fail-closed decoders, and text status badges. `/entitlements?userId=` and `/usage?userId=|entitlementId=` open pre-filtered; user detail links to both. Read-only: no mutation RPC is referenced anywhere in the admin tree. |
+| Database (WA-7) | `public.admin_audit_events` (immutable, RLS on, no client grant) and `public.admin_grant_salon_pilot(uuid, timestamptz, text, text, integer, uuid)` (migration `20260929000100_admin_grant_salon_pilot.sql`) | The first privileged mutation. Roster-checked from the session; per-account advisory lock; validates target (existing, non-anonymous), future expiration, allowance any non-negative integer (default 30; no business maximum is defined), reason 1–500, idempotency key 1–128; refuses SALON_PILOT_ALREADY_GRANTED (pilot in force, incl. suspended), PROVIDER_STATE_CONFLICT (store subscription active/grace), IDEMPOTENCY_CONFLICT (same key, different intent); retires a lapsed stored-active pilot as `expired`; inserts the `salon_pilot` / `admin_granted` row and exactly one audit event (before/after snapshots, reason, correlation id, key) in one transaction; returns the consumer resolver's figures with `replayed`. Never touches the Free row, the ledger, or a paid subscription. |
+| Edge Function (WA-7) | `admin-grant-salon-pilot` (`verify_jwt = true`) + `_shared/admin_mutations.ts` | `requireAdmin` → parse/validate the intent body (400 `invalid_request` names the field) → call the writer AS THE CALLER → map the contract code to HTTP status. Mints the request correlation id (`x-request-id`). No service-role key. |
+| Flutter (WA-7) | `lib/admin/salon_pilot/` | `/users/:userId/grant-salon-pilot`: form (expiration date UTC, allowance default 30, required reason) → preview (idempotency key minted here) → confirm → the server's authoritative state. A retry after a temporary failure reuses the same key; the server replays rather than re-grants. Entry: **Grant Salon Pilot** on user detail. |
 | Flutter (WA-3) | `lib/admin/shell/` | The protected shell: navigation rail (drawer below 760 px), identity + sign-out, and one placeholder per section — Dashboard `/dashboard`, Users `/users`, Entitlements `/entitlements`, Usage `/usage`, Audit `/audit`. A refresh or a sign-in returns to the section that was open (`?from=`, exact section paths only). |
 
 Admin authority is a database row, not a JWT claim, so revoking it takes
@@ -75,8 +78,9 @@ MFA in Authentication settings before production use.
 ## Deploying the backend
 
 ```powershell
-supabase db push          # 20260925000100 through 20260928000100
+supabase db push          # 20260925000100 through 20260929000100
 supabase functions deploy admin-session
+supabase functions deploy admin-grant-salon-pilot
 ```
 
 `admin-session` needs no new secret: it reads `SUPABASE_URL` and
@@ -121,8 +125,8 @@ persist a session in the browser. Hosting provider is not chosen by WA-2.
 
 ```powershell
 flutter test test/admin                     # controller, gateway, router/pages, source-scan security contract
-cd supabase/functions; deno test --allow-env --allow-net _shared/admin_auth_test.ts
-supabase test db --local                    # includes WA-2, WA-4, WA-5, and WA-6 pgTAP suites
+cd supabase/functions; deno test --allow-env --allow-net _shared/admin_auth_test.ts _shared/admin_mutations_test.ts
+supabase test db --local                    # includes WA-2, WA-4, WA-5, WA-6, and WA-7 pgTAP suites
 ```
 
 ## Hard locks (enforced by tests)
@@ -137,3 +141,4 @@ supabase test db --local                    # includes WA-2, WA-4, WA-5, and WA-
 - WA-5 list/detail JSON key sets are asserted exactly and scanned for prohibited facial, storage, prompt, Gemini, and makeup-kit data.
 - WA-6 listings are fixed at 25 rows, cursor-paginated newest first, and refuse a cursor issued for different filters; every filter value is validated against the Shared Contract vocabulary on the server.
 - WA-6 row key sets are asserted exactly; usage rows expose `sourceMode` and whether the preview row still exists, never an image id, and a released row is distinguishable from a committed one by `releasedAt` / `sanitizedFailureCode` (never a renamed state).
+- WA-7: the grant is refused for non-admins and anonymous callers before any row is read; a duplicate submission creates no second entitlement and no second audit event; audit rows cannot be edited, re-timestamped, or re-attributed; no client role can read or write `admin_audit_events`; the writer is not executable by `anon` or `service_role`.

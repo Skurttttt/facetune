@@ -122,6 +122,17 @@ class _Detail extends StatelessWidget {
               icon: const Icon(Icons.receipt_long_outlined, size: 18),
               label: const Text('Usage ledger'),
             ),
+            const Spacer(),
+            // WA-7: the one privileged action so far. The server decides
+            // whether this account may receive a grant; the button only
+            // opens the reviewed, confirmed workflow.
+            FilledButton.tonalIcon(
+              key: const Key('admin-user-detail-grant-salon-pilot'),
+              onPressed: () =>
+                  context.go(AdminRoutes.grantSalonPilot(detail.userId)),
+              icon: const Icon(Icons.card_giftcard_outlined, size: 18),
+              label: const Text('Grant Salon Pilot'),
+            ),
           ],
         ),
         const SizedBox(height: AppSpacing.sm),

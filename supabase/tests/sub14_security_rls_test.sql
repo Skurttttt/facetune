@@ -125,7 +125,8 @@ select is(
         'user_entitlements', 'usage_ledger', 'purchased_credit_grants',
         'entitlement_allowance_adjustments', 'provider_purchase_verifications',
         'provider_notification_events', 'ai_operation_metrics',
-        'subscription_products', 'top_up_packs', 'ai_usage_events')),
+        'subscription_products', 'top_up_packs', 'ai_usage_events',
+        'admin_audit_events')),
   null,
   'authenticated holds no write privilege on any monetization table'
 );
@@ -137,7 +138,8 @@ select is(
         'user_entitlements', 'usage_ledger', 'purchased_credit_grants',
         'entitlement_allowance_adjustments', 'provider_purchase_verifications',
         'provider_notification_events', 'ai_operation_metrics',
-        'subscription_products', 'top_up_packs', 'ai_usage_events')),
+        'subscription_products', 'top_up_packs', 'ai_usage_events',
+        'admin_audit_events')),
   null,
   'anon holds no privilege at all on any monetization table'
 );
@@ -155,7 +157,7 @@ select is(
 select is(
   (select count(*) from information_schema.column_privileges
     where table_schema = 'public' and grantee = 'authenticated'
-      and table_name in ('entitlement_allowance_adjustments',
+      and table_name in ('entitlement_allowance_adjustments', 'admin_audit_events',
                          'provider_notification_events', 'ai_operation_metrics')),
   0::bigint,
   'admin adjustments, notification events and telemetry are not user-readable'
@@ -215,8 +217,8 @@ select is(
     where n.nspname = 'public' and p.prosecdef
       and has_function_privilege('authenticated', p.oid, 'EXECUTE')
       and pg_get_function_identity_arguments(p.oid) ~* 'user'),
-  'admin_get_user,admin_list_entitlements,admin_list_usage',
-  'only the roster-checked admin reads accept a target user identity'
+  'admin_get_user,admin_grant_salon_pilot,admin_list_entitlements,admin_list_usage',
+  'only the roster-checked admin reads and the WA-7 grant accept a target user identity'
 );
 select is(
   (select string_agg(p.proname, ',' order by p.proname)
@@ -225,15 +227,15 @@ select is(
       and p.prorettype <> 'trigger'::regtype
       and has_function_privilege('authenticated', p.oid, 'EXECUTE')),
   -- WA-2 added `current_user_is_admin()`, WA-4 dashboard metrics, WA-5 the
-  -- two read-only account endpoints, and WA-6 the two read-only listings.
-  -- Each admin endpoint refuses inside unless the session caller is on the
-  -- active roster.
-  'admin_dashboard_metrics,admin_get_user,admin_list_entitlements,' ||
-  'admin_list_usage,admin_search_users,' ||
+  -- two read-only account endpoints, WA-6 the two read-only listings, and
+  -- WA-7 the Salon Pilot grant. Each admin endpoint refuses inside unless
+  -- the session caller is on the active roster.
+  'admin_dashboard_metrics,admin_get_user,admin_grant_salon_pilot,' ||
+  'admin_list_entitlements,admin_list_usage,admin_search_users,' ||
   'authorize_tutorial_generation,commit_ai_look,consume_ai_quota,' ||
   'current_user_is_admin,release_ai_look,reserve_ai_look,' ||
   'resolve_subscription_state',
-  'the user-callable security-definer surface is exactly the twelve known RPCs'
+  'the user-callable security-definer surface is exactly the thirteen known RPCs'
 );
 -- No hidden special-casing of an account inside any function body.
 select is(

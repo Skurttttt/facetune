@@ -41,3 +41,9 @@ verify_jwt = false
 # caller's session (`_shared/admin_auth.ts`). Both checks are required.
 [functions.admin-session]
 verify_jwt = true
+
+# WA-7. The first privileged admin mutation. The gateway JWT check runs
+# first; the function then verifies admin privilege (`requireAdmin`) and the
+# database writer verifies it again from the same session.
+[functions.admin-grant-salon-pilot]
+verify_jwt = true

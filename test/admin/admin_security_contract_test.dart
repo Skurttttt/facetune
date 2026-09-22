@@ -247,6 +247,35 @@ void main() {
       expect(config, contains('[functions.admin-session]\nverify_jwt = true'));
     });
 
+    test('the WA-7 grant function is gated twice and holds no secret', () {
+      final function = File(
+        pathOf('supabase/functions/admin-grant-salon-pilot/index.ts'),
+      ).readAsStringSync();
+      expect(function, isNot(contains('SERVICE_ROLE')));
+      expect(function, contains('SUPABASE_ANON_KEY'));
+      expect(function, contains('requireAdmin('));
+      expect(function, contains('admin_grant_salon_pilot'));
+      // The body is intent only: the function never forwards an admin id,
+      // a before-state, or an entitlement status from the request.
+      expect(function, isNot(contains('p_admin_user_id')));
+      final config = File(
+        pathOf('supabase/config.toml'),
+      ).readAsStringSync().replaceAll('\r\n', '\n');
+      expect(
+        config,
+        contains('[functions.admin-grant-salon-pilot]\nverify_jwt = true'),
+      );
+      // The Flutter tree reaches the writer only through the Edge Function.
+      final adminSources = Directory(pathOf('lib/admin'))
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.dart'))
+          .map((f) => f.readAsStringSync())
+          .join('\n');
+      expect(adminSources, isNot(contains("'admin_grant_salon_pilot'")));
+      expect(adminSources, contains("'admin-grant-salon-pilot'"));
+    });
+
     test('the roster is unreadable by every client role', () {
       final migration = File(
         pathOf('supabase/migrations/20260925000100_admin_identity.sql'),

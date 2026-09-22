@@ -69,7 +69,10 @@ enum AdminSection {
 
   /// The section whose path is [path], or `null`.
   static AdminSection? fromPath(String path) {
-    if (AdminRoutes.isUserDetailPath(path)) return AdminSection.users;
+    if (AdminRoutes.isUserDetailPath(path) ||
+        AdminRoutes.isGrantSalonPilotPath(path)) {
+      return AdminSection.users;
+    }
     for (final section in values) {
       if (section.path == path) return section;
     }
@@ -102,6 +105,19 @@ abstract final class AdminRoutes {
 
   static String userDetail(String userId) => '/users/$userId';
 
+  /// WA-7: the Salon Pilot grant workflow for one account.
+  static const String grantSalonPilotSegment = 'grant-salon-pilot';
+
+  static final RegExp _grantSalonPilotPattern = RegExp(
+    r'^/users/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/grant-salon-pilot$',
+  );
+
+  static String grantSalonPilot(String userId) =>
+      '/users/$userId/$grantSalonPilotSegment';
+
+  static bool isGrantSalonPilotPath(String path) =>
+      _grantSalonPilotPattern.hasMatch(path);
+
   /// Query parameters the Entitlements and Usage sections accept as initial
   /// filters (WA-6). They are filters, not authority: the server re-checks
   /// the caller and validates every value.
@@ -130,7 +146,8 @@ abstract final class AdminRoutes {
   static String? sanitizedReturnTo(String? path) =>
       path != null &&
           (AdminSection.values.any((section) => section.path == path) ||
-              isUserDetailPath(path))
+              isUserDetailPath(path) ||
+              isGrantSalonPilotPath(path))
       ? path
       : null;
 }

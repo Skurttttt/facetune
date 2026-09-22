@@ -1,0 +1,7 @@
+import 'admin_salon_pilot_models.dart';
+
+abstract interface class AdminSalonPilotGateway {
+  /// Submits the grant. Throws [AdminMutationFailure] for a refused or
+  /// failed mutation and `AdminAuthFailure` for a session refusal.
+  Future<AdminMutationOutcome> grantSalonPilot(GrantSalonPilotIntent intent);
+}

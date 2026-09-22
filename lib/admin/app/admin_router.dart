@@ -8,6 +8,7 @@ import '../auth/presentation/pages/admin_loading_page.dart';
 import '../auth/presentation/pages/admin_login_page.dart';
 import '../auth/presentation/pages/admin_unauthorized_page.dart';
 import '../dashboard/presentation/pages/admin_dashboard_page.dart';
+import '../salon_pilot/presentation/pages/admin_grant_salon_pilot_page.dart';
 import '../entitlements/domain/admin_entitlement_models.dart';
 import '../entitlements/presentation/pages/admin_entitlements_page.dart';
 import '../shared/admin_wire.dart';
@@ -78,6 +79,18 @@ final adminRouterProvider = Provider<GoRouter>((ref) {
           key: state.pageKey,
           child: AdminShell(
             child: AdminUserDetailPage(userId: state.pathParameters['userId']!),
+          ),
+        ),
+      ),
+      GoRoute(
+        path:
+            '${AdminSection.users.path}/:userId/${AdminRoutes.grantSalonPilotSegment}',
+        pageBuilder: (context, state) => NoTransitionPage(
+          key: state.pageKey,
+          child: AdminShell(
+            child: AdminGrantSalonPilotPage(
+              userId: state.pathParameters['userId']!,
+            ),
           ),
         ),
       ),
