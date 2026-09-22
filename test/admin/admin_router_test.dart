@@ -58,6 +58,9 @@ class _NoGateway implements AdminSessionGateway {
 
 const identity = AdminIdentity(userId: 'admin-1', email: 'ops@example.invalid');
 const detailPath = '/users/20000000-0000-4000-8000-000000000001';
+const auditDetailPath = '/audit/22000000-0000-4000-8000-000000000001';
+const entitlementHistoryPath =
+    '/entitlements/21000000-0000-4000-8000-000000000001/history';
 
 Uri at(String location) => Uri.parse(location);
 
@@ -73,6 +76,10 @@ void main() {
       expect(
         redirectFor(state, at(detailPath)),
         '/loading?from=%2Fusers%2F20000000-0000-4000-8000-000000000001',
+      );
+      expect(
+        redirectFor(state, at(auditDetailPath)),
+        '/loading?from=%2Faudit%2F22000000-0000-4000-8000-000000000001',
       );
       expect(redirectFor(state, at('/loading?from=%2Fusers')), isNull);
       // Carried through from a login page that was itself remembering it.
@@ -140,6 +147,8 @@ void main() {
         expect(redirectFor(state, at('/loading')), AdminRoutes.home);
         expect(redirectFor(state, at('/unauthorized')), AdminRoutes.home);
         expect(redirectFor(state, at(detailPath)), isNull);
+        expect(redirectFor(state, at(auditDetailPath)), isNull);
+        expect(redirectFor(state, at(entitlementHistoryPath)), isNull);
       },
     );
 
@@ -173,6 +182,8 @@ void main() {
         '/dashboard/',
         'dashboard',
         '/users/not-a-user-id',
+        '/audit/not-an-event-id',
+        '/entitlements/not-an-entitlement/history',
         '',
       ]) {
         expect(

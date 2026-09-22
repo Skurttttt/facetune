@@ -829,6 +829,39 @@ export interface AuditEvent {
   createdAt: string;
 }
 
+/** The privacy-minimal row returned by the WA-10 audit listing. */
+export interface AuditEventSummary {
+  id: string;
+  source: AuditEventSource;
+  adminUserId: string | null;
+  adminEmail: string | null;
+  action: AdminAction;
+  targetUserId: string;
+  targetEmail: string | null;
+  targetEntitlementId: string | null;
+  createdAt: string;
+}
+
+export type EntitlementHistoryEventType =
+  | AdminAction
+  | "provider_state_change";
+
+/** One read-only lifecycle event from admin audit or verified provider inbox. */
+export interface EntitlementHistoryEvent {
+  id: string;
+  source: AuditEventSource;
+  eventType: EntitlementHistoryEventType;
+  action: AdminAction | null;
+  actorUserId: string | null;
+  actorEmail: string | null;
+  reason: string | null;
+  beforeState: EntitlementStateSnapshot | null;
+  afterState: EntitlementStateSnapshot | null;
+  requestCorrelationId: string | null;
+  provider: BillingProvider | null;
+  occurredAt: string;
+}
+
 function snapshotOrNull(r: Rec, k: string): EntitlementStateSnapshot | null {
   const v = present(r, k);
   if (v === null) return null;
@@ -853,9 +886,6 @@ export function decodeAuditEvent(payload: unknown): DecodeResult<AuditEvent> {
     const r = object(payload, "$");
     const source = vocab(r, "source", asAuditEventSource);
     const adminUserId = strOrNull(r, "adminUserId");
-    if (source === "admin" && adminUserId === null) {
-      throw new Decode("adminUserId", "missing");
-    }
     return {
       id: str(r, "id"),
       source,
@@ -870,6 +900,60 @@ export function decodeAuditEvent(payload: unknown): DecodeResult<AuditEvent> {
       idempotencyKey: strOrNull(r, "idempotencyKey"),
       createdAt: ts(r, "createdAt"),
     } satisfies AuditEvent;
+  });
+}
+
+export function decodeAuditEventSummary(
+  payload: unknown,
+): DecodeResult<AuditEventSummary> {
+  return run(() => {
+    const r = object(payload, "$");
+    return {
+      id: str(r, "id"),
+      source: vocab(r, "source", asAuditEventSource),
+      adminUserId: strOrNull(r, "adminUserId"),
+      adminEmail: strOrNull(r, "adminEmail"),
+      action: vocab(r, "action", asAdminAction),
+      targetUserId: str(r, "targetUserId"),
+      targetEmail: strOrNull(r, "targetEmail"),
+      targetEntitlementId: strOrNull(r, "targetEntitlementId"),
+      createdAt: ts(r, "createdAt"),
+    } satisfies AuditEventSummary;
+  });
+}
+
+export function decodeEntitlementHistoryEvent(
+  payload: unknown,
+): DecodeResult<EntitlementHistoryEvent> {
+  return run(() => {
+    const r = object(payload, "$");
+    const source = vocab(r, "source", asAuditEventSource);
+    const action = vocabOrNull(r, "action", asAdminAction);
+    const rawType = str(r, "eventType");
+    const eventType = rawType === "provider_state_change"
+      ? rawType
+      : asAdminAction(rawType);
+    if (eventType === null) throw new Decode("eventType", "unknown_value");
+    if (source === "admin" && action === null) {
+      throw new Decode("action", "missing");
+    }
+    if (source === "provider" && eventType !== "provider_state_change") {
+      throw new Decode("eventType", "unknown_value");
+    }
+    return {
+      id: str(r, "id"),
+      source,
+      eventType,
+      action,
+      actorUserId: strOrNull(r, "actorUserId"),
+      actorEmail: strOrNull(r, "actorEmail"),
+      reason: strOrNull(r, "reason"),
+      beforeState: snapshotOrNull(r, "beforeState"),
+      afterState: snapshotOrNull(r, "afterState"),
+      requestCorrelationId: strOrNull(r, "requestCorrelationId"),
+      provider: vocabOrNull(r, "provider", asBillingProvider),
+      occurredAt: ts(r, "occurredAt"),
+    } satisfies EntitlementHistoryEvent;
   });
 }
 

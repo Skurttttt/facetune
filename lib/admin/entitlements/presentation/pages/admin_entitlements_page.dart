@@ -352,6 +352,15 @@ class _Results extends StatelessWidget {
                                 ),
                                 child: const Text('View usage'),
                               ),
+                              TextButton(
+                                key: Key('view-history-${row.entitlementId}'),
+                                onPressed: () => context.go(
+                                  AdminRoutes.entitlementHistory(
+                                    row.entitlementId,
+                                  ),
+                                ),
+                                child: const Text('View history'),
+                              ),
                             ],
                           ),
                         ),

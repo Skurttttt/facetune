@@ -208,16 +208,16 @@ select throws_ok(
   'a trigger function cannot be called directly (no bypass through it)'
 );
 -- Consumer RPCs identify the caller from the session. The only target-user
--- arguments belong to the read-only WA-5 detail endpoint and the WA-6
--- listing filters, each of which verifies the real caller against the admin
--- roster before touching any account.
+-- arguments belong to the read-only WA-5 detail endpoint, WA-6 listing
+-- filters, WA-10 audit filter, and the WA-7 grant. Each verifies the real
+-- caller against the admin roster before touching any account.
 select is(
   (select string_agg(p.proname, ',' order by p.proname)
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.prosecdef
       and has_function_privilege('authenticated', p.oid, 'EXECUTE')
       and pg_get_function_identity_arguments(p.oid) ~* 'user'),
-  'admin_get_user,admin_grant_salon_pilot,admin_list_entitlements,admin_list_usage',
+  'admin_get_user,admin_grant_salon_pilot,admin_list_audit_events,admin_list_entitlements,admin_list_usage',
   'only the roster-checked admin reads and the WA-7 grant accept a target user identity'
 );
 select is(
@@ -229,16 +229,18 @@ select is(
   -- WA-2 added `current_user_is_admin()`, WA-4 dashboard metrics, WA-5 the
   -- two read-only account endpoints, WA-6 the two read-only listings, and
   -- WA-7 the Salon Pilot grant, WA-8 the allowance adjustment, WA-9 the two
-  -- lifecycle writers. Each admin endpoint refuses inside unless the session
-  -- caller is on the active roster.
+  -- lifecycle writers, and WA-10 the three read-only audit/history endpoints.
+  -- Each admin endpoint refuses inside unless the session caller is on the
+  -- active roster.
   'admin_adjust_salon_pilot_allowance,admin_dashboard_metrics,' ||
-  'admin_extend_salon_pilot_expiration,admin_get_user,admin_grant_salon_pilot,' ||
+  'admin_extend_salon_pilot_expiration,admin_get_audit_event,admin_get_user,' ||
+  'admin_grant_salon_pilot,admin_list_audit_events,admin_list_entitlement_history,' ||
   'admin_list_entitlements,admin_list_usage,admin_search_users,' ||
   'admin_set_salon_pilot_lifecycle,' ||
   'authorize_tutorial_generation,commit_ai_look,consume_ai_quota,' ||
   'current_user_is_admin,release_ai_look,reserve_ai_look,' ||
   'resolve_subscription_state',
-  'the user-callable security-definer surface is exactly the sixteen known RPCs'
+  'the user-callable security-definer surface is exactly the nineteen known RPCs'
 );
 -- No hidden special-casing of an account inside any function body.
 select is(

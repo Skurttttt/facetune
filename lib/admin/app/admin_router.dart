@@ -8,6 +8,10 @@ import '../auth/presentation/pages/admin_loading_page.dart';
 import '../auth/presentation/pages/admin_login_page.dart';
 import '../auth/presentation/pages/admin_unauthorized_page.dart';
 import '../dashboard/presentation/pages/admin_dashboard_page.dart';
+import '../audit/domain/admin_audit_models.dart';
+import '../audit/presentation/pages/admin_audit_detail_page.dart';
+import '../audit/presentation/pages/admin_audit_page.dart';
+import '../audit/presentation/pages/admin_entitlement_history_page.dart';
 import '../salon_pilot/presentation/pages/admin_adjust_allowance_page.dart';
 import '../salon_pilot/presentation/pages/admin_grant_salon_pilot_page.dart';
 import '../salon_pilot/domain/admin_salon_pilot_models.dart';
@@ -15,7 +19,6 @@ import '../salon_pilot/presentation/pages/admin_lifecycle_page.dart';
 import '../entitlements/domain/admin_entitlement_models.dart';
 import '../entitlements/presentation/pages/admin_entitlements_page.dart';
 import '../shared/admin_wire.dart';
-import '../shell/admin_section_placeholder_page.dart';
 import '../shell/admin_shell.dart';
 import '../usage/domain/admin_usage_models.dart';
 import '../usage/presentation/pages/admin_usage_page.dart';
@@ -86,6 +89,28 @@ final adminRouterProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
+        path: '${AdminSection.audit.path}/:eventId',
+        pageBuilder: (context, state) => NoTransitionPage(
+          key: state.pageKey,
+          child: AdminShell(
+            child: AdminAuditDetailPage(
+              eventId: state.pathParameters['eventId']!,
+            ),
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '${AdminSection.entitlements.path}/:entitlementId/history',
+        pageBuilder: (context, state) => NoTransitionPage(
+          key: state.pageKey,
+          child: AdminShell(
+            child: AdminEntitlementHistoryPage(
+              entitlementId: state.pathParameters['entitlementId']!,
+            ),
+          ),
+        ),
+      ),
+      GoRoute(
         path:
             '${AdminSection.users.path}/:userId/${AdminRoutes.grantSalonPilotSegment}',
         pageBuilder: (context, state) => NoTransitionPage(
@@ -143,9 +168,7 @@ final adminRouterProvider = Provider<GoRouter>((ref) {
   );
 });
 
-/// The content for a section: the real page once its phase has delivered it,
-/// a placeholder until then. Exposed so tests can assert which sections are
-/// live.
+/// The content for each delivered section. Exposed for route tests.
 ///
 /// [query] carries the optional initial filters of the Entitlements and Usage
 /// sections. Only well-formed UUIDs are honoured; anything else is ignored
@@ -168,7 +191,15 @@ Widget sectionPage(
       entitlementId: normalizeUuid(query[AdminRoutes.entitlementIdParameter]),
     ),
   ),
-  AdminSection.audit => AdminSectionPlaceholderPage(section: section),
+  AdminSection.audit => AdminAuditPage(
+    initialFilters: AdminAuditFilters(
+      adminUserId: normalizeUuid(query[AdminRoutes.adminUserIdParameter]),
+      targetUserId: normalizeUuid(query[AdminRoutes.userIdParameter]),
+      targetEntitlementId: normalizeUuid(
+        query[AdminRoutes.entitlementIdParameter],
+      ),
+    ),
+  ),
 };
 
 /// The routing decision, as a pure function of the server-derived state and

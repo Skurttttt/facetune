@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 /// The administrative sections of the Web Admin, in navigation order.
 ///
 /// Each later phase owns one section's data: WA-4 Dashboard, WA-5 Users,
-/// WA-6 Entitlements and Usage, WA-10 Audit. Until then a section is a safe
-/// route destination with a placeholder and nothing else.
+/// WA-6 Entitlements and Usage, and WA-10 Audit.
 enum AdminSection {
   dashboard(
     path: '/dashboard',
@@ -61,10 +60,10 @@ enum AdminSection {
   final IconData icon;
   final IconData selectedIcon;
 
-  /// One sentence for the placeholder; never a number, never a fake stat.
+  /// One sentence describing the section; never a number or fake statistic.
   final String summary;
 
-  /// The phase that owns this section's data.
+  /// The phase that delivered this section's data.
   final String arrivesIn;
 
   /// The section whose path is [path], or `null`.
@@ -72,6 +71,10 @@ enum AdminSection {
     if (AdminRoutes.isUserDetailPath(path) ||
         AdminRoutes.isUserActionPath(path)) {
       return AdminSection.users;
+    }
+    if (AdminRoutes.isAuditDetailPath(path)) return AdminSection.audit;
+    if (AdminRoutes.isEntitlementHistoryPath(path)) {
+      return AdminSection.entitlements;
     }
     for (final section in values) {
       if (section.path == path) return section;
@@ -103,7 +106,18 @@ abstract final class AdminRoutes {
     r'^/users/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
   );
 
+  static final RegExp _auditDetailPattern = RegExp(
+    r'^/audit/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
+
+  static final RegExp _entitlementHistoryPattern = RegExp(
+    r'^/entitlements/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/history$',
+  );
+
   static String userDetail(String userId) => '/users/$userId';
+  static String auditDetail(String eventId) => '/audit/$eventId';
+  static String entitlementHistory(String entitlementId) =>
+      '/entitlements/$entitlementId/history';
 
   /// WA-7: the Salon Pilot grant workflow for one account.
   static const String grantSalonPilotSegment = 'grant-salon-pilot';
@@ -159,6 +173,7 @@ abstract final class AdminRoutes {
   /// the caller and validates every value.
   static const String userIdParameter = 'userId';
   static const String entitlementIdParameter = 'entitlementId';
+  static const String adminUserIdParameter = 'adminUserId';
 
   static String entitlementsForUser(String userId) => Uri(
     path: AdminSection.entitlements.path,
@@ -175,15 +190,33 @@ abstract final class AdminRoutes {
     queryParameters: {entitlementIdParameter: entitlementId},
   ).toString();
 
+  static String auditForUser(String userId) => Uri(
+    path: AdminSection.audit.path,
+    queryParameters: {userIdParameter: userId},
+  ).toString();
+
+  static String auditForEntitlement(String entitlementId) => Uri(
+    path: AdminSection.audit.path,
+    queryParameters: {entitlementIdParameter: entitlementId},
+  ).toString();
+
   static bool isUserDetailPath(String path) =>
       _userDetailPattern.hasMatch(path);
+
+  static bool isAuditDetailPath(String path) =>
+      _auditDetailPattern.hasMatch(path);
+
+  static bool isEntitlementHistoryPath(String path) =>
+      _entitlementHistoryPattern.hasMatch(path);
 
   /// [path] if it is a section an admin may be returned to, else `null`.
   static String? sanitizedReturnTo(String? path) =>
       path != null &&
           (AdminSection.values.any((section) => section.path == path) ||
               isUserDetailPath(path) ||
-              isUserActionPath(path))
+              isUserActionPath(path) ||
+              isAuditDetailPath(path) ||
+              isEntitlementHistoryPath(path))
       ? path
       : null;
 }

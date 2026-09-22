@@ -13,7 +13,7 @@ import '../auth/presentation/admin_authorization_state.dart';
 /// Reached only through the router's authorized branch, and defensive about
 /// it: in any other state it renders an empty frame, so a routing mistake
 /// can never show the shell's controls to an unauthorized visitor. The shell
-/// itself fetches nothing; every section is a placeholder until the phase
+/// itself fetches nothing; every section owns its data through its phase
 /// that owns its data.
 ///
 /// Desktop-first. At [wideBreakpoint] and above the navigation is an

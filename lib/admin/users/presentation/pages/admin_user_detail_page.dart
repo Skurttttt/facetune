@@ -107,7 +107,10 @@ class _Detail extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         // WA-6: the same account's rows in the read-only listings.
-        Row(
+        Wrap(
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             TextButton.icon(
               key: const Key('admin-user-detail-entitlements'),
@@ -123,7 +126,22 @@ class _Detail extends StatelessWidget {
               icon: const Icon(Icons.receipt_long_outlined, size: 18),
               label: const Text('Usage ledger'),
             ),
-            const Spacer(),
+            TextButton.icon(
+              key: const Key('admin-user-detail-audit'),
+              onPressed: () =>
+                  context.go(AdminRoutes.auditForUser(detail.userId)),
+              icon: const Icon(Icons.history_outlined, size: 18),
+              label: const Text('Audit events'),
+            ),
+            if (entitlement != null)
+              TextButton.icon(
+                key: const Key('admin-user-detail-history'),
+                onPressed: () => context.go(
+                  AdminRoutes.entitlementHistory(entitlement.entitlementId),
+                ),
+                icon: const Icon(Icons.timeline_outlined, size: 18),
+                label: const Text('Entitlement history'),
+              ),
             // WA-7: the one privileged action so far. The server decides
             // whether this account may receive a grant; the button only
             // opens the reviewed, confirmed workflow.

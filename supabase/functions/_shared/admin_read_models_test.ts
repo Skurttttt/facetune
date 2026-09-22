@@ -7,6 +7,8 @@ import {
   decodeAdminMutationResult,
   decodeAllowanceAdjustment,
   decodeAuditEvent,
+  decodeAuditEventSummary,
+  decodeEntitlementHistoryEvent,
   decodePurchasedCreditGrant,
   type DecodeResult,
   decodeSubscriptionState,
@@ -720,12 +722,11 @@ Deno.test("an admin audit event decodes with before/after snapshots", () => {
   assertEquals(e.afterState?.version, 4);
 });
 
-Deno.test("an admin-sourced event must name the administrator; provider events need not", () => {
-  failed(
+Deno.test("a deleted administrator remains a readable audit actor; provider events need none", () => {
+  const deletedAdmin = ok(
     decodeAuditEvent(auditPayload({ adminUserId: null })),
-    "adminUserId",
-    "missing",
   );
+  assertEquals(deletedAdmin.adminUserId, null);
   const provider = ok(decodeAuditEvent(auditPayload({
     source: "provider",
     adminUserId: null,
@@ -737,6 +738,79 @@ Deno.test("an admin-sourced event must name the administrator; provider events n
   })));
   assertEquals(provider.adminUserId, null);
   assertEquals(provider.beforeState, null);
+});
+
+Deno.test("audit list rows decode only operational summary fields", () => {
+  const event = ok(decodeAuditEventSummary({
+    id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    source: "admin",
+    adminUserId: "99999999-9999-4999-8999-999999999999",
+    adminEmail: "admin@example.invalid",
+    action: "suspend_entitlement",
+    targetUserId: USER,
+    targetEmail: "artist@example.invalid",
+    targetEntitlementId: ENT,
+    createdAt: T0,
+  }));
+  assertEquals(event.action, "suspend_entitlement");
+  assertEquals(event.targetEntitlementId, ENT);
+});
+
+Deno.test("entitlement history distinguishes admin and provider lifecycle events", () => {
+  const admin = ok(decodeEntitlementHistoryEvent({
+    id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    source: "admin",
+    eventType: "increase_allowance",
+    action: "increase_allowance",
+    actorUserId: "99999999-9999-4999-8999-999999999999",
+    actorEmail: "admin@example.invalid",
+    reason: "Panel extension",
+    beforeState: auditPayload().beforeState,
+    afterState: auditPayload().afterState,
+    requestCorrelationId: "88888888-8888-4888-8888-888888888888",
+    provider: null,
+    occurredAt: T0,
+  }));
+  assertEquals(admin.eventType, "increase_allowance");
+  assertEquals(admin.afterState?.effectiveAllowance, 40);
+
+  const provider = ok(decodeEntitlementHistoryEvent({
+    id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    source: "provider",
+    eventType: "provider_state_change",
+    action: null,
+    actorUserId: null,
+    actorEmail: null,
+    reason: null,
+    beforeState: null,
+    afterState: null,
+    requestCorrelationId: null,
+    provider: "google_play",
+    occurredAt: T1,
+  }));
+  assertEquals(provider.provider, "google_play");
+  assertEquals(provider.action, null);
+});
+
+Deno.test("history rejects invented event types and provider-shaped admin actions", () => {
+  failed(
+    decodeEntitlementHistoryEvent({
+      id: "c",
+      source: "provider",
+      eventType: "refund_processed",
+      action: null,
+      actorUserId: null,
+      actorEmail: null,
+      reason: null,
+      beforeState: null,
+      afterState: null,
+      requestCorrelationId: null,
+      provider: "google_play",
+      occurredAt: T1,
+    }),
+    "eventType",
+    "unknown_value",
+  );
 });
 
 Deno.test("audit actions outside contract §45 are rejected", () => {

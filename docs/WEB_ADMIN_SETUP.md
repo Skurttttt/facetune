@@ -1,4 +1,4 @@
-# Web Admin setup (WA-2 through WA-9)
+# Web Admin setup (WA-2 through WA-10)
 
 The FaceTune Web Admin is a Flutter Web application built from a separate
 entrypoint in this repository. It shares the consumer app's Supabase Auth,
@@ -32,7 +32,9 @@ Contract: `subscription_admin_contract_v1.1`.
 | Database (WA-9) | `public.admin_extend_salon_pilot_expiration(...)` and `public.admin_set_salon_pilot_lifecycle(...)` (migration `20261001000100_admin_salon_pilot_lifecycle.sql`) | Roster-checked, per-account and row-locked lifecycle writers for admin-granted Salon Pilot only. Extension requires a future timestamp later than the current expiration. Allowed status transitions are active/grace → suspended, suspended → active while unexpired, and active/grace/suspended → revoked. Revocation is terminal. Expected version rejects stale writes; audit-backed idempotency replays the same intent and conflicts on key reuse. Each success writes exactly one immutable audit event. Store-backed and Free targets are refused without mutation. Usage and historical content are never rewritten or deleted. |
 | Edge Function (WA-9) | `admin-salon-pilot-lifecycle` (`verify_jwt = true`) | `requireAdmin` and the caller JWT form the same double gate as WA-7/WA-8. Dispatches the approved action vocabulary to the two lifecycle writers, mints a correlation ID, and logs identifiers/outcomes only—never reason text, JWTs, provider data, or private FaceTune content. No service-role key. |
 | Flutter (WA-9) | `lib/admin/salon_pilot/` (lifecycle controller + page) | Protected per-user routes for expiration extension, suspend, reactivate, and revoke. User detail exposes state-appropriate controls only for an admin-granted Salon Pilot; provider-backed entitlements receive none. Every flow requires a reason and Preview → Confirm, freezes version/key/date at preview, reuses the key on retry, and displays the server result. Revoke additionally requires an explicit irreversible-action acknowledgement and an unambiguous **Revoke access** confirmation. |
-| Flutter (WA-3) | `lib/admin/shell/` | The protected shell: navigation rail (drawer below 760 px), identity + sign-out, and one placeholder per section — Dashboard `/dashboard`, Users `/users`, Entitlements `/entitlements`, Usage `/usage`, Audit `/audit`. A refresh or a sign-in returns to the section that was open (`?from=`, exact section paths only). |
+| Database (WA-10) | `public.admin_list_audit_events(...)`, `public.admin_get_audit_event(uuid)`, `public.admin_list_entitlement_history(uuid, text)` (migration `20261002000100_admin_audit_and_entitlement_history.sql`) | Roster-checked, read-only inspection. Audit list uses fixed newest-first keyset pages of 25 with filter-bound cursors and filters by admin, canonical action, target user, target entitlement, source, and half-open date range. Detail projects snapshots through a six-field allowlist. History merges entitlement-scoped admin events with successfully processed provider lifecycle events, sorted by authoritative event time. Provider message IDs, purchase references, notification types, and payloads never leave Postgres. Snapshot constraints prevent future writers from storing arbitrary JSON. No client receives table access and no WA-10 function writes data. |
+| Flutter (WA-10) | `lib/admin/audit/` | `/audit` filterable list, `/audit/:eventId` immutable detail, and `/entitlements/:entitlementId/history` readable lifecycle timeline. Entitlement and user pages link into the history/audit views. All decoders fail closed; the UI has no audit edit, delete, or rewrite controls. |
+| Flutter (WA-3) | `lib/admin/shell/` | The protected shell: navigation rail (drawer below 760 px), identity + sign-out, and five live sections — Dashboard `/dashboard`, Users `/users`, Entitlements `/entitlements`, Usage `/usage`, Audit `/audit`. A refresh or sign-in returns to the protected section/detail route that was open (`?from=`, exact validated paths only). |
 
 Admin authority is a database row, not a JWT claim, so revoking it takes
 effect on the revoked account's next request — no token refresh, no new
@@ -84,7 +86,7 @@ MFA in Authentication settings before production use.
 ## Deploying the backend
 
 ```powershell
-supabase db push          # 20260925000100 through 20261001000100
+supabase db push          # 20260925000100 through 20261002000100
 supabase functions deploy admin-session
 supabase functions deploy admin-grant-salon-pilot
 supabase functions deploy admin-adjust-salon-pilot-allowance
@@ -134,7 +136,7 @@ persist a session in the browser. Hosting provider is not chosen by WA-2.
 ```powershell
 flutter test test/admin                     # controller, gateway, router/pages, source-scan security contract
 cd supabase/functions; deno test --allow-env --allow-net _shared/admin_auth_test.ts _shared/admin_mutations_test.ts
-supabase test db --local                    # includes WA-2, WA-4, WA-5, WA-6, WA-7, WA-8, and WA-9 pgTAP suites
+supabase test db --local                    # includes WA-2 through WA-10 pgTAP suites
 ```
 
 ## Hard locks (enforced by tests)
@@ -152,3 +154,4 @@ supabase test db --local                    # includes WA-2, WA-4, WA-5, WA-6, W
 - WA-7: the grant is refused for non-admins and anonymous callers before any row is read; a duplicate submission creates no second entitlement and no second audit event; audit rows cannot be edited, re-timestamped, or re-attributed; no client role can read or write `admin_audit_events`; the writer is not executable by `anon` or `service_role`.
 - WA-8: an adjustment is applied only through `entitlement_allowance_adjustments`; the writer never sets `allowance_adjustment_total` or touches `usage_ledger`; a reduction below committed usage or below committed + reserved is refused with its contract code; a stale expected version is refused; a duplicate submission applies once; every applied adjustment has exactly one audit event.
 - WA-9: unauthenticated and normal-user lifecycle calls are denied; the entitlement owner cannot mutate their own lifecycle; Free and provider-backed rows are refused; suspended/revoked Pilot cannot fund a new generation; existing usage/content remains; a valid suspended Pilot can reactivate but an expired one cannot; revocation is terminal while the account may still fall back to another legitimate entitlement; stale versions are refused; retries replay and every applied lifecycle action is audited exactly once.
+- WA-10: audit/history reads are denied to unauthenticated and normal users; lists are fixed at 25 rows and cursors are bound to their filters; lifecycle events are newest-first across admin and provider sources; a duplicate mutation remains one event; persisted and returned snapshots contain only status, plan, effective allowance, adjustment total, expiration, and version; provider message IDs and purchase references are absent; the UI exposes no ordinary audit mutation control.

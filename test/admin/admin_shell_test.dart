@@ -155,43 +155,25 @@ void main() {
       expect(find.byKey(const Key('admin-section-usage')), findsOneWidget);
     });
 
-    testWidgets('placeholders show no figures and name their phase', (
-      tester,
-    ) async {
-      final (_, container) = await pumpAdmin(tester);
-      // Dashboard, Users, Entitlements and Usage are live; Audit (WA-10)
-      // remains a placeholder.
-      final placeholders = AdminSection.values.where(
-        (s) =>
-            s != AdminSection.dashboard &&
-            s != AdminSection.users &&
-            s != AdminSection.entitlements &&
-            s != AdminSection.usage,
-      );
-      expect(placeholders, [AdminSection.audit]);
-      for (final section in placeholders) {
-        container.read(adminRouterProvider).go(section.path);
-        await tester.pumpAndSettle();
-        expect(
-          find.textContaining('arrives in ${section.arrivesIn}'),
-          findsOneWidget,
-        );
-        // No digits anywhere in the section content: no fake stats.
-        final texts = tester
-            .widgetList<Text>(
-              find.descendant(
-                of: find.byKey(Key('admin-section-${section.name}')),
-                matching: find.byType(Text),
-              ),
-            )
-            .map((t) => t.data ?? '')
-            .join(' ');
-        expect(
-          RegExp(r'\d').hasMatch(texts.replaceAll(section.arrivesIn, '')),
-          isFalse,
-        );
-      }
-    });
+    testWidgets(
+      'all five sections are implemented without future placeholders',
+      (tester) async {
+        final (_, container) = await pumpAdmin(tester);
+        for (final section in AdminSection.values) {
+          container.read(adminRouterProvider).go(section.path);
+          await tester.pump();
+          await tester.pump();
+          expect(
+            find.byKey(Key('admin-section-${section.name}')),
+            findsOneWidget,
+          );
+          expect(
+            find.textContaining('arrives in ${section.arrivesIn}'),
+            findsNothing,
+          );
+        }
+      },
+    );
   });
 
   group('AdminShell keyboard', () {
