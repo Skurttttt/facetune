@@ -133,6 +133,15 @@ export type PurchasedCreditClass = typeof PURCHASED_CREDIT_CLASSES[number];
 export const ADMIN_ROLES = ["normal_user", "admin"] as const;
 export type AdminRole = typeof ADMIN_ROLES[number];
 
+/** Privacy-minimal Supabase Auth account state shown by WA-5. */
+export const ADMIN_ACCOUNT_STATUSES = [
+  "active",
+  "unconfirmed",
+  "banned",
+  "anonymous",
+] as const;
+export type AdminAccountStatus = typeof ADMIN_ACCOUNT_STATUSES[number];
+
 /**
  * Privileged admin action identifiers. Contract §45 is the authority; the
  * looser names in Web Admin SOT §41 (`grant_entitlement`, `adjust_allowance`)
@@ -256,6 +265,9 @@ export const asPurchasedCreditClass = (
 ): PurchasedCreditClass | null => asMember(PURCHASED_CREDIT_CLASSES, v);
 export const asAdminRole = (v: unknown): AdminRole | null =>
   asMember(ADMIN_ROLES, v);
+export const asAdminAccountStatus = (
+  v: unknown,
+): AdminAccountStatus | null => asMember(ADMIN_ACCOUNT_STATUSES, v);
 export const asAdminAction = (v: unknown): AdminAction | null =>
   asMember(ADMIN_ACTIONS, v);
 export const asAllowanceAdjustmentType = (

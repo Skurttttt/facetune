@@ -26,6 +26,7 @@
  */
 
 import {
+  type AdminAccountStatus,
   type AdminAction,
   type AllowanceAdjustmentType,
   type AllowanceSource,
@@ -343,13 +344,48 @@ export function effectiveEntitlementStatus(
 export interface AdminUserSummary {
   userId: string;
   email: string | null;
-  displayName: string | null;
-  /** Supabase anonymous guest; can never hold admin privilege. */
-  isAnonymous: boolean;
-  createdAt: string;
+  accountCreatedAt: string;
+  accountStatus: AdminAccountStatus;
   currentPlanCode: SubscriptionPlanCode | null;
-  currentEntitlementStatus: EntitlementStatus | null;
-  availableAiLooks: number | null;
+  currentPlanDisplayName: string | null;
+  entitlementStatus: EntitlementStatus | null;
+  remainingAiLooks: number | null;
+  allowanceUnit: AllowanceUnit | null;
+  periodEnd: string | null;
+  expiresAt: string | null;
+  autoRenew: boolean | null;
+}
+
+/** The deliberately small account identity object returned on WA-5 detail. */
+export interface AdminUserIdentity {
+  userId: string;
+  email: string | null;
+  accountCreatedAt: string;
+  accountStatus: AdminAccountStatus;
+}
+
+/** The flat, subscription-only entitlement payload returned on WA-5 detail. */
+export interface AdminUserEntitlementDetail {
+  entitlementId: string;
+  planCode: SubscriptionPlanCode;
+  planDisplayName: string;
+  storedStatus: EntitlementStatus;
+  effectiveStatus: EntitlementStatus;
+  billingProvider: BillingProvider;
+  allowanceUnit: AllowanceUnit;
+  effectiveAllowance: number;
+  committedUsage: number;
+  reservedUsage: number;
+  availableAiLooks: number;
+  remainingAiLooks: number;
+  periodStart: string | null;
+  periodEnd: string | null;
+  startsAt: string;
+  expiresAt: string | null;
+  autoRenew: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** The current entitlement as the admin sees it. Web Admin SOT §19. */
@@ -413,10 +449,73 @@ export function toAdminEntitlementView(
 
 /** Web Admin SOT §16. Composed by a protected server read; nothing here fetches. */
 export interface AdminUserDetail {
-  user: AdminUserSummary;
-  entitlement: AdminEntitlementView | null;
-  purchasedCredits: PurchasedCreditSummary | null;
-  adjustments: AllowanceAdjustment[];
+  user: AdminUserIdentity;
+  entitlement: AdminUserEntitlementDetail | null;
+}
+
+/**
+ * One row of the Entitlements list (WA-6, `public.admin_list_entitlements`).
+ * Every `user_entitlements` row an account has held, not only the governing
+ * one, each with the resolver's arithmetic applied server-side for that row.
+ * Web Admin SOT §18–§19 over contract §41, §74.
+ */
+export interface AdminEntitlementListItem {
+  entitlementId: string;
+  userId: string;
+  email: string | null;
+  planCode: SubscriptionPlanCode;
+  planDisplayName: string;
+  storedStatus: EntitlementStatus;
+  effectiveStatus: EntitlementStatus;
+  billingProvider: BillingProvider;
+  allowanceUnit: AllowanceUnit;
+  baseAllowance: number;
+  allowanceAdjustmentTotal: number;
+  effectiveAllowance: number;
+  committedUsage: number;
+  reservedUsage: number;
+  availableAiLooks: number;
+  remainingAiLooks: number;
+  periodStart: string | null;
+  periodEnd: string | null;
+  startsAt: string;
+  expiresAt: string | null;
+  autoRenew: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * One row of the Usage list (WA-6, `public.admin_list_usage`). The sanitized
+ * projection of a `usage_ledger` row: canonical status, stamped provenance,
+ * lifecycle timestamps, and the failure code. Lineage is reported as the
+ * source mode plus whether the preview row still exists — never an image id.
+ * Web Admin SOT §34–§37 over contract §42.
+ */
+export interface AdminUsageListItem {
+  usageId: string;
+  userId: string;
+  email: string | null;
+  entitlementId: string;
+  usageType: UsageType;
+  operationId: string;
+  status: UsageStatus;
+  planCode: SubscriptionPlanCode | null;
+  allowanceUnit: AllowanceUnit | null;
+  allowanceSource: AllowanceSource;
+  /** Set at commit and never cleared; null for reserved and released rows. */
+  sourceMode: PreviewSourceMode | null;
+  /** Null unless the row is committed. False once the user deleted the preview. */
+  canonicalPreviewRetained: boolean | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  reservedAt: string;
+  committedAt: string | null;
+  releasedAt: string | null;
+  sanitizedFailureCode: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -870,10 +969,24 @@ export interface AdminUserQuery extends AdminPagination {
   billingProvider: BillingProvider | null;
 }
 
+/**
+ * Entitlements list filters (Web Admin SOT §18). `entitlementStatus` filters
+ * the effective status the admin is shown; `expiresWithinDays` is a window on
+ * `expires_at` against the server clock (1–365), never a client timestamp.
+ */
+export interface AdminEntitlementQuery extends AdminPagination {
+  userId: string | null;
+  planCode: SubscriptionPlanCode | null;
+  entitlementStatus: EntitlementStatus | null;
+  billingProvider: BillingProvider | null;
+  expiresWithinDays: number | null;
+}
+
 export interface AdminUsageQuery extends AdminPagination {
   userId: string | null;
   entitlementId: string | null;
   status: UsageStatus | null;
+  planCode: SubscriptionPlanCode | null;
   allowanceSource: AllowanceSource | null;
   fromInclusive: string | null;
   toExclusive: string | null;

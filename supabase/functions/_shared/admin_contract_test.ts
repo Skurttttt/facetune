@@ -1,6 +1,7 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 
 import {
+  ADMIN_ACCOUNT_STATUSES,
   ADMIN_ACTIONS,
   ADMIN_ROLES,
   adminErrorRetryable,
@@ -8,6 +9,7 @@ import {
   ALLOWANCE_ADJUSTMENT_TYPES,
   ALLOWANCE_SOURCES,
   ALLOWANCE_UNITS,
+  asAdminAccountStatus,
   asAdminAction,
   asAdminRole,
   asAllowanceAdjustmentType,
@@ -105,6 +107,12 @@ Deno.test("purchased credit classes match contract §74a", () => {
 
 Deno.test("admin vocabulary matches contract §43, §45, §53", () => {
   assertEquals([...ADMIN_ROLES], ["normal_user", "admin"]);
+  assertEquals([...ADMIN_ACCOUNT_STATUSES], [
+    "active",
+    "unconfirmed",
+    "banned",
+    "anonymous",
+  ]);
   assertEquals([...ADMIN_ACTIONS], [
     "grant_salon_pilot",
     "increase_allowance",
@@ -179,6 +187,9 @@ Deno.test("every vocabulary member round-trips through its parser", () => {
     assertEquals(asPurchasedCreditClass(v), v);
   }
   for (const v of ADMIN_ROLES) assertEquals(asAdminRole(v), v);
+  for (const v of ADMIN_ACCOUNT_STATUSES) {
+    assertEquals(asAdminAccountStatus(v), v);
+  }
   for (const v of ADMIN_ACTIONS) assertEquals(asAdminAction(v), v);
   for (const v of ALLOWANCE_ADJUSTMENT_TYPES) {
     assertEquals(asAllowanceAdjustmentType(v), v);

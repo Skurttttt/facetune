@@ -35,3 +35,9 @@ verify_jwt = true
 # and the pushing service account before the body is read.
 [functions.google-play-rtdn]
 verify_jwt = false
+
+# WA-2. The gateway rejects requests without a valid Supabase JWT before the
+# function runs; the function then decides admin privilege itself from the
+# caller's session (`_shared/admin_auth.ts`). Both checks are required.
+[functions.admin-session]
+verify_jwt = true

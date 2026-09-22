@@ -205,16 +205,18 @@ select throws_ok(
   '0A000', null,
   'a trigger function cannot be called directly (no bypass through it)'
 );
--- Every user-callable security-definer RPC identifies the caller from the
--- session: none takes a user id as an argument.
+-- Consumer RPCs identify the caller from the session. The only target-user
+-- arguments belong to the read-only WA-5 detail endpoint and the WA-6
+-- listing filters, each of which verifies the real caller against the admin
+-- roster before touching any account.
 select is(
   (select string_agg(p.proname, ',' order by p.proname)
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.prosecdef
       and has_function_privilege('authenticated', p.oid, 'EXECUTE')
       and pg_get_function_identity_arguments(p.oid) ~* 'user'),
-  null,
-  'no user-callable RPC accepts a user identity argument (no JWT bypass)'
+  'admin_get_user,admin_list_entitlements,admin_list_usage',
+  'only the roster-checked admin reads accept a target user identity'
 );
 select is(
   (select string_agg(p.proname, ',' order by p.proname)
@@ -222,9 +224,16 @@ select is(
     where n.nspname = 'public' and p.prosecdef
       and p.prorettype <> 'trigger'::regtype
       and has_function_privilege('authenticated', p.oid, 'EXECUTE')),
-  'authorize_tutorial_generation,commit_ai_look,consume_ai_quota,release_ai_look,' ||
-  'reserve_ai_look,resolve_subscription_state',
-  'the user-callable security-definer surface is exactly the six known RPCs'
+  -- WA-2 added `current_user_is_admin()`, WA-4 dashboard metrics, WA-5 the
+  -- two read-only account endpoints, and WA-6 the two read-only listings.
+  -- Each admin endpoint refuses inside unless the session caller is on the
+  -- active roster.
+  'admin_dashboard_metrics,admin_get_user,admin_list_entitlements,' ||
+  'admin_list_usage,admin_search_users,' ||
+  'authorize_tutorial_generation,commit_ai_look,consume_ai_quota,' ||
+  'current_user_is_admin,release_ai_look,reserve_ai_look,' ||
+  'resolve_subscription_state',
+  'the user-callable security-definer surface is exactly the twelve known RPCs'
 );
 -- No hidden special-casing of an account inside any function body.
 select is(
