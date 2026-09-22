@@ -1,4 +1,4 @@
-# Web Admin setup (WA-2 through WA-10)
+# Web Admin setup (WA-2 through WA-11)
 
 The FaceTune Web Admin is a Flutter Web application built from a separate
 entrypoint in this repository. It shares the consumer app's Supabase Auth,
@@ -136,8 +136,41 @@ persist a session in the browser. Hosting provider is not chosen by WA-2.
 ```powershell
 flutter test test/admin                     # controller, gateway, router/pages, source-scan security contract
 cd supabase/functions; deno test --allow-env --allow-net _shared/admin_auth_test.ts _shared/admin_mutations_test.ts
-supabase test db --local                    # includes WA-2 through WA-10 pgTAP suites
+supabase test db --local                    # includes WA-2 through WA-11 pgTAP suites
+bash supabase/tests/controlled/wa11_admin_concurrency.sh   # two-session admin races (local stack up)
 ```
+
+## Concurrency, idempotency and stale writes (WA-11)
+
+Every privileged admin writer (`admin_grant_salon_pilot`,
+`admin_adjust_salon_pilot_allowance`, `admin_extend_salon_pilot_expiration`,
+`admin_set_salon_pilot_lifecycle`) and the usage engine
+(`reserve_ai_look` / `commit_ai_look` / `release_ai_look`, and the
+adjustment ledger trigger) serialize on the same per-account advisory lock
+(`pg_advisory_xact_lock(hashtextextended(user_id, 0))`). Idempotency is a
+database uniqueness fact — `(entitlement_id, idempotency_key)` on the
+adjustment ledger and `(target_user_id, action, idempotency_key)` on the
+audit table — and every writer answers a repeated key with the original
+result and `replayed: true`. `expectedVersion`, when the browser supplies
+it, is compared under the lock and a mismatch is `CONCURRENT_MODIFICATION`.
+
+What is proven where:
+
+| Scenario | Database-level proof | Live / manual |
+| --- | --- | --- |
+| Admin double-clicks +10 | pgTAP S1 (applies once); harness R1 (two overlapping sessions, one replay, one ledger row, one audit) | — |
+| Two admins, A +10 and B +5 | pgTAP S2; harness R2 (B waits on the lock, sees A's change; total 15, version +2, two audits) | — |
+| Stale write (both on the same version) | pgTAP S3; harness R3 (first applies, second `CONCURRENT_MODIFICATION`, nothing lost) | — |
+| User reserves while admin reduces | pgTAP S4; harness R4a/R4b in both lock orders: a reduction that would strand a hold is refused, a reservation after a reduction to the floor is refused, available is never negative | — |
+| Suspend during generation | pgTAP S5; harness R5: the in-flight reservation survives, no new reservation may start, the already-authorized work still commits (reservation-time attribution, the engine's existing rule; nothing cancels running server work) | — |
+| Network timeout, client retries | pgTAP S0/S3 (same key → replay); Flutter controller tests prove a retry reuses the same key and version and that a second confirm while submitting sends nothing | HTTP-level retry through the Edge Function against a deployed instance |
+| Revoke duplicate | pgTAP S6; harness R6 (one revocation, one audit, one replay); harness R7 for a duplicate grant | — |
+| Audit accuracy | pgTAP S7: one event per applied mutation in version order, none for replays or refusals; row version = number of applied mutations; total = ledger sum | — |
+
+No new backend or frontend hardening was needed: every scenario passed
+against the deployed WA-7–WA-9 writers as they were. What remains
+live-only is the HTTP layer (Edge Function timeout + browser retry), which
+reuses the same key and therefore the same database guarantees.
 
 ## Hard locks (enforced by tests)
 
