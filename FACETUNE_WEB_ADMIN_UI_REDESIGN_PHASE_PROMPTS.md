@@ -3,7 +3,7 @@
 **Version:** 1.0.0  
 **Companion authority:** `FACETUNE_WEB_ADMIN_UI_REDESIGN_SOURCE_OF_TRUTH.md`  
 **Track:** WA-13.5 — Web Admin UI/UX Redesign & Visual Productionization  
-**Branch:** `feature/web-admin-v1`
+**Branch:** `feature/web-admin-ui-redesign-v1`
 
 ---
 
@@ -73,7 +73,7 @@ git diff --check
 Expected branch:
 
 ```text
-feature/web-admin-v1
+feature/web-admin-ui-redesign-v1
 ```
 
 Do not:
@@ -250,7 +250,7 @@ This is an ANALYSIS / INVENTORY phase.
 Do not redesign or modify production UI code in this phase.
 
 FIRST:
-- verify branch feature/web-admin-v1
+- verify branch feature/web-admin-ui-redesign-v1
 - verify HEAD is the explicitly accepted WA-13 checkpoint
 - verify worktree status
 - preserve all existing work
