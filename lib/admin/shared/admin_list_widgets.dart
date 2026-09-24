@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_tokens.dart';
+import '../theme/admin_tokens.dart';
 import 'admin_keyset_list_controller.dart';
 import 'admin_labels.dart';
 import 'admin_wire.dart';
@@ -17,7 +17,7 @@ class AdminListLoadingRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+    padding: const EdgeInsets.symmetric(vertical: AdminSpacing.lg),
     child: Row(
       children: [
         SizedBox.square(
@@ -27,7 +27,7 @@ class AdminListLoadingRow extends StatelessWidget {
             semanticsLabel: label,
           ),
         ),
-        const SizedBox(width: AppSpacing.sm),
+        const SizedBox(width: AdminSpacing.sm),
         Text('$label…'),
       ],
     ),
@@ -52,14 +52,14 @@ class AdminListNotice extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(AppRadii.sm),
+        borderRadius: BorderRadius.circular(AdminRadii.card),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: const EdgeInsets.all(AdminSpacing.md),
         child: Row(
           children: [
             Icon(icon, color: theme.colorScheme.onSurfaceVariant),
-            const SizedBox(width: AppSpacing.sm),
+            const SizedBox(width: AdminSpacing.sm),
             Expanded(child: Text(message)),
             ?action,
           ],
@@ -97,12 +97,12 @@ class AdminStatusBadge extends StatelessWidget {
       excludeSemantics: true,
       child: Container(
         padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.xs,
-          vertical: AppSpacing.xxs / 2,
+          horizontal: AdminSpacing.xs,
+          vertical: AdminSpacing.xxs / 2,
         ),
         decoration: BoxDecoration(
           border: Border.all(color: border),
-          borderRadius: BorderRadius.circular(AppRadii.pill),
+          borderRadius: BorderRadius.circular(AdminRadii.pill),
         ),
         child: Text(
           label,
@@ -162,7 +162,7 @@ class AdminPaginationBar<T, F> extends StatelessWidget {
         onPressed: state.canGoBack ? onPrevious : null,
         child: const Text('Previous'),
       ),
-      const SizedBox(width: AppSpacing.xs),
+      const SizedBox(width: AdminSpacing.xs),
       OutlinedButton(
         key: Key('$keyPrefix-next'),
         onPressed: state.page.nextCursor == null ? null : onNext,
@@ -183,30 +183,6 @@ class AdminFilterSlot extends StatelessWidget {
   Widget build(BuildContext context) => SizedBox(width: width, child: child);
 }
 
-/// The section header every listing shares.
-class AdminSectionHeading extends StatelessWidget {
-  const AdminSectionHeading({
-    super.key,
-    required this.title,
-    required this.description,
-  });
-
-  final String title;
-  final String description;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Semantics(
-          header: true,
-          child: Text(title, style: theme.textTheme.headlineSmall),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(description, style: theme.textTheme.bodyMedium),
-      ],
-    );
-  }
-}
+// The listing section header moved to `AdminPageHeader` in WA-13.5-UI-4: it
+// was the page's heading, not a listing's, and it had no slot for the
+// per-page metadata and actions the Dashboard and the research page need.

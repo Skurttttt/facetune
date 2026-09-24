@@ -1,3 +1,4 @@
+import '../../../shared/admin_page_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,7 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../features/subscription/domain/entities/billing_provider.dart';
 import '../../../../features/subscription/domain/entities/entitlement_status.dart';
 import '../../../../features/subscription/domain/entities/subscription_plan_code.dart';
-import '../../../../theme/app_tokens.dart';
+import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
 import '../../../shared/admin_keyset_list_controller.dart';
 import '../../../shared/admin_labels.dart';
@@ -96,18 +97,18 @@ class _AdminEntitlementsPageState extends ConsumerState<AdminEntitlementsPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        const AdminSectionHeading(
+        const AdminPageHeader(
           title: 'Entitlements',
-          description:
+          subtitle:
               'Every entitlement on record, with server-resolved allowance '
               'and usage. Filters apply on the server.',
         ),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AdminSpacing.md),
         KeyedSubtree(
           key: ValueKey(_filterGeneration),
           child: Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
+            spacing: AdminSpacing.sm,
+            runSpacing: AdminSpacing.sm,
             crossAxisAlignment: WrapCrossAlignment.end,
             children: [
               AdminFilterSlot(
@@ -207,7 +208,7 @@ class _AdminEntitlementsPageState extends ConsumerState<AdminEntitlementsPage> {
             ],
           ),
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AdminSpacing.lg),
         switch (state) {
           AdminListLoading() => const AdminListLoadingRow(
             key: Key('admin-entitlements-loading'),
@@ -262,7 +263,7 @@ class _Results extends StatelessWidget {
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
-                columnSpacing: AppSpacing.md,
+                columnSpacing: AdminSpacing.md,
                 columns: const [
                   DataColumn(label: Text('User')),
                   DataColumn(label: Text('Plan')),
@@ -370,7 +371,7 @@ class _Results extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AdminSpacing.sm),
           AdminPaginationBar(
             keyPrefix: 'admin-entitlements',
             state: state,

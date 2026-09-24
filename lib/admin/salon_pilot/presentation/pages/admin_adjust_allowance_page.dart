@@ -1,10 +1,11 @@
+import '../../../shared/admin_page_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../features/subscription/domain/entities/billing_provider.dart';
 import '../../../../features/subscription/domain/entities/subscription_plan_code.dart';
-import '../../../../theme/app_tokens.dart';
+import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
 import '../../../shared/admin_labels.dart';
 import '../../../shared/admin_list_widgets.dart';
@@ -97,15 +98,15 @@ class _AdminAdjustAllowancePageState
           icon: const Icon(Icons.arrow_back, size: 18),
           label: const Text('Back to user'),
         ),
-        const SizedBox(height: AppSpacing.xs),
-        const AdminSectionHeading(
+        const SizedBox(height: AdminSpacing.xs),
+        const AdminPageHeader(
           title: 'Adjust Salon Pilot allowance',
-          description:
+          subtitle:
               'Adds to or reduces the AI Look allowance through the audited '
               'adjustment ledger. Committed usage is never changed; a '
               'reduction must keep committed and reserved usage covered.',
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AdminSpacing.lg),
         switch (detail) {
           AdminUserDetailLoading() => const AdminListLoadingRow(
             key: Key('admin-adjust-loading'),
@@ -153,7 +154,7 @@ class _AdminAdjustAllowancePageState
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _CurrentFigures(detail: detail, entitlement: entitlement),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AdminSpacing.lg),
         switch (state) {
           AdminAdjustEditing() => _form(entitlement),
           AdminAdjustPreviewing(:final intent, :final preview) => _Preview(
@@ -206,7 +207,7 @@ class _AdminAdjustAllowancePageState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Wrap(
-            spacing: AppSpacing.xs,
+            spacing: AdminSpacing.xs,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               for (final quick in salonPilotQuickAdjustments)
@@ -221,7 +222,7 @@ class _AdminAdjustAllowancePageState
               const Text('or a custom amount:'),
             ],
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AdminSpacing.sm),
           TextField(
             key: const Key('admin-adjust-amount'),
             controller: _amount,
@@ -234,7 +235,7 @@ class _AdminAdjustAllowancePageState
               errorText: _amountError,
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AdminSpacing.md),
           TextField(
             key: const Key('admin-adjust-reason'),
             controller: _reason,
@@ -247,7 +248,7 @@ class _AdminAdjustAllowancePageState
               errorText: _reasonError,
             ),
           ),
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AdminSpacing.lg),
           FilledButton.icon(
             key: const Key('admin-adjust-preview'),
             onPressed: () => _preview(entitlement),
@@ -345,7 +346,7 @@ class _Preview extends StatelessWidget {
                   color: theme.colorScheme.error,
                 ),
               ),
-              const SizedBox(height: AppSpacing.xs),
+              const SizedBox(height: AdminSpacing.xs),
             ],
             Text(
               'The preview is informational. The server recomputes every '
@@ -354,7 +355,7 @@ class _Preview extends StatelessWidget {
               'duplicate submission applies once.',
               style: theme.textTheme.bodySmall,
             ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AdminSpacing.md),
             Row(
               children: [
                 FilledButton.icon(
@@ -367,7 +368,7 @@ class _Preview extends StatelessWidget {
                         : 'Confirm reduction',
                   ),
                 ),
-                const SizedBox(width: AppSpacing.sm),
+                const SizedBox(width: AdminSpacing.sm),
                 TextButton(
                   key: const Key('admin-adjust-edit'),
                   onPressed: onEdit,
@@ -423,7 +424,7 @@ class _Result extends StatelessWidget {
               onPressed: () => context.go(AdminRoutes.userDetail(userId)),
               child: const Text('Back to user'),
             ),
-            const SizedBox(width: AppSpacing.sm),
+            const SizedBox(width: AdminSpacing.sm),
             TextButton(
               key: const Key('admin-adjust-another'),
               onPressed: onAnother,
@@ -514,10 +515,10 @@ class _Panel extends StatelessWidget {
             ? theme.colorScheme.primary
             : theme.colorScheme.outlineVariant,
       ),
-      borderRadius: BorderRadius.circular(AppRadii.sm),
+      borderRadius: BorderRadius.circular(AdminRadii.card),
     ),
     child: Padding(
-      padding: const EdgeInsets.all(AppSpacing.md),
+      padding: const EdgeInsets.all(AdminSpacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -525,10 +526,10 @@ class _Panel extends StatelessWidget {
             header: true,
             child: Text(title, style: theme.textTheme.titleMedium),
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AdminSpacing.sm),
           for (final row in rows)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+              padding: const EdgeInsets.symmetric(vertical: AdminSpacing.xxs),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -546,7 +547,7 @@ class _Panel extends StatelessWidget {
               ),
             ),
           if (footer != null) ...[
-            const SizedBox(height: AppSpacing.sm),
+            const SizedBox(height: AdminSpacing.sm),
             footer!,
           ],
         ],

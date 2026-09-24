@@ -1,10 +1,11 @@
+import '../../../shared/admin_page_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../features/subscription/domain/entities/billing_provider.dart';
 import '../../../../features/subscription/domain/entities/subscription_plan_code.dart';
-import '../../../../theme/app_tokens.dart';
+import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
 import '../../../shared/admin_labels.dart';
 import '../../../shared/admin_list_widgets.dart';
@@ -140,12 +141,12 @@ class _AdminLifecyclePageState extends ConsumerState<AdminLifecyclePage> {
           icon: const Icon(Icons.arrow_back, size: 18),
           label: const Text('Back to user'),
         ),
-        const SizedBox(height: AppSpacing.xs),
-        AdminSectionHeading(
+        const SizedBox(height: AdminSpacing.xs),
+        AdminPageHeader(
           title: '${widget.action.label} — Salon Pilot',
-          description: widget.action.consequence,
+          subtitle: widget.action.consequence,
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AdminSpacing.lg),
         switch (detail) {
           AdminUserDetailLoading() => const AdminListLoadingRow(
             key: Key('admin-lifecycle-loading'),
@@ -222,7 +223,7 @@ class _AdminLifecyclePageState extends ConsumerState<AdminLifecyclePage> {
             ],
           ),
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AdminSpacing.lg),
         switch (state) {
           AdminLifecycleEditing() => _form(entitlement),
           AdminLifecyclePreviewing(:final intent) => _Preview(
@@ -283,7 +284,7 @@ class _AdminLifecyclePageState extends ConsumerState<AdminLifecyclePage> {
                     ),
                   ),
                 ),
-                const SizedBox(width: AppSpacing.sm),
+                const SizedBox(width: AdminSpacing.sm),
                 OutlinedButton.icon(
                   key: const Key('admin-lifecycle-pick-date'),
                   onPressed: () => _pickDate(entitlement),
@@ -292,7 +293,7 @@ class _AdminLifecyclePageState extends ConsumerState<AdminLifecyclePage> {
                 ),
               ],
             ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AdminSpacing.md),
           ],
           TextField(
             key: const Key('admin-lifecycle-reason'),
@@ -306,7 +307,7 @@ class _AdminLifecyclePageState extends ConsumerState<AdminLifecyclePage> {
             ),
           ),
           if (widget.action.highRisk) ...[
-            const SizedBox(height: AppSpacing.sm),
+            const SizedBox(height: AdminSpacing.sm),
             CheckboxListTile(
               key: const Key('admin-lifecycle-acknowledge'),
               value: _acknowledged,
@@ -329,7 +330,7 @@ class _AdminLifecyclePageState extends ConsumerState<AdminLifecyclePage> {
                     ),
             ),
           ],
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AdminSpacing.lg),
           FilledButton.icon(
             key: const Key('admin-lifecycle-preview'),
             onPressed: () => _preview(entitlement),
@@ -403,14 +404,14 @@ class _Preview extends StatelessWidget {
                 color: action.highRisk ? theme.colorScheme.error : null,
               ),
             ),
-            const SizedBox(height: AppSpacing.xs),
+            const SizedBox(height: AdminSpacing.xs),
             Text(
               'The server validates the transition and provider boundary, '
               'records one audit event under your admin identity, and '
               'replays a duplicate submission instead of applying it twice.',
               style: theme.textTheme.bodySmall,
             ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AdminSpacing.md),
             Row(
               children: [
                 FilledButton.icon(
@@ -428,7 +429,7 @@ class _Preview extends StatelessWidget {
                   ),
                   label: Text(action.confirmLabel),
                 ),
-                const SizedBox(width: AppSpacing.sm),
+                const SizedBox(width: AdminSpacing.sm),
                 TextButton(
                   key: const Key('admin-lifecycle-edit'),
                   onPressed: onEdit,
@@ -564,10 +565,10 @@ class _Panel extends StatelessWidget {
             ? theme.colorScheme.primary
             : theme.colorScheme.outlineVariant,
       ),
-      borderRadius: BorderRadius.circular(AppRadii.sm),
+      borderRadius: BorderRadius.circular(AdminRadii.card),
     ),
     child: Padding(
-      padding: const EdgeInsets.all(AppSpacing.md),
+      padding: const EdgeInsets.all(AdminSpacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -575,10 +576,10 @@ class _Panel extends StatelessWidget {
             header: true,
             child: Text(title, style: theme.textTheme.titleMedium),
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AdminSpacing.sm),
           for (final row in rows)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+              padding: const EdgeInsets.symmetric(vertical: AdminSpacing.xxs),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -596,7 +597,7 @@ class _Panel extends StatelessWidget {
               ),
             ),
           if (footer != null) ...[
-            const SizedBox(height: AppSpacing.sm),
+            const SizedBox(height: AdminSpacing.sm),
             footer!,
           ],
         ],

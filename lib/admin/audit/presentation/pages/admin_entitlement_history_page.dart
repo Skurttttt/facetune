@@ -1,8 +1,9 @@
+import '../../../shared/admin_page_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../theme/app_tokens.dart';
+import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
 import '../../../shared/admin_keyset_list_controller.dart';
 import '../../../shared/admin_labels.dart';
@@ -33,20 +34,20 @@ class AdminEntitlementHistoryPage extends ConsumerWidget {
           icon: const Icon(Icons.arrow_back, size: 18),
           label: const Text('Back to entitlements'),
         ),
-        const SizedBox(height: AppSpacing.xs),
-        const AdminSectionHeading(
+        const SizedBox(height: AdminSpacing.xs),
+        const AdminPageHeader(
           title: 'Entitlement history',
-          description:
+          subtitle:
               'Newest first. Administrative actions and verified provider '
               'lifecycle events are shown from immutable records.',
         ),
-        const SizedBox(height: AppSpacing.xs),
+        const SizedBox(height: AdminSpacing.xs),
         SelectableText(
           entitlementId,
           key: const Key('admin-entitlement-history-id'),
           style: const TextStyle(fontFamily: 'monospace'),
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AdminSpacing.lg),
         switch (state) {
           AdminListLoading() => const AdminListLoadingRow(
             label: 'Loading entitlement history',
@@ -98,7 +99,7 @@ class _HistoryResults extends StatelessWidget {
       children: [
         for (final event in state.page.items) ...[
           _HistoryCard(event: event),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AdminSpacing.sm),
         ],
         AdminPaginationBar(
           keyPrefix: 'admin-entitlement-history',
@@ -122,10 +123,10 @@ class _HistoryCard extends StatelessWidget {
       key: ValueKey('admin-history-${event.source.code}-${event.id}'),
       decoration: BoxDecoration(
         border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(AppRadii.sm),
+        borderRadius: BorderRadius.circular(AdminRadii.card),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: const EdgeInsets.all(AdminSpacing.md),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -135,7 +136,7 @@ class _HistoryCard extends StatelessWidget {
                   : Icons.admin_panel_settings_outlined,
               color: theme.colorScheme.primary,
             ),
-            const SizedBox(width: AppSpacing.sm),
+            const SizedBox(width: AdminSpacing.sm),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -151,13 +152,13 @@ class _HistoryCard extends StatelessWidget {
                       Text(formatUtcDateTime(event.occurredAt)),
                     ],
                   ),
-                  const SizedBox(height: AppSpacing.xs),
+                  const SizedBox(height: AdminSpacing.xs),
                   Text(_summary(event)),
                   if (event.reason != null) ...[
-                    const SizedBox(height: AppSpacing.xs),
+                    const SizedBox(height: AdminSpacing.xs),
                     Text('Reason: ${event.reason}'),
                   ],
-                  const SizedBox(height: AppSpacing.xs),
+                  const SizedBox(height: AdminSpacing.xs),
                   Text(
                     _actor(event),
                     style: theme.textTheme.bodySmall?.copyWith(

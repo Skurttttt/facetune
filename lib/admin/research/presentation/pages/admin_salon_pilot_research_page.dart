@@ -1,9 +1,10 @@
+import '../../../shared/admin_page_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../features/subscription/domain/entities/entitlement_status.dart';
-import '../../../../theme/app_tokens.dart';
+import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
 import '../../../shared/admin_keyset_list_controller.dart';
 import '../../../shared/admin_labels.dart';
@@ -39,25 +40,17 @@ class AdminSalonPilotResearchPage extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Expanded(
-              child: AdminSectionHeading(
-                title: 'Salon Pilot research',
-                description:
-                    'Every Salon Pilot grant, aggregated on the server. '
-                    'Counts are exact; nothing here is estimated.',
-              ),
-            ),
+        AdminPageHeader(
+          title: 'Salon Pilot research',
+          subtitle:
+              'Every Salon Pilot grant, aggregated on the server. '
+              'Counts are exact; nothing here is estimated.',
+          actions: [
             if (state is AdminResearchReady)
-              Padding(
-                padding: const EdgeInsets.only(right: AppSpacing.sm),
-                child: Text(
-                  'As of ${formatUtcDateTime(state.research.asOf)}',
-                  key: const Key('admin-research-as-of'),
-                  style: theme.textTheme.bodySmall,
-                ),
+              Text(
+                'As of ${formatUtcDateTime(state.research.asOf)}',
+                key: const Key('admin-research-as-of'),
+                style: theme.textTheme.bodySmall,
               ),
             OutlinedButton.icon(
               key: const Key('admin-research-refresh'),
@@ -74,7 +67,7 @@ class AdminSalonPilotResearchPage extends ConsumerWidget {
             ),
           ],
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AdminSpacing.lg),
         switch (state) {
           AdminResearchLoading() => const AdminListLoadingRow(
             key: Key('admin-research-loading'),
@@ -105,18 +98,18 @@ class AdminSalonPilotResearchPage extends ConsumerWidget {
                   )
                 : _Aggregate(research: research, refreshing: refreshing),
         },
-        const SizedBox(height: AppSpacing.xl),
+        const SizedBox(height: AdminSpacing.xl),
         Semantics(
           header: true,
           child: Text('Per pilot', style: theme.textTheme.titleMedium),
         ),
-        const SizedBox(height: AppSpacing.xxs),
+        const SizedBox(height: AdminSpacing.xxs),
         Text(
           'One row per Salon Pilot grant, newest first. Telemetry is attributed '
           'to the grant it ran under.',
           style: theme.textTheme.bodySmall,
         ),
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: AdminSpacing.sm),
         switch (pilots) {
           AdminListLoading() => const AdminListLoadingRow(
             key: Key('admin-pilots-loading'),
@@ -368,7 +361,7 @@ class _Group extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+      padding: const EdgeInsets.only(bottom: AdminSpacing.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -377,13 +370,13 @@ class _Group extends StatelessWidget {
             child: Text(title, style: theme.textTheme.titleMedium),
           ),
           if (caption != null) ...[
-            const SizedBox(height: AppSpacing.xxs),
+            const SizedBox(height: AdminSpacing.xxs),
             Text(caption!, style: theme.textTheme.bodySmall),
           ],
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AdminSpacing.sm),
           Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
+            spacing: AdminSpacing.sm,
+            runSpacing: AdminSpacing.sm,
             children: tiles,
           ),
         ],
@@ -414,20 +407,20 @@ class _Tile extends StatelessWidget {
       child: ExcludeSemantics(
         child: Container(
           width: 200,
-          padding: const EdgeInsets.all(AppSpacing.md),
+          padding: const EdgeInsets.all(AdminSpacing.md),
           decoration: BoxDecoration(
             border: Border.all(
               color: emphasis
                   ? theme.colorScheme.tertiary
                   : theme.colorScheme.outlineVariant,
             ),
-            borderRadius: BorderRadius.circular(AppRadii.sm),
+            borderRadius: BorderRadius.circular(AdminRadii.card),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(label, style: theme.textTheme.labelMedium),
-              const SizedBox(height: AppSpacing.xxs),
+              const SizedBox(height: AdminSpacing.xxs),
               Text(
                 value,
                 style: theme.textTheme.headlineMedium?.copyWith(
@@ -465,16 +458,16 @@ class _OutcomeTile extends StatelessWidget {
       child: ExcludeSemantics(
         child: Container(
           width: 200,
-          padding: const EdgeInsets.all(AppSpacing.md),
+          padding: const EdgeInsets.all(AdminSpacing.md),
           decoration: BoxDecoration(
             border: Border.all(color: theme.colorScheme.outlineVariant),
-            borderRadius: BorderRadius.circular(AppRadii.sm),
+            borderRadius: BorderRadius.circular(AdminRadii.card),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(label, style: theme.textTheme.labelMedium),
-              const SizedBox(height: AppSpacing.xxs),
+              const SizedBox(height: AdminSpacing.xxs),
               Text(
                 '${o.succeeded}',
                 style: theme.textTheme.headlineMedium?.copyWith(
@@ -482,7 +475,7 @@ class _OutcomeTile extends StatelessWidget {
                 ),
               ),
               Text('succeeded', style: theme.textTheme.bodySmall),
-              const SizedBox(height: AppSpacing.xxs),
+              const SizedBox(height: AdminSpacing.xxs),
               Text('${o.failed} failed', style: numeric),
               Text('${o.denied} denied', style: numeric),
               Text('${o.duplicate} duplicate', style: numeric),
@@ -512,7 +505,7 @@ class _PilotTable extends StatelessWidget {
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
-                columnSpacing: AppSpacing.md,
+                columnSpacing: AdminSpacing.md,
                 columns: const [
                   DataColumn(label: Text('User')),
                   DataColumn(label: Text('Status')),
@@ -627,7 +620,7 @@ class _PilotTable extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AdminSpacing.sm),
           AdminPaginationBar(
             keyPrefix: 'admin-pilots',
             state: state,

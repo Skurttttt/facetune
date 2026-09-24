@@ -6,6 +6,7 @@ import 'package:facetune/admin/auth/domain/admin_session_gateway.dart';
 import 'package:facetune/admin/auth/presentation/admin_authorization_controller.dart';
 import 'package:facetune/admin/auth/presentation/admin_authorization_state.dart';
 import 'package:facetune/admin/shell/admin_shell.dart';
+import 'package:facetune/admin/shell/admin_sidebar.dart';
 import 'package:facetune/features/authentication/domain/repositories/auth_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -96,16 +97,21 @@ void main() {
             find.byKey(Key('admin-section-${section.name}')),
             findsOneWidget,
           );
+          // The page names itself once, in its own header. Since UI-4 the top
+          // utility bar no longer repeats it.
           expect(
-            tester
-                .widget<Text>(find.byKey(const Key('admin-section-title')))
-                .data,
+            tester.widget<Text>(find.byKey(const Key('admin-page-title'))).data,
             section.label,
           );
-          final rail = tester.widget<NavigationRail>(
+          expect(
+            find.byKey(const Key('admin-breadcrumb')),
+            findsNothing,
+            reason: 'a section root needs no trail',
+          );
+          final sidebar = tester.widget<AdminSidebar>(
             find.byKey(const Key('admin-nav-rail')),
           );
-          expect(rail.selectedIndex, section.index);
+          expect(sidebar.selected, section);
         }
         // The identity chip and sign-out survive every section change.
         expect(find.byKey(const Key('admin-identity')), findsOneWidget);
@@ -115,17 +121,41 @@ void main() {
 
     testWidgets('the rail shows all five sections in order', (tester) async {
       await pumpAdmin(tester);
-      final rail = tester.widget<NavigationRail>(
+      final sidebar = tester.widget<AdminSidebar>(
         find.byKey(const Key('admin-nav-rail')),
       );
-      expect(rail.destinations.map((d) => (d.label as Text).data), [
+      expect(AdminSidebar.sections.map((section) => section.label), [
         'Dashboard',
         'Users',
         'Entitlements',
         'Usage',
         'Audit',
       ]);
-      expect(rail.extended, isTrue, reason: 'labels visible at desktop width');
+      expect(
+        sidebar.extended,
+        isTrue,
+        reason: 'labels visible at desktop width',
+      );
+      // The labels are rendered, in that order, top to bottom.
+      final labels = tester
+          .widgetList<Text>(
+            find.descendant(
+              of: find.byKey(const Key('admin-nav-rail')),
+              matching: find.byType(Text),
+            ),
+          )
+          .map((text) => text.data)
+          .toList();
+      expect(
+        labels,
+        containsAllInOrder(const [
+          'Dashboard',
+          'Users',
+          'Entitlements',
+          'Usage',
+          'Audit',
+        ]),
+      );
     });
 
     testWidgets('a compact window keeps the rail; a narrow one uses a drawer', (
@@ -135,11 +165,19 @@ void main() {
         tester,
         size: const Size(900, 800),
       );
-      final rail = tester.widget<NavigationRail>(
+      final sidebar = tester.widget<AdminSidebar>(
         find.byKey(const Key('admin-nav-rail')),
       );
-      expect(rail.extended, isFalse);
-      expect(rail.labelType, NavigationRailLabelType.all);
+      expect(sidebar.extended, isFalse);
+      // Icon-only at this width; the label lives in the tooltip and in the
+      // semantic label instead (asserted in admin_sidebar_test.dart).
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('admin-nav-rail')),
+          matching: find.text('Entitlements'),
+        ),
+        findsNothing,
+      );
 
       tester.view.physicalSize = const Size(600, 800);
       await tester.pump();

@@ -1,10 +1,11 @@
+import '../../../shared/admin_page_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../features/subscription/domain/catalog/subscription_plan_catalog.dart';
 import '../../../../features/subscription/domain/entities/subscription_plan_code.dart';
-import '../../../../theme/app_tokens.dart';
+import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
 import '../../domain/admin_dashboard_metrics.dart';
 import '../admin_dashboard_controller.dart';
@@ -29,22 +30,15 @@ class AdminDashboardPage extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Semantics(
-                header: true,
-                child: Text('Dashboard', style: theme.textTheme.headlineSmall),
-              ),
-            ),
+        AdminPageHeader(
+          title: 'Dashboard',
+          subtitle: 'Live counts from the server. Nothing here is estimated.',
+          actions: [
             if (state is AdminDashboardReady)
-              Padding(
-                padding: const EdgeInsets.only(right: AppSpacing.sm),
-                child: Text(
-                  'As of ${_clock(state.metrics.asOf)} UTC',
-                  key: const Key('admin-dashboard-as-of'),
-                  style: theme.textTheme.bodySmall,
-                ),
+              Text(
+                'As of ${_clock(state.metrics.asOf)} UTC',
+                key: const Key('admin-dashboard-as-of'),
+                style: theme.textTheme.bodySmall,
               ),
             OutlinedButton.icon(
               key: const Key('admin-dashboard-refresh'),
@@ -58,12 +52,7 @@ class AdminDashboardPage extends ConsumerWidget {
             ),
           ],
         ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          'Live counts from the server. Nothing here is estimated.',
-          style: theme.textTheme.bodyMedium,
-        ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AdminSpacing.lg),
         switch (state) {
           AdminDashboardLoading() => const _Loading(),
           AdminDashboardUnavailable(:final code, :final retryable) =>
@@ -95,7 +84,7 @@ class _Loading extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Padding(
       key: Key('admin-dashboard-loading'),
-      padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
+      padding: EdgeInsets.symmetric(vertical: AdminSpacing.xl),
       child: Row(
         children: [
           SizedBox.square(
@@ -105,7 +94,7 @@ class _Loading extends StatelessWidget {
               semanticsLabel: 'Loading dashboard',
             ),
           ),
-          SizedBox(width: AppSpacing.sm),
+          SizedBox(width: AdminSpacing.sm),
           Text('Loading counts…'),
         ],
       ),
@@ -124,7 +113,7 @@ class _Empty extends StatelessWidget {
       child: Row(
         children: [
           Icon(Icons.inbox_outlined, color: theme.colorScheme.onSurfaceVariant),
-          const SizedBox(width: AppSpacing.sm),
+          const SizedBox(width: AdminSpacing.sm),
           const Expanded(
             child: Text(
               'No accounts exist yet. Counts will appear as soon as the first '
@@ -157,7 +146,7 @@ class _Unavailable extends StatelessWidget {
       child: Row(
         children: [
           Icon(Icons.error_outline, color: theme.colorScheme.error),
-          const SizedBox(width: AppSpacing.sm),
+          const SizedBox(width: AdminSpacing.sm),
           Expanded(
             child: Semantics(
               liveRegion: true,
@@ -279,12 +268,12 @@ class _Metrics extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AdminSpacing.md),
           Semantics(
             header: true,
             child: Text('In force by plan', style: theme.textTheme.titleMedium),
           ),
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AdminSpacing.xs),
           _PlanTable(inForceByPlan: e.inForceByPlan),
         ],
       ),
@@ -314,7 +303,7 @@ class _Group extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+      padding: const EdgeInsets.only(bottom: AdminSpacing.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -325,19 +314,19 @@ class _Group extends StatelessWidget {
                 child: Text(title, style: theme.textTheme.titleMedium),
               ),
               if (trailing != null) ...[
-                const SizedBox(width: AppSpacing.sm),
+                const SizedBox(width: AdminSpacing.sm),
                 trailing!,
               ],
             ],
           ),
           if (caption != null) ...[
-            const SizedBox(height: AppSpacing.xxs),
+            const SizedBox(height: AdminSpacing.xxs),
             Text(caption!, style: theme.textTheme.bodySmall),
           ],
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AdminSpacing.sm),
           Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
+            spacing: AdminSpacing.sm,
+            runSpacing: AdminSpacing.sm,
             children: tiles,
           ),
         ],
@@ -368,20 +357,20 @@ class _Tile extends StatelessWidget {
       child: ExcludeSemantics(
         child: Container(
           width: 200,
-          padding: const EdgeInsets.all(AppSpacing.md),
+          padding: const EdgeInsets.all(AdminSpacing.md),
           decoration: BoxDecoration(
             border: Border.all(
               color: emphasis
                   ? theme.colorScheme.tertiary
                   : theme.colorScheme.outlineVariant,
             ),
-            borderRadius: BorderRadius.circular(AppRadii.sm),
+            borderRadius: BorderRadius.circular(AdminRadii.card),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(label, style: theme.textTheme.labelMedium),
-              const SizedBox(height: AppSpacing.xxs),
+              const SizedBox(height: AdminSpacing.xxs),
               Text(
                 '$value',
                 style: theme.textTheme.headlineMedium?.copyWith(
@@ -462,8 +451,8 @@ class _PlanTable extends StatelessWidget {
     return Padding(
       key: key,
       padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.xs,
+        horizontal: AdminSpacing.md,
+        vertical: AdminSpacing.xs,
       ),
       child: Text(
         text,
@@ -487,7 +476,7 @@ class _Panel extends StatelessWidget {
     super.key,
     required this.child,
     this.borderColor,
-    this.padding = const EdgeInsets.all(AppSpacing.md),
+    this.padding = const EdgeInsets.all(AdminSpacing.md),
   });
 
   final Widget child;
@@ -502,7 +491,7 @@ class _Panel extends StatelessWidget {
         border: Border.all(
           color: borderColor ?? theme.colorScheme.outlineVariant,
         ),
-        borderRadius: BorderRadius.circular(AppRadii.sm),
+        borderRadius: BorderRadius.circular(AdminRadii.card),
       ),
       child: Padding(padding: padding, child: child),
     );

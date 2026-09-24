@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_tokens.dart';
+import '../theme/admin_tokens.dart';
 import '../app/admin_routes.dart';
 
 /// A safe destination for a section whose data feature belongs to a later
@@ -24,16 +24,16 @@ class AdminSectionPlaceholderPage extends StatelessWidget {
           header: true,
           child: Text(section.label, style: theme.textTheme.headlineSmall),
         ),
-        const SizedBox(height: AppSpacing.xs),
+        const SizedBox(height: AdminSpacing.xs),
         Text(section.summary, style: theme.textTheme.bodyMedium),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AdminSpacing.lg),
         DecoratedBox(
           decoration: BoxDecoration(
             border: Border.all(color: theme.colorScheme.outlineVariant),
-            borderRadius: BorderRadius.circular(AppRadii.sm),
+            borderRadius: BorderRadius.circular(AdminRadii.card),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
+            padding: const EdgeInsets.all(AdminSpacing.md),
             child: Row(
               children: [
                 Icon(
@@ -41,7 +41,7 @@ class AdminSectionPlaceholderPage extends StatelessWidget {
                   size: 20,
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
-                const SizedBox(width: AppSpacing.sm),
+                const SizedBox(width: AdminSpacing.sm),
                 Expanded(
                   child: Text(
                     'This section is not connected yet. '

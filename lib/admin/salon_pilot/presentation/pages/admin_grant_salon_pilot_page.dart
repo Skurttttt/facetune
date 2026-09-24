@@ -1,8 +1,9 @@
+import '../../../shared/admin_page_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../theme/app_tokens.dart';
+import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
 import '../../../shared/admin_labels.dart';
 import '../../../shared/admin_list_widgets.dart';
@@ -130,15 +131,15 @@ class _AdminGrantSalonPilotPageState
           icon: const Icon(Icons.arrow_back, size: 18),
           label: const Text('Back to user'),
         ),
-        const SizedBox(height: AppSpacing.xs),
-        const AdminSectionHeading(
+        const SizedBox(height: AdminSpacing.xs),
+        const AdminPageHeader(
           title: 'Grant Salon Pilot',
-          description:
+          subtitle:
               'A complimentary, temporary, admin-granted entitlement with a '
               'pool of AI Looks. It is recorded as admin_granted, never as a '
               'store purchase, and is audited with your identity and reason.',
         ),
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: AdminSpacing.sm),
         Text(
           'Target account: ${email ?? 'loading…'}',
           style: theme.textTheme.bodyMedium,
@@ -147,7 +148,7 @@ class _AdminGrantSalonPilotPageState
           widget.userId,
           style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AdminSpacing.lg),
         switch (state) {
           AdminGrantEditing() => _form(),
           AdminGrantPreviewing(:final intent) => _Preview(
@@ -197,7 +198,7 @@ class _AdminGrantSalonPilotPageState
                   ),
                 ),
               ),
-              const SizedBox(width: AppSpacing.sm),
+              const SizedBox(width: AdminSpacing.sm),
               OutlinedButton.icon(
                 key: const Key('admin-grant-pick-date'),
                 onPressed: _pickDate,
@@ -206,7 +207,7 @@ class _AdminGrantSalonPilotPageState
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AdminSpacing.md),
           TextField(
             key: const Key('admin-grant-allowance'),
             controller: _allowance,
@@ -218,7 +219,7 @@ class _AdminGrantSalonPilotPageState
               errorText: _allowanceError,
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AdminSpacing.md),
           TextField(
             key: const Key('admin-grant-reason'),
             controller: _reason,
@@ -231,7 +232,7 @@ class _AdminGrantSalonPilotPageState
               errorText: _reasonError,
             ),
           ),
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AdminSpacing.lg),
           FilledButton.icon(
             key: const Key('admin-grant-preview'),
             onPressed: _preview,
@@ -266,10 +267,10 @@ class _Preview extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           border: Border.all(color: theme.colorScheme.outlineVariant),
-          borderRadius: BorderRadius.circular(AppRadii.sm),
+          borderRadius: BorderRadius.circular(AdminRadii.card),
         ),
         child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
+          padding: const EdgeInsets.all(AdminSpacing.md),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -280,7 +281,7 @@ class _Preview extends StatelessWidget {
                   style: theme.textTheme.titleMedium,
                 ),
               ),
-              const SizedBox(height: AppSpacing.sm),
+              const SizedBox(height: AdminSpacing.sm),
               _row(theme, 'Account', email ?? intent.targetUserId),
               _row(theme, 'Plan', 'Salon Pilot (salon_pilot)'),
               _row(theme, 'Billing provider', 'Admin Granted (admin_granted)'),
@@ -292,14 +293,14 @@ class _Preview extends StatelessWidget {
               _row(theme, 'Expires', formatUtcDateTime(intent.expiresAt)),
               _row(theme, 'Auto-renew', 'Off'),
               _row(theme, 'Reason', intent.reason),
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(height: AdminSpacing.md),
               Text(
                 'Confirming writes the entitlement and one audit event under '
                 'your admin identity. A duplicate submission replays this '
                 'grant; it never creates a second one.',
                 style: theme.textTheme.bodySmall,
               ),
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(height: AdminSpacing.md),
               Row(
                 children: [
                   FilledButton.icon(
@@ -308,7 +309,7 @@ class _Preview extends StatelessWidget {
                     icon: const Icon(Icons.check, size: 18),
                     label: const Text('Confirm grant'),
                   ),
-                  const SizedBox(width: AppSpacing.sm),
+                  const SizedBox(width: AdminSpacing.sm),
                   TextButton(
                     key: const Key('admin-grant-edit'),
                     onPressed: onEdit,
@@ -324,7 +325,7 @@ class _Preview extends StatelessWidget {
   }
 
   static Widget _row(ThemeData theme, String label, String value) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+    padding: const EdgeInsets.symmetric(vertical: AdminSpacing.xxs),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -355,10 +356,10 @@ class _Result extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           border: Border.all(color: theme.colorScheme.primary),
-          borderRadius: BorderRadius.circular(AppRadii.sm),
+          borderRadius: BorderRadius.circular(AdminRadii.card),
         ),
         child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
+          padding: const EdgeInsets.all(AdminSpacing.md),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -371,7 +372,7 @@ class _Result extends StatelessWidget {
                   style: theme.textTheme.titleMedium,
                 ),
               ),
-              const SizedBox(height: AppSpacing.sm),
+              const SizedBox(height: AdminSpacing.sm),
               _Preview._row(theme, 'Entitlement ID', outcome.entitlementId),
               _Preview._row(theme, 'Plan', planCodeLabel(outcome.planCode)),
               _Preview._row(
@@ -404,7 +405,7 @@ class _Result extends StatelessWidget {
                 'Updated',
                 formatUtcDateTime(outcome.updatedAt),
               ),
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(height: AdminSpacing.md),
               Row(
                 children: [
                   FilledButton(
@@ -412,7 +413,7 @@ class _Result extends StatelessWidget {
                     onPressed: () => context.go(AdminRoutes.userDetail(userId)),
                     child: const Text('Back to user'),
                   ),
-                  const SizedBox(width: AppSpacing.sm),
+                  const SizedBox(width: AdminSpacing.sm),
                   TextButton(
                     key: const Key('admin-grant-view-usage'),
                     onPressed: () =>

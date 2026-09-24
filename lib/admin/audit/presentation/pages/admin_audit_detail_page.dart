@@ -1,9 +1,10 @@
+import '../../../shared/admin_page_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../features/subscription/domain/entities/entitlement_status.dart';
-import '../../../../theme/app_tokens.dart';
+import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
 import '../../../shared/admin_labels.dart';
 import '../../../shared/admin_list_widgets.dart';
@@ -27,13 +28,13 @@ class AdminAuditDetailPage extends ConsumerWidget {
           icon: const Icon(Icons.arrow_back, size: 18),
           label: const Text('Back to audit'),
         ),
-        const SizedBox(height: AppSpacing.xs),
-        const AdminSectionHeading(
+        const SizedBox(height: AdminSpacing.xs),
+        const AdminPageHeader(
           title: 'Audit event',
-          description:
+          subtitle:
               'Read-only operational evidence with privacy-reviewed state.',
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AdminSpacing.lg),
         switch (state) {
           AdminAuditDetailLoading() => const AdminListLoadingRow(
             label: 'Loading audit event',
@@ -95,7 +96,7 @@ class _AuditDetail extends StatelessWidget {
           ('Event source', event.source.label),
         ],
       ),
-      const SizedBox(height: AppSpacing.sm),
+      const SizedBox(height: AdminSpacing.sm),
       LayoutBuilder(
         builder: (context, constraints) {
           final panels = [
@@ -106,7 +107,7 @@ class _AuditDetail extends StatelessWidget {
             return Column(
               children: [
                 panels.first,
-                const SizedBox(height: AppSpacing.sm),
+                const SizedBox(height: AdminSpacing.sm),
                 panels.last,
               ],
             );
@@ -115,14 +116,14 @@ class _AuditDetail extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(child: panels.first),
-              const SizedBox(width: AppSpacing.sm),
+              const SizedBox(width: AdminSpacing.sm),
               Expanded(child: panels.last),
             ],
           );
         },
       ),
       if (event.targetEntitlementId != null) ...[
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AdminSpacing.md),
         Align(
           alignment: Alignment.centerLeft,
           child: OutlinedButton.icon(
@@ -188,10 +189,10 @@ class _ReadOnlyPanel extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(AppRadii.sm),
+        borderRadius: BorderRadius.circular(AdminRadii.card),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: const EdgeInsets.all(AdminSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -199,10 +200,10 @@ class _ReadOnlyPanel extends StatelessWidget {
               header: true,
               child: Text(title, style: theme.textTheme.titleMedium),
             ),
-            const SizedBox(height: AppSpacing.sm),
+            const SizedBox(height: AdminSpacing.sm),
             for (final row in rows)
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+                padding: const EdgeInsets.symmetric(vertical: AdminSpacing.xxs),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

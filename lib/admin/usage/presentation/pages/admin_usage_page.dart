@@ -1,3 +1,4 @@
+import '../../../shared/admin_page_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,7 +7,7 @@ import '../../../../features/subscription/domain/entities/purchased_credit_summa
     show AllowanceSource;
 import '../../../../features/subscription/domain/entities/subscription_plan_code.dart';
 import '../../../../features/subscription/domain/entities/usage_status.dart';
-import '../../../../theme/app_tokens.dart';
+import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
 import '../../../shared/admin_keyset_list_controller.dart';
 import '../../../shared/admin_labels.dart';
@@ -109,18 +110,18 @@ class _AdminUsagePageState extends ConsumerState<AdminUsagePage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        const AdminSectionHeading(
+        const AdminPageHeader(
           title: 'Usage',
-          description:
+          subtitle:
               'The AI Look ledger. A committed row consumed one unit; a '
               'released row consumed none; a reserved row is holding one.',
         ),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AdminSpacing.md),
         KeyedSubtree(
           key: ValueKey(_filterGeneration),
           child: Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
+            spacing: AdminSpacing.sm,
+            runSpacing: AdminSpacing.sm,
             crossAxisAlignment: WrapCrossAlignment.end,
             children: [
               AdminFilterSlot(
@@ -233,7 +234,7 @@ class _AdminUsagePageState extends ConsumerState<AdminUsagePage> {
             ],
           ),
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AdminSpacing.lg),
         switch (state) {
           AdminListLoading() => const AdminListLoadingRow(
             key: Key('admin-usage-loading'),
@@ -288,7 +289,7 @@ class _Results extends StatelessWidget {
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
-                columnSpacing: AppSpacing.md,
+                columnSpacing: AdminSpacing.md,
                 columns: const [
                   DataColumn(label: Text('Created')),
                   DataColumn(label: Text('User')),
@@ -375,7 +376,7 @@ class _Results extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AdminSpacing.sm),
           AdminPaginationBar(
             keyPrefix: 'admin-usage',
             state: state,

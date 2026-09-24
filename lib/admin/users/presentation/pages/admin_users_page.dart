@@ -1,9 +1,10 @@
+import '../../../shared/admin_page_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../features/subscription/domain/entities/entitlement_status.dart';
-import '../../../../theme/app_tokens.dart';
+import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
 import '../../domain/admin_user_models.dart';
 import '../admin_users_controller.dart';
@@ -32,23 +33,17 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
   Widget build(BuildContext context) {
     final state = ref.watch(adminUsersControllerProvider);
     final controller = ref.read(adminUsersControllerProvider.notifier);
-    final theme = Theme.of(context);
 
     return Column(
       key: const Key('admin-section-users'),
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Semantics(
-          header: true,
-          child: Text('Users', style: theme.textTheme.headlineSmall),
+        const AdminPageHeader(
+          title: 'Users',
+          subtitle: 'Find an account by exact email address or User ID.',
         ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          'Find an account by exact email address or User ID.',
-          style: theme.textTheme.bodyMedium,
-        ),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AdminSpacing.md),
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),
           child: Row(
@@ -67,7 +62,7 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
                   ),
                 ),
               ),
-              const SizedBox(width: AppSpacing.sm),
+              const SizedBox(width: AdminSpacing.sm),
               FilledButton.icon(
                 key: const Key('admin-user-search-submit'),
                 onPressed: state is AdminUsersLoading ? null : _submit,
@@ -77,7 +72,7 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
             ],
           ),
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AdminSpacing.lg),
         switch (state) {
           AdminUsersLoading() => const _Loading(),
           AdminUsersUnavailable(:final retryable) => _Unavailable(
@@ -99,7 +94,7 @@ class _Loading extends StatelessWidget {
   @override
   Widget build(BuildContext context) => const Padding(
     key: Key('admin-users-loading'),
-    padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
+    padding: EdgeInsets.symmetric(vertical: AdminSpacing.lg),
     child: Row(
       children: [
         SizedBox.square(
@@ -109,7 +104,7 @@ class _Loading extends StatelessWidget {
             semanticsLabel: 'Loading users',
           ),
         ),
-        SizedBox(width: AppSpacing.sm),
+        SizedBox(width: AdminSpacing.sm),
         Text('Loading accountsâ€¦'),
       ],
     ),
@@ -211,7 +206,7 @@ class _Results extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AdminSpacing.sm),
           Row(
             children: [
               Text(
@@ -224,7 +219,7 @@ class _Results extends StatelessWidget {
                 onPressed: state.canGoBack ? controller.previousPage : null,
                 child: const Text('Previous'),
               ),
-              const SizedBox(width: AppSpacing.xs),
+              const SizedBox(width: AdminSpacing.xs),
               OutlinedButton(
                 key: const Key('admin-users-next'),
                 onPressed: state.page.nextCursor == null
@@ -271,14 +266,14 @@ class _Notice extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(AppRadii.sm),
+        borderRadius: BorderRadius.circular(AdminRadii.card),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: const EdgeInsets.all(AdminSpacing.md),
         child: Row(
           children: [
             Icon(icon, color: theme.colorScheme.onSurfaceVariant),
-            const SizedBox(width: AppSpacing.sm),
+            const SizedBox(width: AdminSpacing.sm),
             Expanded(child: Text(message)),
             ?action,
           ],

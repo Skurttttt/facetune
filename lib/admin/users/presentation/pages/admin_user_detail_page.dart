@@ -1,3 +1,4 @@
+import '../../../shared/admin_page_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,7 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../features/subscription/domain/entities/billing_provider.dart';
 import '../../../../features/subscription/domain/entities/entitlement_status.dart';
 import '../../../../features/subscription/domain/entities/subscription_plan_code.dart';
-import '../../../../theme/app_tokens.dart';
+import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
 import '../../domain/admin_user_models.dart';
 import '../admin_users_controller.dart';
@@ -19,7 +20,6 @@ class AdminUserDetailPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(adminUserDetailControllerProvider(userId));
-    final theme = Theme.of(context);
     return Column(
       key: const Key('admin-user-detail'),
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -31,12 +31,14 @@ class AdminUserDetailPage extends ConsumerWidget {
           icon: const Icon(Icons.arrow_back, size: 18),
           label: const Text('Back to users'),
         ),
-        const SizedBox(height: AppSpacing.xs),
-        Semantics(
-          header: true,
-          child: Text('User detail', style: theme.textTheme.headlineSmall),
+        const SizedBox(height: AdminSpacing.xs),
+        const AdminPageHeader(
+          title: 'User detail',
+          subtitle:
+              'One account: its current plan, allowance, and the '
+              'administrative workflows it is eligible for.',
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AdminSpacing.lg),
         switch (state) {
           AdminUserDetailLoading() => const _DetailLoading(),
           AdminUserDetailNotFound() => const _DetailNotice(
@@ -78,7 +80,7 @@ class _DetailLoading extends StatelessWidget {
           semanticsLabel: 'Loading user detail',
         ),
       ),
-      SizedBox(width: AppSpacing.sm),
+      SizedBox(width: AdminSpacing.sm),
       Text('Loading user detailâ€¦'),
     ],
   );
@@ -105,11 +107,11 @@ class _Detail extends StatelessWidget {
             ('Account status', detail.accountStatus.label),
           ],
         ),
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: AdminSpacing.sm),
         // WA-6: the same account's rows in the read-only listings.
         Wrap(
-          spacing: AppSpacing.xs,
-          runSpacing: AppSpacing.xs,
+          spacing: AdminSpacing.xs,
+          runSpacing: AdminSpacing.xs,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             TextButton.icon(
@@ -158,7 +160,7 @@ class _Detail extends StatelessWidget {
                 entitlement.planCode == SubscriptionPlanCode.salonPilot &&
                 entitlement.billingProvider ==
                     BillingProvider.adminGranted) ...[
-              const SizedBox(width: AppSpacing.xs),
+              const SizedBox(width: AdminSpacing.xs),
               FilledButton.tonalIcon(
                 key: const Key('admin-user-detail-adjust-allowance'),
                 onPressed: () =>
@@ -172,10 +174,10 @@ class _Detail extends StatelessWidget {
         if (entitlement != null &&
             entitlement.planCode == SubscriptionPlanCode.salonPilot &&
             entitlement.billingProvider == BillingProvider.adminGranted) ...[
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AdminSpacing.xs),
           _LifecycleActions(detail: detail, entitlement: entitlement),
         ],
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: AdminSpacing.sm),
         if (entitlement == null)
           const _DetailNotice(
             key: Key('admin-user-detail-no-entitlement'),
@@ -249,8 +251,8 @@ class _LifecycleActions extends StatelessWidget {
     if (actions.isEmpty) return const SizedBox.shrink();
     return Wrap(
       key: const Key('admin-user-detail-lifecycle-actions'),
-      spacing: AppSpacing.xs,
-      runSpacing: AppSpacing.xs,
+      spacing: AdminSpacing.xs,
+      runSpacing: AdminSpacing.xs,
       children: actions,
     );
   }
@@ -316,10 +318,10 @@ class _Panel extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(AppRadii.sm),
+        borderRadius: BorderRadius.circular(AdminRadii.card),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: const EdgeInsets.all(AdminSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -327,10 +329,10 @@ class _Panel extends StatelessWidget {
               header: true,
               child: Text(title, style: theme.textTheme.titleMedium),
             ),
-            const SizedBox(height: AppSpacing.sm),
+            const SizedBox(height: AdminSpacing.sm),
             for (final row in rows)
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+                padding: const EdgeInsets.symmetric(vertical: AdminSpacing.xxs),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -370,14 +372,14 @@ class _DetailNotice extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(AppRadii.sm),
+        borderRadius: BorderRadius.circular(AdminRadii.card),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: const EdgeInsets.all(AdminSpacing.md),
         child: Row(
           children: [
             const Icon(Icons.info_outline),
-            const SizedBox(width: AppSpacing.sm),
+            const SizedBox(width: AdminSpacing.sm),
             Expanded(child: Text(message)),
             ?action,
           ],

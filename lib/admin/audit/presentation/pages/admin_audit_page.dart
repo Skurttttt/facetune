@@ -1,8 +1,9 @@
+import '../../../shared/admin_page_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../theme/app_tokens.dart';
+import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
 import '../../../shared/admin_keyset_list_controller.dart';
 import '../../../shared/admin_labels.dart';
@@ -108,18 +109,18 @@ class _AdminAuditPageState extends ConsumerState<AdminAuditPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        const AdminSectionHeading(
+        const AdminPageHeader(
           title: 'Audit',
-          description:
+          subtitle:
               'Immutable administrative actions, filtered and paginated on '
               'the server. Open a row for its privacy-reviewed state change.',
         ),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AdminSpacing.md),
         KeyedSubtree(
           key: ValueKey(_filterGeneration),
           child: Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
+            spacing: AdminSpacing.sm,
+            runSpacing: AdminSpacing.sm,
             crossAxisAlignment: WrapCrossAlignment.end,
             children: [
               AdminFilterSlot(
@@ -221,7 +222,7 @@ class _AdminAuditPageState extends ConsumerState<AdminAuditPage> {
             ],
           ),
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AdminSpacing.lg),
         switch (state) {
           AdminListLoading() => const AdminListLoadingRow(
             key: Key('admin-audit-loading'),
@@ -276,7 +277,7 @@ class _AuditResults extends StatelessWidget {
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: DataTable(
-              columnSpacing: AppSpacing.md,
+              columnSpacing: AdminSpacing.md,
               columns: const [
                 DataColumn(label: Text('Timestamp')),
                 DataColumn(label: Text('Admin')),
@@ -317,7 +318,7 @@ class _AuditResults extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: AdminSpacing.sm),
         AdminPaginationBar(
           keyPrefix: 'admin-audit',
           state: state,
