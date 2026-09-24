@@ -236,12 +236,13 @@ select is(
   'admin_adjust_salon_pilot_allowance,admin_dashboard_metrics,' ||
   'admin_extend_salon_pilot_expiration,admin_get_audit_event,admin_get_user,' ||
   'admin_grant_salon_pilot,admin_list_audit_events,admin_list_entitlement_history,' ||
-  'admin_list_entitlements,admin_list_usage,admin_search_users,' ||
+  'admin_list_entitlements,admin_list_salon_pilot_metrics,admin_list_usage,' ||
+  'admin_salon_pilot_research_metrics,admin_search_users,' ||
   'admin_set_salon_pilot_lifecycle,' ||
   'authorize_tutorial_generation,commit_ai_look,consume_ai_quota,' ||
   'current_user_is_admin,release_ai_look,reserve_ai_look,' ||
   'resolve_subscription_state',
-  'the user-callable security-definer surface is exactly the nineteen known RPCs'
+  'the user-callable security-definer surface is exactly the twenty-one known RPCs'
 );
 -- No hidden special-casing of an account inside any function body.
 select is(

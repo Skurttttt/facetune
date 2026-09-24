@@ -1,4 +1,4 @@
-# Web Admin setup (WA-2 through WA-12)
+# Web Admin setup (WA-2 through WA-13)
 
 The FaceTune Web Admin is a Flutter Web application built from a separate
 entrypoint in this repository. It shares the consumer app's Supabase Auth,
@@ -36,6 +36,8 @@ Contract: `subscription_admin_contract_v1.1`.
 | Flutter (WA-10) | `lib/admin/audit/` | `/audit` filterable list, `/audit/:eventId` immutable detail, and `/entitlements/:entitlementId/history` readable lifecycle timeline. Entitlement and user pages link into the history/audit views. All decoders fail closed; the UI has no audit edit, delete, or rewrite controls. |
 | Database (WA-12) | `public.admin_rate_limit_buckets` (RLS on, no client grant), `public.admin_consume_budget(uuid, text)` (internal), and the four privileged writers plus `admin_search_users` re-created with one added check (migration `20261003000100_admin_abuse_protection.sql`) | Per-administrator request budgets consumed inside the transaction before any work: 30 mutations / minute, 60 account lookups / minute. Refused attempts count. A throttled request answers the contract's retryable `TEMPORARY_BACKEND_FAILURE` with `throttled: true` and writes nothing. Read listings stay bounded by their 25-row pages and are not counted. |
 | Edge / shared (WA-12) | `_shared/admin_mutations.ts`, the three mutation functions | A throttled writer answer is returned as HTTP 429 with `Retry-After: 60`; the browser shows the server message and offers a retry. |
+| Database (WA-13) | `public.admin_salon_pilot_research_metrics()` and `public.admin_list_salon_pilot_metrics(text)` (migration `20261004000100_admin_salon_pilot_research.sql`) | Read-only Salon Pilot research: one aggregate over every `salon_pilot` grant (pilot counts by effective status, AI Look allowance/committed/reserved/released/remaining, telemetry outcomes per operation kind, and provider usage in the units the system meters — attempts, tokens by kind, output images) plus a 25-row keyset listing with one row per grant. Telemetry is attributed by user and `plan_code = 'salon_pilot'` from the grant's creation time. The `cost` block is `available: false` with reason `NO_PROVIDER_COST_DATA`: no provider cost is recorded anywhere, so no cost per delivered AI Look is computed. Same authorization, page-size, cursor, and privacy rules as the WA-6 reads. |
+| Flutter (WA-13) | `lib/admin/research/` | `/dashboard/salon-pilot` (linked from the Dashboard's Salon Pilot group): stat tiles for the aggregate and a per-pilot table with server pagination, refreshable, each section with its own loading/empty/unavailable state. Cost tiles read "Not available" unless the server marks a cost available; the client holds no price, rate, or currency. No charts. |
 | Flutter (WA-3) | `lib/admin/shell/` | The protected shell: navigation rail (drawer below 760 px), identity + sign-out, and five live sections — Dashboard `/dashboard`, Users `/users`, Entitlements `/entitlements`, Usage `/usage`, Audit `/audit`. A refresh or sign-in returns to the protected section/detail route that was open (`?from=`, exact validated paths only). |
 
 Admin authority is a database row, not a JWT claim, so revoking it takes
@@ -88,7 +90,7 @@ MFA in Authentication settings before production use.
 ## Deploying the backend
 
 ```powershell
-supabase db push          # 20260925000100 through 20261003000100
+supabase db push          # 20260925000100 through 20261004000100
 supabase functions deploy admin-session
 supabase functions deploy admin-grant-salon-pilot
 supabase functions deploy admin-adjust-salon-pilot-allowance
@@ -138,7 +140,7 @@ persist a session in the browser. Hosting provider is not chosen by WA-2.
 ```powershell
 flutter test test/admin                     # controller, gateway, router/pages, source-scan security contract
 cd supabase/functions; deno test --allow-env --allow-net _shared/admin_auth_test.ts _shared/admin_mutations_test.ts
-supabase test db --local                    # includes WA-2 through WA-12 pgTAP suites
+supabase test db --local                    # includes WA-2 through WA-13 pgTAP suites
 bash supabase/tests/controlled/wa11_admin_concurrency.sh   # two-session admin races (local stack up)
 bash supabase/tests/controlled/wa12_admin_secret_scan.sh   # bundle + source secret/privacy scan
 ```
@@ -237,6 +239,39 @@ Configuration, and keep Supabase Auth's built-in sign-in rate limits on.
   the app on every token refresh; it cannot be simulated at the database
   level and is validated live only.
 
+
+## Salon Pilot research (WA-13)
+
+`/dashboard/salon-pilot` answers the research questions the pilot exists for,
+from data the system already records:
+
+| Question | Source | Figure |
+| --- | --- | --- |
+| How many pilots, in which state | `user_entitlements` (`plan_code = 'salon_pilot'`, `billing_provider = 'admin_granted'`) resolved to effective status | users, grants, in force, suspended, lapsed/expired, revoked, expiring within 14 days |
+| How many AI Looks were granted, adjusted, used | entitlement allowance + `entitlement_allowance_adjustments` + `usage_ledger` | granted at start, admin adjustments, effective allowance, committed (delivered Final Previews), reserved, released, remaining |
+| How the provider work went | `ai_operation_metrics` attributed to the grant (user + plan code, from the grant's creation time) | succeeded / failed / denied / duplicate per operation kind (Final Preview, Tutorial manifest, Tutorial step) |
+| What was billable, in the units the provider bills | `ai_operation_metrics` token and image columns | provider attempts, input / output / total / cached / thinking / image tokens, output images, events with and without token data |
+| What it cost | — | **Not available.** The system records provider *usage*, never provider *cost*: there is no price, rate, currency, or invoice column anywhere in the schema. The server returns `cost.available = false` with `reason = NO_PROVIDER_COST_DATA`, and the page prints "Not available". |
+
+The ₱45-per-look figure from planning is a budgeting assumption. It is not a
+runtime fact and does not appear in any migration, function, or Flutter source
+(`admin_security_contract_test.dart`, `wa13_admin_salon_pilot_research_test.sql`
+both scan for it). When actual provider cost data is ingested one day, the
+`cost` block is where the server would report it, and the page already renders
+an available figure with its currency.
+
+Rules the research reads follow:
+
+- Same roster check, `security definer`, locked `search_path`, 25-row keyset
+  page, cursor-bound-to-filters (`scope = salon_pilot`), and grants
+  (`authenticated` only; `anon` / `service_role` revoked) as the WA-6 reads.
+- Per-pilot rows carry counts, statuses, allowance figures, and dates only:
+  no image id, prompt, storage path, purchase reference, or provider message
+  id (`wa13` key-set and privacy assertions).
+- Telemetry attribution is by `user_id` and `plan_code = 'salon_pilot'` with
+  `created_at >= grant.created_at`; a user's Pro-plan work is excluded.
+- Nothing is derived on the client: every tile is one server figure.
+
 ## Hard locks (enforced by tests)
 
 - No `service_role` string under `lib/admin/` or in `admin-session` / `admin_auth.ts`.
@@ -253,3 +288,4 @@ Configuration, and keep Supabase Auth's built-in sign-in rate limits on.
 - WA-8: an adjustment is applied only through `entitlement_allowance_adjustments`; the writer never sets `allowance_adjustment_total` or touches `usage_ledger`; a reduction below committed usage or below committed + reserved is refused with its contract code; a stale expected version is refused; a duplicate submission applies once; every applied adjustment has exactly one audit event.
 - WA-9: unauthenticated and normal-user lifecycle calls are denied; the entitlement owner cannot mutate their own lifecycle; Free and provider-backed rows are refused; suspended/revoked Pilot cannot fund a new generation; existing usage/content remains; a valid suspended Pilot can reactivate but an expired one cannot; revocation is terminal while the account may still fall back to another legitimate entitlement; stale versions are refused; retries replay and every applied lifecycle action is audited exactly once.
 - WA-10: audit/history reads are denied to unauthenticated and normal users; lists are fixed at 25 rows and cursors are bound to their filters; lifecycle events are newest-first across admin and provider sources; a duplicate mutation remains one event; persisted and returned snapshots contain only status, plan, effective allowance, adjustment total, expiration, and version; provider message IDs and purchase references are absent; the UI exposes no ordinary audit mutation control.
+- WA-13: research reads are denied to unauthenticated and normal users and are not executable by `anon` or `service_role`; the per-pilot listing is fixed at 25 rows, newest first, with a cursor bound to its scope; per-pilot key sets are asserted exactly and scanned for image, prompt, storage, purchase, and provider-reference fields; a user's non-pilot work is excluded from pilot telemetry; `cost.available` is `false` with `NO_PROVIDER_COST_DATA` and neither the migration nor the admin Flutter tree contains a currency, price, or the ₱45 planning figure; the page prints "Not available" for cost unless the server marks it available.

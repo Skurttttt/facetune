@@ -33,9 +33,9 @@ if [[ -f build/web/main.dart.js ]]; then
   check "bundle: no purchase-token or signed-URL plumbing"    "$(count "$B" 'purchase_token|purchaseToken|createSignedUrl|signedUrl')" "0"
   check "bundle: no writer RPC is named (mutations reach the database only through the Edge Functions)" \
     "$(count build/web/main.dart.js 'admin_(grant_salon_pilot|adjust_salon_pilot_allowance|extend_salon_pilot_expiration|set_salon_pilot_lifecycle|consume_budget)')" "0"
-  check "bundle: the read RPCs are the eight known ones" \
-    "$(grep -oE 'admin_(list|get|search|dashboard)_[a-z_]+' build/web/main.dart.js | sort -u | tr '\n' ',')" \
-    "admin_dashboard_metrics,admin_get_audit_event,admin_get_user,admin_list_audit_events,admin_list_entitlement_history,admin_list_entitlements,admin_list_usage,admin_search_users,"
+  check "bundle: the read RPCs are the ten known ones" \
+    "$(grep -oE 'admin_(list|get|search|dashboard|salon_pilot_research)_[a-z_]+' build/web/main.dart.js | sort -u | tr '\n' ',')" \
+    "admin_dashboard_metrics,admin_get_audit_event,admin_get_user,admin_list_audit_events,admin_list_entitlement_history,admin_list_entitlements,admin_list_salon_pilot_metrics,admin_list_usage,admin_salon_pilot_research_metrics,admin_search_users,"
 else
   echo "skip - no build/web bundle present (build the admin entrypoint first)"
 fi

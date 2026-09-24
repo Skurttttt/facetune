@@ -18,6 +18,7 @@ import '../salon_pilot/domain/admin_salon_pilot_models.dart';
 import '../salon_pilot/presentation/pages/admin_lifecycle_page.dart';
 import '../entitlements/domain/admin_entitlement_models.dart';
 import '../entitlements/presentation/pages/admin_entitlements_page.dart';
+import '../research/presentation/pages/admin_salon_pilot_research_page.dart';
 import '../shared/admin_wire.dart';
 import '../shell/admin_shell.dart';
 import '../usage/domain/admin_usage_models.dart';
@@ -79,6 +80,13 @@ final adminRouterProvider = Provider<GoRouter>((ref) {
             ),
           ),
         ),
+      GoRoute(
+        path: AdminRoutes.salonPilotResearch,
+        pageBuilder: (context, state) => NoTransitionPage(
+          key: state.pageKey,
+          child: const AdminShell(child: AdminSalonPilotResearchPage()),
+        ),
+      ),
       GoRoute(
         path: '${AdminSection.users.path}/:userId',
         pageBuilder: (context, state) => NoTransitionPage(

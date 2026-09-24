@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../features/subscription/domain/catalog/subscription_plan_catalog.dart';
 import '../../../../features/subscription/domain/entities/subscription_plan_code.dart';
 import '../../../../theme/app_tokens.dart';
+import '../../../app/admin_routes.dart';
 import '../../domain/admin_dashboard_metrics.dart';
 import '../admin_dashboard_controller.dart';
 
@@ -246,6 +248,11 @@ class _Metrics extends StatelessWidget {
           ),
           _Group(
             title: 'Salon Pilot',
+            trailing: TextButton(
+              key: const Key('admin-dashboard-research-link'),
+              onPressed: () => context.go(AdminRoutes.salonPilotResearch),
+              child: const Text('Research metrics'),
+            ),
             tiles: [
               _Tile(
                 'In force',
@@ -289,11 +296,19 @@ class _Metrics extends StatelessWidget {
 }
 
 class _Group extends StatelessWidget {
-  const _Group({required this.title, required this.tiles, this.caption});
+  const _Group({
+    required this.title,
+    required this.tiles,
+    this.caption,
+    this.trailing,
+  });
 
   final String title;
   final String? caption;
   final List<Widget> tiles;
+
+  /// An optional link beside the heading, to a page that goes deeper.
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -303,9 +318,17 @@ class _Group extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Semantics(
-            header: true,
-            child: Text(title, style: theme.textTheme.titleMedium),
+          Row(
+            children: [
+              Semantics(
+                header: true,
+                child: Text(title, style: theme.textTheme.titleMedium),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: AppSpacing.sm),
+                trailing!,
+              ],
+            ],
           ),
           if (caption != null) ...[
             const SizedBox(height: AppSpacing.xxs),

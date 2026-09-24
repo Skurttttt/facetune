@@ -73,6 +73,7 @@ enum AdminSection {
       return AdminSection.users;
     }
     if (AdminRoutes.isAuditDetailPath(path)) return AdminSection.audit;
+    if (path == AdminRoutes.salonPilotResearch) return AdminSection.dashboard;
     if (AdminRoutes.isEntitlementHistoryPath(path)) {
       return AdminSection.entitlements;
     }
@@ -113,6 +114,9 @@ abstract final class AdminRoutes {
   static final RegExp _entitlementHistoryPattern = RegExp(
     r'^/entitlements/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/history$',
   );
+
+  /// WA-13: the Salon Pilot research dashboard, a sub-page of Dashboard.
+  static const String salonPilotResearch = '/dashboard/salon-pilot';
 
   static String userDetail(String userId) => '/users/$userId';
   static String auditDetail(String eventId) => '/audit/$eventId';
@@ -213,6 +217,7 @@ abstract final class AdminRoutes {
   static String? sanitizedReturnTo(String? path) =>
       path != null &&
           (AdminSection.values.any((section) => section.path == path) ||
+              path == salonPilotResearch ||
               isUserDetailPath(path) ||
               isUserActionPath(path) ||
               isAuditDetailPath(path) ||

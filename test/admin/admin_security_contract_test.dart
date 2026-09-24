@@ -448,5 +448,76 @@ void main() {
       expect(migration, contains('limit 26'));
       expect(migration, contains('limit 25'));
     });
+
+    test('WA-13 research reads no private content and hardcodes no cost', () {
+      final migration =
+          File(
+                pathOf(
+                  'supabase/migrations/20261004000100_admin_salon_pilot_research.sql',
+                ),
+              )
+              .readAsStringSync()
+              .replaceAll('\r\n', '\n')
+              .split('\n')
+              .where((line) => !line.trimLeft().startsWith('--'))
+              .join('\n');
+      final lower = migration.toLowerCase();
+      for (final forbidden in [
+        'face_images',
+        'generated_images',
+        'canonical_generated_image_id',
+        'makeup_kit_products',
+        'storage.objects',
+        'signed_url',
+        'raw_prompt',
+        'prompt_text',
+        'purchase_token',
+        'provider_message_id',
+        'error_message',
+      ]) {
+        expect(lower, isNot(contains(forbidden)), reason: forbidden);
+      }
+      // The ₱45-per-look figure is a planning assumption, never a runtime
+      // fact: the only cost the server can report is one it has recorded,
+      // and it records none, so the answer is "not available".
+      expect(lower, isNot(contains('₱')));
+      expect(lower, isNot(contains('php')));
+      expect(lower, isNot(contains('peso')));
+      expect(RegExp(r'\b45\b').hasMatch(migration), isFalse);
+      expect(migration, contains("'NO_PROVIDER_COST_DATA'"));
+      expect(migration, contains("'available', false"));
+    });
+  });
+
+  group('WA-13 research client', () {
+    test('no admin source carries a currency, price, or cost constant', () {
+      // A cost may only be *displayed* from a server figure the server
+      // marked available. The client never holds a price or a rate.
+      for (final file in adminFiles) {
+        final code = codeOf(file);
+        expect(code, isNot(contains('₱')), reason: file.path);
+        expect(
+          RegExp(r"\b(45|PHP|peso|pricePerLook|costPerLook)\b").hasMatch(code),
+          isFalse,
+          reason: file.path,
+        );
+      }
+    });
+
+    test('the research page shows a cost only when the server says so', () {
+      final page = codeOf(
+        File(
+          pathOf(
+            'lib/admin/research/presentation/pages/admin_salon_pilot_research_page.dart',
+          ),
+        ),
+      );
+      expect(page, contains("'Not available'"));
+      expect(page, contains('cost.available'));
+      // No chart library, no derived rate.
+      expect(page, isNot(contains('fl_chart')));
+      expect(page, isNot(contains('charts_flutter')));
+      expect(page, isNot(contains('/ ')));
+    });
   });
 }
