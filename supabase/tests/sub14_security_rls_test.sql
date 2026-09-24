@@ -230,10 +230,11 @@ select is(
   -- WA-2 added `current_user_is_admin()`, WA-4 dashboard metrics, WA-5 the
   -- two read-only account endpoints, WA-6 the two read-only listings, and
   -- WA-7 the Salon Pilot grant, WA-8 the allowance adjustment, WA-9 the two
-  -- lifecycle writers, and WA-10 the three read-only audit/history endpoints.
+  -- lifecycle writers, WA-10 the three read-only audit/history endpoints,
+  -- and WA-DASH-1 the separate Dashboard V2 aggregate read.
   -- Each admin endpoint refuses inside unless the session caller is on the
   -- active roster.
-  'admin_adjust_salon_pilot_allowance,admin_dashboard_metrics,' ||
+  'admin_adjust_salon_pilot_allowance,admin_dashboard_metrics,admin_dashboard_v2_metrics,' ||
   'admin_extend_salon_pilot_expiration,admin_get_audit_event,admin_get_user,' ||
   'admin_grant_salon_pilot,admin_list_audit_events,admin_list_entitlement_history,' ||
   'admin_list_entitlements,admin_list_salon_pilot_metrics,admin_list_usage,' ||
@@ -242,7 +243,7 @@ select is(
   'authorize_tutorial_generation,commit_ai_look,consume_ai_quota,' ||
   'current_user_is_admin,release_ai_look,reserve_ai_look,' ||
   'resolve_subscription_state',
-  'the user-callable security-definer surface is exactly the twenty-one known RPCs'
+  'the user-callable security-definer surface is exactly the twenty-two known RPCs'
 );
 -- No hidden special-casing of an account inside any function body.
 select is(
