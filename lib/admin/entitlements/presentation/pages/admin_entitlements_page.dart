@@ -259,117 +259,99 @@ class _Results extends StatelessWidget {
         key: const Key('admin-entitlements-results'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Scrollbar(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columnSpacing: AdminSpacing.md,
-                columns: const [
-                  DataColumn(label: Text('User')),
-                  DataColumn(label: Text('Plan')),
-                  DataColumn(label: Text('Status')),
-                  DataColumn(label: Text('Provider')),
-                  DataColumn(label: Text('Effective allowance'), numeric: true),
-                  DataColumn(label: Text('Committed'), numeric: true),
-                  DataColumn(label: Text('Reserved'), numeric: true),
-                  DataColumn(label: Text('Remaining'), numeric: true),
-                  DataColumn(label: Text('Period')),
-                  DataColumn(label: Text('Expiration')),
-                  DataColumn(label: Text('Auto renew')),
-                  DataColumn(label: Text('Created')),
-                  DataColumn(label: Text('Updated')),
-                  DataColumn(label: Text('')),
-                ],
-                rows: [
-                  for (final row in state.page.items)
-                    DataRow(
-                      key: ValueKey('admin-entitlement-${row.entitlementId}'),
-                      cells: [
-                        DataCell(
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(row.email ?? 'No email'),
-                              AdminIdCell(row.userId),
-                            ],
-                          ),
-                        ),
-                        DataCell(Text(row.planDisplayName)),
-                        DataCell(
-                          AdminStatusBadge(
-                            key: Key('entitlement-status-${row.entitlementId}'),
-                            label: entitlementStatusLabel(row.effectiveStatus),
-                            semanticsPrefix: 'Entitlement status',
-                            emphasis: _emphasis(row.effectiveStatus),
-                          ),
-                        ),
-                        DataCell(
-                          Text(billingProviderLabel(row.billingProvider)),
-                        ),
-                        DataCell(
-                          Tooltip(
-                            message:
-                                'Base ${row.baseAllowance}, adjustments '
-                                '${_signed(row.allowanceAdjustmentTotal)}',
-                            child: Text(
-                              '${row.effectiveAllowance} '
-                              '${row.allowanceUnit.label(row.effectiveAllowance)}',
-                            ),
-                          ),
-                        ),
-                        DataCell(Text('${row.committedUsage}')),
-                        DataCell(Text('${row.reservedUsage}')),
-                        DataCell(
-                          Tooltip(
-                            message:
-                                'Available for a new generation: '
-                                '${row.availableAiLooks}',
-                            child: Text('${row.remainingAiLooks}'),
-                          ),
-                        ),
-                        DataCell(Text(_period(row))),
-                        DataCell(Text(_expiration(row))),
-                        DataCell(Text(row.autoRenew ? 'On' : 'Off')),
-                        DataCell(Text(formatUtcDate(row.createdAt))),
-                        DataCell(Text(formatUtcDate(row.updatedAt))),
-                        DataCell(
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              TextButton(
-                                key: Key('view-user-${row.entitlementId}'),
-                                onPressed: () => context.go(
-                                  AdminRoutes.userDetail(row.userId),
-                                ),
-                                child: const Text('View user'),
-                              ),
-                              TextButton(
-                                key: Key('view-usage-${row.entitlementId}'),
-                                onPressed: () => context.go(
-                                  AdminRoutes.usageForEntitlement(
-                                    row.entitlementId,
-                                  ),
-                                ),
-                                child: const Text('View usage'),
-                              ),
-                              TextButton(
-                                key: Key('view-history-${row.entitlementId}'),
-                                onPressed: () => context.go(
-                                  AdminRoutes.entitlementHistory(
-                                    row.entitlementId,
-                                  ),
-                                ),
-                                child: const Text('View history'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+          AdminTable(
+            key: const Key('admin-entitlements-table'),
+            columns: const [
+              DataColumn(label: Text('User')),
+              DataColumn(label: Text('Plan')),
+              DataColumn(label: Text('Status')),
+              DataColumn(label: Text('Provider')),
+              DataColumn(label: Text('Effective allowance'), numeric: true),
+              DataColumn(label: Text('Committed'), numeric: true),
+              DataColumn(label: Text('Reserved'), numeric: true),
+              DataColumn(label: Text('Remaining'), numeric: true),
+              DataColumn(label: Text('Period')),
+              DataColumn(label: Text('Expiration')),
+              DataColumn(label: Text('Auto renew')),
+              DataColumn(label: Text('Created')),
+              DataColumn(label: Text('Updated')),
+              DataColumn(label: Text('Actions')),
+            ],
+            rows: [
+              for (final row in state.page.items)
+                DataRow(
+                  key: ValueKey('admin-entitlement-${row.entitlementId}'),
+                  cells: [
+                    DataCell(
+                      AdminIdentityCell(email: row.email, userId: row.userId),
                     ),
-                ],
-              ),
-            ),
+                    DataCell(Text(row.planDisplayName)),
+                    DataCell(
+                      AdminStatusBadge(
+                        key: Key('entitlement-status-${row.entitlementId}'),
+                        label: entitlementStatusLabel(row.effectiveStatus),
+                        semanticsPrefix: 'Entitlement status',
+                        emphasis: _emphasis(row.effectiveStatus),
+                      ),
+                    ),
+                    DataCell(Text(billingProviderLabel(row.billingProvider))),
+                    DataCell(
+                      Tooltip(
+                        message:
+                            'Base ${row.baseAllowance}, adjustments '
+                            '${_signed(row.allowanceAdjustmentTotal)}',
+                        child: Text(
+                          '${row.effectiveAllowance} '
+                          '${row.allowanceUnit.label(row.effectiveAllowance)}',
+                        ),
+                      ),
+                    ),
+                    DataCell(Text('${row.committedUsage}')),
+                    DataCell(Text('${row.reservedUsage}')),
+                    DataCell(
+                      Tooltip(
+                        message:
+                            'Available for a new generation: '
+                            '${row.availableAiLooks}',
+                        child: Text('${row.remainingAiLooks}'),
+                      ),
+                    ),
+                    DataCell(Text(_period(row))),
+                    DataCell(Text(_expiration(row))),
+                    DataCell(Text(row.autoRenew ? 'On' : 'Off')),
+                    DataCell(Text(formatUtcDate(row.createdAt))),
+                    DataCell(Text(formatUtcDate(row.updatedAt))),
+                    DataCell(
+                      AdminTableActions(
+                        children: [
+                          TextButton(
+                            key: Key('view-user-${row.entitlementId}'),
+                            onPressed: () =>
+                                context.go(AdminRoutes.userDetail(row.userId)),
+                            child: const Text('View user'),
+                          ),
+                          TextButton(
+                            key: Key('view-usage-${row.entitlementId}'),
+                            onPressed: () => context.go(
+                              AdminRoutes.usageForEntitlement(
+                                row.entitlementId,
+                              ),
+                            ),
+                            child: const Text('View usage'),
+                          ),
+                          TextButton(
+                            key: Key('view-history-${row.entitlementId}'),
+                            onPressed: () => context.go(
+                              AdminRoutes.entitlementHistory(row.entitlementId),
+                            ),
+                            child: const Text('View history'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+            ],
           ),
           const SizedBox(height: AdminSpacing.sm),
           AdminPaginationBar(

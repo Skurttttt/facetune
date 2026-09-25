@@ -285,96 +285,85 @@ class _Results extends StatelessWidget {
         key: const Key('admin-usage-results'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Scrollbar(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columnSpacing: AdminSpacing.md,
-                columns: const [
-                  DataColumn(label: Text('Created')),
-                  DataColumn(label: Text('User')),
-                  DataColumn(label: Text('Plan')),
-                  DataColumn(label: Text('Usage type')),
-                  DataColumn(label: Text('Operation ID')),
-                  DataColumn(label: Text('Entitlement ID')),
-                  DataColumn(label: Text('Status')),
-                  DataColumn(label: Text('Unit impact')),
-                  DataColumn(label: Text('Source')),
-                  DataColumn(label: Text('Committed at')),
-                  DataColumn(label: Text('Released at')),
-                  DataColumn(label: Text('Failure code')),
-                  DataColumn(label: Text('')),
-                ],
-                rows: [
-                  for (final row in state.page.items)
-                    DataRow(
-                      key: ValueKey('admin-usage-${row.usageId}'),
-                      cells: [
-                        DataCell(Text(formatUtcDateTime(row.createdAt))),
-                        DataCell(
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(row.email ?? 'No email'),
-                              AdminIdCell(row.userId),
-                            ],
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            row.planCode == null
-                                ? 'Not stamped'
-                                : planCodeLabel(row.planCode!),
-                          ),
-                        ),
-                        DataCell(Text(_usageType(row))),
-                        DataCell(AdminIdCell(row.operationId)),
-                        DataCell(AdminIdCell(row.entitlementId)),
-                        DataCell(
-                          AdminStatusBadge(
-                            key: Key('usage-status-${row.usageId}'),
-                            label: usageStatusLabel(row.status),
-                            semanticsPrefix: 'Usage status',
-                            emphasis: switch (row.status) {
-                              UsageStatus.committed =>
-                                AdminBadgeEmphasis.positive,
-                              UsageStatus.reserved =>
-                                AdminBadgeEmphasis.caution,
-                              UsageStatus.released =>
-                                AdminBadgeEmphasis.neutral,
-                            },
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            _impact(row),
-                            key: Key('usage-impact-${row.usageId}'),
-                          ),
-                        ),
-                        DataCell(Text(_source(row))),
-                        DataCell(Text(_timestamp(row.committedAt))),
-                        DataCell(Text(_timestamp(row.releasedAt))),
-                        DataCell(
-                          Text(
-                            row.sanitizedFailureCode ?? '—',
-                            key: Key('usage-failure-${row.usageId}'),
-                            style: const TextStyle(fontFamily: 'monospace'),
-                          ),
-                        ),
-                        DataCell(
+          AdminTable(
+            key: const Key('admin-usage-table'),
+            columns: const [
+              DataColumn(label: Text('Created')),
+              DataColumn(label: Text('User')),
+              DataColumn(label: Text('Plan')),
+              DataColumn(label: Text('Usage type')),
+              DataColumn(label: Text('Operation ID')),
+              DataColumn(label: Text('Entitlement ID')),
+              DataColumn(label: Text('Status')),
+              DataColumn(label: Text('Unit impact')),
+              DataColumn(label: Text('Source')),
+              DataColumn(label: Text('Committed at')),
+              DataColumn(label: Text('Released at')),
+              DataColumn(label: Text('Failure code')),
+              DataColumn(label: Text('Actions')),
+            ],
+            rows: [
+              for (final row in state.page.items)
+                DataRow(
+                  key: ValueKey('admin-usage-${row.usageId}'),
+                  cells: [
+                    DataCell(Text(formatUtcDateTime(row.createdAt))),
+                    DataCell(
+                      AdminIdentityCell(email: row.email, userId: row.userId),
+                    ),
+                    DataCell(
+                      Text(
+                        row.planCode == null
+                            ? 'Not stamped'
+                            : planCodeLabel(row.planCode!),
+                      ),
+                    ),
+                    DataCell(Text(_usageType(row))),
+                    DataCell(AdminIdCell(row.operationId)),
+                    DataCell(AdminIdCell(row.entitlementId)),
+                    DataCell(
+                      AdminStatusBadge(
+                        key: Key('usage-status-${row.usageId}'),
+                        label: usageStatusLabel(row.status),
+                        semanticsPrefix: 'Usage status',
+                        emphasis: switch (row.status) {
+                          UsageStatus.committed => AdminBadgeEmphasis.positive,
+                          UsageStatus.reserved => AdminBadgeEmphasis.caution,
+                          UsageStatus.released => AdminBadgeEmphasis.neutral,
+                        },
+                      ),
+                    ),
+                    DataCell(
+                      Text(
+                        _impact(row),
+                        key: Key('usage-impact-${row.usageId}'),
+                      ),
+                    ),
+                    DataCell(Text(_source(row))),
+                    DataCell(Text(_timestamp(row.committedAt))),
+                    DataCell(Text(_timestamp(row.releasedAt))),
+                    DataCell(
+                      Text(
+                        row.sanitizedFailureCode ?? '—',
+                        key: Key('usage-failure-${row.usageId}'),
+                        style: const TextStyle(fontFamily: 'monospace'),
+                      ),
+                    ),
+                    DataCell(
+                      AdminTableActions(
+                        children: [
                           TextButton(
                             key: Key('view-user-${row.usageId}'),
                             onPressed: () =>
                                 context.go(AdminRoutes.userDetail(row.userId)),
                             child: const Text('View user'),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                ],
-              ),
-            ),
+                  ],
+                ),
+            ],
           ),
           const SizedBox(height: AdminSpacing.sm),
           AdminPaginationBar(

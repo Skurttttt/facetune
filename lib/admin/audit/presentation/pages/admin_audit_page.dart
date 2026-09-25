@@ -273,50 +273,59 @@ class _AuditResults extends StatelessWidget {
       key: const Key('admin-audit-results'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Scrollbar(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              columnSpacing: AdminSpacing.md,
-              columns: const [
-                DataColumn(label: Text('Timestamp')),
-                DataColumn(label: Text('Admin')),
-                DataColumn(label: Text('Action')),
-                DataColumn(label: Text('Target user')),
-                DataColumn(label: Text('Target entitlement')),
-                DataColumn(label: Text('Event source')),
-                DataColumn(label: Text('')),
-              ],
-              rows: [
-                for (final row in state.page.items)
-                  DataRow(
-                    key: ValueKey('admin-audit-${row.id}'),
-                    cells: [
-                      DataCell(Text(formatUtcDateTime(row.createdAt))),
-                      DataCell(_IdentityCell(row.adminEmail, row.adminUserId)),
-                      DataCell(Text(row.action.label)),
-                      DataCell(
-                        _IdentityCell(row.targetEmail, row.targetUserId),
-                      ),
-                      DataCell(
-                        row.targetEntitlementId == null
-                            ? const Text('Not applicable')
-                            : AdminIdCell(row.targetEntitlementId!),
-                      ),
-                      DataCell(Text(row.source.label)),
-                      DataCell(
+        AdminTable(
+          key: const Key('admin-audit-table'),
+          columns: const [
+            DataColumn(label: Text('Timestamp')),
+            DataColumn(label: Text('Admin')),
+            DataColumn(label: Text('Action')),
+            DataColumn(label: Text('Target user')),
+            DataColumn(label: Text('Target entitlement')),
+            DataColumn(label: Text('Event source')),
+            DataColumn(label: Text('Actions')),
+          ],
+          rows: [
+            for (final row in state.page.items)
+              DataRow(
+                key: ValueKey('admin-audit-${row.id}'),
+                cells: [
+                  DataCell(Text(formatUtcDateTime(row.createdAt))),
+                  DataCell(
+                    AdminIdentityCell(
+                      email: row.adminEmail,
+                      userId: row.adminUserId,
+                      emptyLabel: 'Deleted administrator',
+                    ),
+                  ),
+                  DataCell(Text(row.action.label)),
+                  DataCell(
+                    AdminIdentityCell(
+                      email: row.targetEmail,
+                      userId: row.targetUserId,
+                      emptyLabel: 'Deleted administrator',
+                    ),
+                  ),
+                  DataCell(
+                    row.targetEntitlementId == null
+                        ? const Text('Not applicable')
+                        : AdminIdCell(row.targetEntitlementId!),
+                  ),
+                  DataCell(Text(row.source.label)),
+                  DataCell(
+                    AdminTableActions(
+                      children: [
                         TextButton(
                           key: Key('admin-audit-view-${row.id}'),
                           onPressed: () =>
                               context.go(AdminRoutes.auditDetail(row.id)),
                           child: const Text('View details'),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-              ],
-            ),
-          ),
+                ],
+              ),
+          ],
         ),
         const SizedBox(height: AdminSpacing.sm),
         AdminPaginationBar(
@@ -327,21 +336,5 @@ class _AuditResults extends StatelessWidget {
         ),
       ],
     ),
-  );
-}
-
-class _IdentityCell extends StatelessWidget {
-  const _IdentityCell(this.email, this.userId);
-  final String? email;
-  final String? userId;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    mainAxisAlignment: MainAxisAlignment.center,
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(email ?? (userId == null ? 'Deleted administrator' : 'No email')),
-      if (userId != null) AdminIdCell(userId!),
-    ],
   );
 }

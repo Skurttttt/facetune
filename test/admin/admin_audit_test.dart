@@ -7,6 +7,7 @@ import 'package:facetune/admin/audit/presentation/pages/admin_entitlement_histor
 import 'package:facetune/admin/auth/presentation/admin_authorization_controller.dart';
 import 'package:facetune/admin/auth/presentation/admin_authorization_state.dart';
 import 'package:facetune/admin/shared/admin_keyset_list_controller.dart';
+import 'package:facetune/admin/shared/admin_list_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -220,6 +221,9 @@ void main() {
         gateway: gateway,
       );
       expect(find.byKey(const Key('admin-audit-results')), findsOneWidget);
+      expect(find.byKey(const Key('admin-audit-table')), findsOneWidget);
+      expect(find.byType(AdminTable), findsOneWidget);
+      expect(find.byType(AdminIdentityCell), findsNWidgets(2));
       expect(find.text('Allowance increased'), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('admin-audit-next')));
@@ -246,6 +250,7 @@ void main() {
         AdminAuditAction.suspendEntitlement,
       );
       expect(find.byKey(const Key('admin-audit-empty')), findsOneWidget);
+      expect(find.byType(AdminTable), findsNothing);
     },
   );
 

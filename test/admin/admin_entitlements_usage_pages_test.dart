@@ -3,6 +3,7 @@ import 'package:facetune/admin/auth/presentation/admin_authorization_state.dart'
 import 'package:facetune/admin/entitlements/data/admin_entitlements_gateway_provider.dart';
 import 'package:facetune/admin/entitlements/domain/admin_entitlement_models.dart';
 import 'package:facetune/admin/entitlements/presentation/pages/admin_entitlements_page.dart';
+import 'package:facetune/admin/shared/admin_list_widgets.dart';
 import 'package:facetune/admin/shared/admin_read_failure.dart';
 import 'package:facetune/admin/usage/data/admin_usage_gateway_provider.dart';
 import 'package:facetune/admin/usage/domain/admin_usage_models.dart';
@@ -104,6 +105,9 @@ void main() {
         find.byKey(const Key('admin-entitlements-results')),
         findsOneWidget,
       );
+      expect(find.byKey(const Key('admin-entitlements-table')), findsOneWidget);
+      expect(find.byType(AdminTable), findsOneWidget);
+      expect(find.byType(AdminIdentityCell), findsNWidgets(2));
       for (final column in [
         'Plan',
         'Status',
@@ -237,6 +241,9 @@ void main() {
         await pumpPage(tester, child: const AdminUsagePage(), usage: gateway);
 
         expect(find.byKey(const Key('admin-usage-results')), findsOneWidget);
+        expect(find.byKey(const Key('admin-usage-table')), findsOneWidget);
+        expect(find.byType(AdminTable), findsOneWidget);
+        expect(find.byType(AdminIdentityCell), findsNWidgets(3));
         for (final column in [
           'Created',
           'User',

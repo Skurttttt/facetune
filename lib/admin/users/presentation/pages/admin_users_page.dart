@@ -1,11 +1,14 @@
-import '../../../shared/admin_page_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../features/subscription/domain/entities/entitlement_status.dart';
-import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
+import '../../../shared/admin_labels.dart';
+import '../../../shared/admin_list_widgets.dart';
+import '../../../shared/admin_page_header.dart';
+import '../../../theme/admin_tokens.dart';
+import '../../domain/admin_account_status.dart';
 import '../../domain/admin_user_models.dart';
 import '../admin_users_controller.dart';
 
@@ -105,7 +108,7 @@ class _Loading extends StatelessWidget {
           ),
         ),
         SizedBox(width: AdminSpacing.sm),
-        Text('Loading accountsâ€¦'),
+        Text('Loading accounts…'),
       ],
     ),
   );
@@ -153,81 +156,71 @@ class _Results extends StatelessWidget {
         key: const Key('admin-users-results'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Scrollbar(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columns: const [
-                  DataColumn(label: Text('Email')),
-                  DataColumn(label: Text('User ID')),
-                  DataColumn(label: Text('Current plan')),
-                  DataColumn(label: Text('Entitlement')),
-                  DataColumn(label: Text('Remaining')),
-                  DataColumn(label: Text('Renewal / expiration')),
-                  DataColumn(label: Text('Account')),
-                  DataColumn(label: Text('')),
-                ],
-                rows: [
-                  for (final user in state.page.items)
-                    DataRow(
-                      key: ValueKey('admin-user-${user.userId}'),
-                      cells: [
-                        DataCell(Text(user.email ?? 'No email')),
-                        DataCell(
-                          Tooltip(
-                            message: user.userId,
-                            child: Text(
-                              _shortId(user.userId),
-                              style: const TextStyle(fontFamily: 'monospace'),
-                            ),
-                          ),
-                        ),
-                        DataCell(Text(user.currentPlanDisplayName ?? 'None')),
-                        DataCell(
-                          Text(
-                            _statusLabel(user.entitlementStatus),
-                            key: Key('user-status-${user.userId}'),
-                          ),
-                        ),
-                        DataCell(Text(_remaining(user))),
-                        DataCell(Text(_renewal(user))),
-                        DataCell(Text(user.accountStatus.label)),
-                        DataCell(
+          AdminTable(
+            key: const Key('admin-users-table'),
+            columns: const [
+              DataColumn(label: Text('User')),
+              DataColumn(label: Text('Current plan')),
+              DataColumn(label: Text('Entitlement')),
+              DataColumn(label: Text('Remaining')),
+              DataColumn(label: Text('Renewal / expiration')),
+              DataColumn(label: Text('Account')),
+              DataColumn(label: Text('Actions')),
+            ],
+            rows: [
+              for (final user in state.page.items)
+                DataRow(
+                  key: ValueKey('admin-user-${user.userId}'),
+                  cells: [
+                    DataCell(
+                      AdminIdentityCell(email: user.email, userId: user.userId),
+                    ),
+                    DataCell(Text(user.currentPlanDisplayName ?? 'None')),
+                    DataCell(
+                      AdminStatusBadge(
+                        key: Key('user-status-${user.userId}'),
+                        label: user.entitlementStatus == null
+                            ? 'None'
+                            : entitlementStatusLabel(user.entitlementStatus!),
+                        semanticsPrefix: 'Entitlement status',
+                        emphasis: _entitlementEmphasis(user.entitlementStatus),
+                      ),
+                    ),
+                    DataCell(Text(_remaining(user))),
+                    DataCell(Text(_renewal(user))),
+                    DataCell(
+                      AdminStatusBadge(
+                        label: user.accountStatus.label,
+                        semanticsPrefix: 'Account status',
+                        emphasis: _accountEmphasis(user.accountStatus),
+                      ),
+                    ),
+                    DataCell(
+                      AdminTableActions(
+                        children: [
                           TextButton(
                             key: Key('view-user-${user.userId}'),
                             onPressed: () =>
                                 context.go(AdminRoutes.userDetail(user.userId)),
                             child: const Text('View'),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                ],
-              ),
-            ),
+                  ],
+                ),
+            ],
           ),
           const SizedBox(height: AdminSpacing.sm),
-          Row(
-            children: [
-              Text(
-                'Page ${state.pageNumber} Â· ${state.page.items.length} of up to ${state.page.pageSize}',
-                key: const Key('admin-users-page-label'),
-              ),
-              const Spacer(),
-              OutlinedButton(
-                key: const Key('admin-users-previous'),
-                onPressed: state.canGoBack ? controller.previousPage : null,
-                child: const Text('Previous'),
-              ),
-              const SizedBox(width: AdminSpacing.xs),
-              OutlinedButton(
-                key: const Key('admin-users-next'),
-                onPressed: state.page.nextCursor == null
-                    ? null
-                    : controller.nextPage,
-                child: const Text('Next'),
-              ),
-            ],
+          AdminPaginationControl(
+            keyPrefix: 'admin-users',
+            pageNumber: state.pageNumber,
+            itemCount: state.page.items.length,
+            pageSize: state.page.pageSize,
+            canGoBack: state.canGoBack,
+            canGoNext: state.page.nextCursor != null,
+            onPrevious: controller.previousPage,
+            onNext: controller.nextPage,
           ),
         ],
       ),
@@ -237,15 +230,34 @@ class _Results extends StatelessWidget {
   static String _remaining(AdminUserSummary user) {
     final count = user.remainingAiLooks;
     final unit = user.allowanceUnit;
-    if (count == null || unit == null) return 'â€”';
+    if (count == null || unit == null) return '—';
     return '$count ${unit.label(count)}';
   }
 
   static String _renewal(AdminUserSummary user) {
     if (user.expiresAt != null) return 'Expires ${formatDate(user.expiresAt!)}';
-    if (user.periodEnd == null) return 'â€”';
+    if (user.periodEnd == null) return '—';
     return '${user.autoRenew == true ? 'Renews' : 'Ends'} ${formatDate(user.periodEnd!)}';
   }
+
+  static AdminBadgeEmphasis _entitlementEmphasis(EntitlementStatus? status) =>
+      switch (status) {
+        EntitlementStatus.active => AdminBadgeEmphasis.positive,
+        EntitlementStatus.gracePeriod ||
+        EntitlementStatus.pending => AdminBadgeEmphasis.caution,
+        EntitlementStatus.expired ||
+        EntitlementStatus.suspended ||
+        EntitlementStatus.revoked => AdminBadgeEmphasis.negative,
+        null => AdminBadgeEmphasis.neutral,
+      };
+
+  static AdminBadgeEmphasis _accountEmphasis(AdminAccountStatus status) =>
+      switch (status) {
+        AdminAccountStatus.active => AdminBadgeEmphasis.positive,
+        AdminAccountStatus.unconfirmed => AdminBadgeEmphasis.caution,
+        AdminAccountStatus.banned => AdminBadgeEmphasis.negative,
+        AdminAccountStatus.anonymous => AdminBadgeEmphasis.information,
+      };
 }
 
 class _Notice extends StatelessWidget {
@@ -288,17 +300,3 @@ String formatDate(DateTime value) {
   final utc = value.toUtc();
   return '${utc.year}-${two(utc.month)}-${two(utc.day)} UTC';
 }
-
-String _shortId(String value) => value.length <= 14
-    ? value
-    : '${value.substring(0, 8)}â€¦${value.substring(value.length - 4)}';
-
-String _statusLabel(EntitlementStatus? status) => switch (status) {
-  EntitlementStatus.pending => 'Pending',
-  EntitlementStatus.active => 'Active',
-  EntitlementStatus.gracePeriod => 'Grace Period',
-  EntitlementStatus.expired => 'Expired',
-  EntitlementStatus.suspended => 'Suspended',
-  EntitlementStatus.revoked => 'Revoked',
-  null => 'None',
-};
