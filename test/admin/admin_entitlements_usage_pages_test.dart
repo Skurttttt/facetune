@@ -295,6 +295,21 @@ void main() {
             reason: column,
           );
         }
+        final columnLabels = tester
+            .widget<DataTable>(find.byType(DataTable))
+            .columns
+            .map((column) => (column.label as Text).data)
+            .toList();
+        expect(columnLabels.take(7), [
+          'Created',
+          'User',
+          'Plan',
+          'Usage type',
+          'Status',
+          'Unit impact',
+          'Source',
+        ]);
+        expect(find.byType(AdminIdCell), findsNWidgets(9));
         // Canonical statuses, written out as badges (the column headers and
         // the status filter share some of these words).
         for (final id in ['0001', '0003', '0004']) {

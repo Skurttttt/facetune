@@ -20,8 +20,9 @@ Future<void> pumpPage(
   WidgetTester tester, {
   required Widget child,
   required ScriptedUsersGateway gateway,
+  Size size = const Size(1500, 1000),
 }) async {
-  tester.view.physicalSize = const Size(1500, 1000);
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(
@@ -32,7 +33,9 @@ Future<void> pumpPage(
         ),
         adminUsersGatewayProvider.overrideWithValue(gateway),
       ],
-      child: MaterialApp(home: Scaffold(body: child)),
+      child: MaterialApp(
+        home: Scaffold(body: SingleChildScrollView(child: child)),
+      ),
     ),
   );
   await tester.pump();
@@ -111,11 +114,34 @@ void main() {
     );
 
     expect(find.byKey(const Key('admin-user-detail-ready')), findsOneWidget);
-    expect(find.byType(AdminCard), findsNWidgets(2));
+    expect(find.byType(AdminCard), findsNWidgets(4));
+    expect(
+      find.byKey(const Key('admin-user-detail-information-wide')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('admin-user-detail-information-stacked')),
+      findsNothing,
+    );
+    expect(find.byKey(const Key('admin-user-detail-identity')), findsOneWidget);
     expect(
       find.byKey(const Key('admin-user-entitlement-detail')),
       findsOneWidget,
     );
+    expect(find.byKey(const Key('admin-user-detail-related')), findsOneWidget);
+    expect(
+      find.byKey(const Key('admin-user-detail-administrative-actions')),
+      findsOneWidget,
+    );
+    for (final key in [
+      'admin-user-detail-entitlements',
+      'admin-user-detail-usage',
+      'admin-user-detail-audit',
+      'admin-user-detail-history',
+      'admin-user-detail-grant-salon-pilot',
+    ]) {
+      expect(find.byKey(Key(key)), findsOneWidget, reason: key);
+    }
     for (final label in [
       'User ID',
       'Email',
@@ -150,6 +176,35 @@ void main() {
     ]) {
       expect(visible, isNot(contains(forbidden)), reason: forbidden);
     }
+  });
+
+  testWidgets('detail stacks information cards at smaller desktop width', (
+    tester,
+  ) async {
+    final gateway = ScriptedUsersGateway(
+      details: [(_) async => AdminUserDetail.decode(detailPayload())],
+    );
+    await pumpPage(
+      tester,
+      child: const AdminUserDetailPage(userId: userId),
+      gateway: gateway,
+      size: const Size(900, 1200),
+    );
+
+    expect(
+      find.byKey(const Key('admin-user-detail-information-stacked')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('admin-user-detail-information-wide')),
+      findsNothing,
+    );
+    expect(find.byKey(const Key('admin-user-account-detail')), findsOneWidget);
+    expect(
+      find.byKey(const Key('admin-user-entitlement-detail')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('detail has a distinct user-not-found state', (tester) async {

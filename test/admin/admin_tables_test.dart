@@ -59,10 +59,12 @@ void main() {
     expect(table.dividerThickness, AdminBorders.hairline);
 
     final surface = tester.widget<DecoratedBox>(
-      find.descendant(
-        of: find.byType(AdminTable),
-        matching: find.byType(DecoratedBox),
-      ).first,
+      find
+          .descendant(
+            of: find.byType(AdminTable),
+            matching: find.byType(DecoratedBox),
+          )
+          .first,
     );
     final decoration = surface.decoration as BoxDecoration;
     final border = decoration.border! as Border;
@@ -127,6 +129,38 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(actionKey).hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('an empty result remains inside the operational table surface', (
+    tester,
+  ) async {
+    const emptyKey = Key('table-empty-state');
+    await pumpTable(
+      tester,
+      child: const AdminTable(
+        columns: [
+          DataColumn(label: Text('Created')),
+          DataColumn(label: Text('Action')),
+        ],
+        rows: [],
+        emptyState: Padding(
+          key: emptyKey,
+          padding: EdgeInsets.all(AdminSpacing.lg),
+          child: Text('No matching records'),
+        ),
+      ),
+    );
+
+    expect(find.byType(DataTable), findsOneWidget);
+    expect(find.byKey(emptyKey), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.byKey(emptyKey),
+        matching: find.byType(AdminTable),
+      ),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 

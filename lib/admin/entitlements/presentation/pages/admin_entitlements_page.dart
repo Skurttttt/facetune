@@ -109,6 +109,7 @@ class _AdminEntitlementsPageState extends ConsumerState<AdminEntitlementsPage> {
           key: ValueKey(_filterGeneration),
           child: AdminFilterPanel(
             key: const Key('admin-entitlements-filter-panel'),
+            maxWidth: 1180,
             fields: [
               AdminLabeledField(
                 label: 'User ID',

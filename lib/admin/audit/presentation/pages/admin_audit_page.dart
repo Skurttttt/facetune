@@ -1,17 +1,27 @@
-import '../../../shared/admin_page_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
 import '../../../shared/admin_form_widgets.dart';
 import '../../../shared/admin_keyset_list_controller.dart';
 import '../../../shared/admin_labels.dart';
 import '../../../shared/admin_list_widgets.dart';
+import '../../../shared/admin_page_header.dart';
 import '../../../shared/admin_wire.dart';
+import '../../../theme/admin_tokens.dart';
 import '../../domain/admin_audit_models.dart';
 import '../admin_audit_controller.dart';
+
+const _auditColumns = <DataColumn>[
+  DataColumn(label: Text('Timestamp')),
+  DataColumn(label: Text('Admin')),
+  DataColumn(label: Text('Action')),
+  DataColumn(label: Text('Target user')),
+  DataColumn(label: Text('Target entitlement')),
+  DataColumn(label: Text('Event source')),
+  DataColumn(label: Text('Actions')),
+];
 
 class AdminAuditPage extends ConsumerStatefulWidget {
   const AdminAuditPage({
@@ -121,6 +131,7 @@ class _AdminAuditPageState extends ConsumerState<AdminAuditPage> {
           key: ValueKey(_filterGeneration),
           child: AdminFilterPanel(
             key: const Key('admin-audit-filter-panel'),
+            maxWidth: 1120,
             fields: [
               AdminLabeledField(
                 label: 'Admin user ID',
@@ -245,10 +256,11 @@ class _AdminAuditPageState extends ConsumerState<AdminAuditPage> {
                 : null,
           ),
           AdminListReady(:final page) when page.items.isEmpty =>
-            const AdminListNotice(
-              key: Key('admin-audit-empty'),
-              icon: Icons.history_outlined,
-              message: 'No audit events matched these filters.',
+            const AdminTable(
+              key: Key('admin-audit-table'),
+              columns: _auditColumns,
+              rows: [],
+              emptyState: _AuditNoResults(key: Key('admin-audit-empty')),
             ),
           AdminListReady() => _AuditResults(
             state: state,
@@ -275,15 +287,7 @@ class _AuditResults extends StatelessWidget {
       children: [
         AdminTable(
           key: const Key('admin-audit-table'),
-          columns: const [
-            DataColumn(label: Text('Timestamp')),
-            DataColumn(label: Text('Admin')),
-            DataColumn(label: Text('Action')),
-            DataColumn(label: Text('Target user')),
-            DataColumn(label: Text('Target entitlement')),
-            DataColumn(label: Text('Event source')),
-            DataColumn(label: Text('Actions')),
-          ],
+          columns: _auditColumns,
           rows: [
             for (final row in state.page.items)
               DataRow(
@@ -337,4 +341,32 @@ class _AuditResults extends StatelessWidget {
       ],
     ),
   );
+}
+
+class _AuditNoResults extends StatelessWidget {
+  const _AuditNoResults({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      container: true,
+      label: 'No audit events matched these filters.',
+      child: Padding(
+        padding: const EdgeInsets.all(AdminSpacing.lg),
+        child: Row(
+          children: [
+            Icon(
+              Icons.history_outlined,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: AdminSpacing.sm),
+            const Expanded(
+              child: Text('No audit events matched these filters.'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

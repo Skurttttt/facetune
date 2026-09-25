@@ -254,7 +254,14 @@ void main() {
         AdminAuditAction.suspendEntitlement,
       );
       expect(find.byKey(const Key('admin-audit-empty')), findsOneWidget);
-      expect(find.byType(AdminTable), findsNothing);
+      expect(find.byType(AdminTable), findsOneWidget);
+      expect(
+        find.ancestor(
+          of: find.byKey(const Key('admin-audit-empty')),
+          matching: find.byType(AdminTable),
+        ),
+        findsOneWidget,
+      );
 
       await tester.tap(find.byKey(const Key('admin-audit-clear')));
       await tester.pump();

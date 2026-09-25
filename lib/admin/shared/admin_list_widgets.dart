@@ -17,10 +17,22 @@ import 'admin_wire.dart';
 /// The widget owns only table presentation. Callers retain their existing
 /// server rows, filters, actions, routing and pagination behavior.
 class AdminTable extends StatefulWidget {
-  const AdminTable({super.key, required this.columns, required this.rows});
+  const AdminTable({
+    super.key,
+    required this.columns,
+    required this.rows,
+    this.emptyState,
+  });
 
   final List<DataColumn> columns;
   final List<DataRow> rows;
+
+  /// Optional table-contained content for a legitimate empty result set.
+  ///
+  /// The caller still owns the distinction between empty, no-result, error,
+  /// and loading states. This slot only keeps an accepted empty state inside
+  /// the same operational surface as the table heading.
+  final Widget? emptyState;
 
   @override
   State<AdminTable> createState() => _AdminTableState();
@@ -54,40 +66,47 @@ class _AdminTableState extends State<AdminTable> {
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(AdminRadii.card),
-            child: Scrollbar(
-              controller: _horizontal,
-              thumbVisibility: true,
-              trackVisibility: true,
-              interactive: true,
-              scrollbarOrientation: ScrollbarOrientation.bottom,
-              child: SingleChildScrollView(
-                controller: _horizontal,
-                scrollDirection: Axis.horizontal,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minWidth: availableWidth),
-                  child: DataTable(
-                    headingRowHeight: 44,
-                    dataRowMinHeight: 52,
-                    dataRowMaxHeight: 64,
-                    horizontalMargin: AdminSpacing.md,
-                    columnSpacing: AdminSpacing.xl,
-                    dividerThickness: AdminBorders.hairline,
-                    headingRowColor: WidgetStatePropertyAll(
-                      colors.surfaceSecondary,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Scrollbar(
+                  controller: _horizontal,
+                  thumbVisibility: true,
+                  trackVisibility: true,
+                  interactive: true,
+                  scrollbarOrientation: ScrollbarOrientation.bottom,
+                  child: SingleChildScrollView(
+                    controller: _horizontal,
+                    scrollDirection: Axis.horizontal,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minWidth: availableWidth),
+                      child: DataTable(
+                        headingRowHeight: 44,
+                        dataRowMinHeight: 52,
+                        dataRowMaxHeight: 64,
+                        horizontalMargin: AdminSpacing.md,
+                        columnSpacing: AdminSpacing.xl,
+                        dividerThickness: AdminBorders.hairline,
+                        headingRowColor: WidgetStatePropertyAll(
+                          colors.surfaceSecondary,
+                        ),
+                        dataRowColor: WidgetStateProperty.resolveWith((states) {
+                          return states.contains(WidgetState.hovered)
+                              ? colors.surfaceSecondary
+                              : colors.surface;
+                        }),
+                        headingTextStyle: AdminTypography.tableHeading,
+                        dataTextStyle: AdminTypography.tableContent,
+                        showCheckboxColumn: false,
+                        columns: widget.columns,
+                        rows: widget.rows,
+                      ),
                     ),
-                    dataRowColor: WidgetStateProperty.resolveWith((states) {
-                      return states.contains(WidgetState.hovered)
-                          ? colors.surfaceSecondary
-                          : colors.surface;
-                    }),
-                    headingTextStyle: AdminTypography.tableHeading,
-                    dataTextStyle: AdminTypography.tableContent,
-                    showCheckboxColumn: false,
-                    columns: widget.columns,
-                    rows: widget.rows,
                   ),
                 ),
-              ),
+                if (widget.emptyState != null) widget.emptyState!,
+              ],
             ),
           ),
         );

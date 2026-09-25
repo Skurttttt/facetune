@@ -1,4 +1,3 @@
-import '../../../shared/admin_page_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,13 +6,14 @@ import '../../../../features/subscription/domain/entities/purchased_credit_summa
     show AllowanceSource;
 import '../../../../features/subscription/domain/entities/subscription_plan_code.dart';
 import '../../../../features/subscription/domain/entities/usage_status.dart';
-import '../../../shared/admin_form_widgets.dart';
-import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
+import '../../../shared/admin_form_widgets.dart';
 import '../../../shared/admin_keyset_list_controller.dart';
 import '../../../shared/admin_labels.dart';
 import '../../../shared/admin_list_widgets.dart';
+import '../../../shared/admin_page_header.dart';
 import '../../../shared/admin_wire.dart';
+import '../../../theme/admin_tokens.dart';
 import '../../domain/admin_usage_models.dart';
 import '../admin_usage_controller.dart';
 
@@ -122,6 +122,7 @@ class _AdminUsagePageState extends ConsumerState<AdminUsagePage> {
           key: ValueKey(_filterGeneration),
           child: AdminFilterPanel(
             key: const Key('admin-usage-filter-panel'),
+            maxWidth: 1180,
             fields: [
               AdminLabeledField(
                 label: 'User ID',
@@ -292,11 +293,11 @@ class _Results extends StatelessWidget {
               DataColumn(label: Text('User')),
               DataColumn(label: Text('Plan')),
               DataColumn(label: Text('Usage type')),
-              DataColumn(label: Text('Operation ID')),
-              DataColumn(label: Text('Entitlement ID')),
               DataColumn(label: Text('Status')),
               DataColumn(label: Text('Unit impact')),
               DataColumn(label: Text('Source')),
+              DataColumn(label: Text('Operation ID')),
+              DataColumn(label: Text('Entitlement ID')),
               DataColumn(label: Text('Committed at')),
               DataColumn(label: Text('Released at')),
               DataColumn(label: Text('Failure code')),
@@ -319,8 +320,6 @@ class _Results extends StatelessWidget {
                       ),
                     ),
                     DataCell(Text(_usageType(row))),
-                    DataCell(AdminIdCell(row.operationId)),
-                    DataCell(AdminIdCell(row.entitlementId)),
                     DataCell(
                       AdminStatusBadge(
                         key: Key('usage-status-${row.usageId}'),
@@ -340,6 +339,8 @@ class _Results extends StatelessWidget {
                       ),
                     ),
                     DataCell(Text(_source(row))),
+                    DataCell(AdminIdCell(row.operationId)),
+                    DataCell(AdminIdCell(row.entitlementId)),
                     DataCell(Text(_timestamp(row.committedAt))),
                     DataCell(Text(_timestamp(row.releasedAt))),
                     DataCell(

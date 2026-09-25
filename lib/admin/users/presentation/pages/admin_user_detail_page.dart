@@ -7,8 +7,10 @@ import '../../../../features/subscription/domain/entities/entitlement_status.dar
 import '../../../../features/subscription/domain/entities/subscription_plan_code.dart';
 import '../../../app/admin_routes.dart';
 import '../../../shared/admin_cards.dart';
+import '../../../shared/admin_list_widgets.dart';
 import '../../../shared/admin_page_header.dart';
 import '../../../theme/admin_tokens.dart';
+import '../../domain/admin_account_status.dart';
 import '../../domain/admin_user_models.dart';
 import '../admin_users_controller.dart';
 import 'admin_users_page.dart' show formatDate;
@@ -82,7 +84,7 @@ class _DetailLoading extends StatelessWidget {
         ),
       ),
       SizedBox(width: AdminSpacing.sm),
-      Text('Loading user detailâ€¦'),
+      Text('Loading user detail...'),
     ],
   );
 }
@@ -97,19 +99,132 @@ class _Detail extends StatelessWidget {
     final entitlement = detail.entitlement;
     return Column(
       key: const Key('admin-user-detail-ready'),
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _Panel(
-          title: 'Account',
-          rows: [
-            ('User ID', detail.userId),
-            ('Email', detail.email ?? 'No email'),
-            ('Account created', formatDate(detail.accountCreatedAt)),
-            ('Account status', detail.accountStatus.label),
+        _IdentitySummary(detail: detail),
+        const SizedBox(height: AdminSpacing.lg),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final account = _Panel(
+              key: const Key('admin-user-account-detail'),
+              title: 'Account',
+              rows: [
+                ('User ID', detail.userId),
+                ('Email', detail.email ?? 'No email'),
+                ('Account created', formatDate(detail.accountCreatedAt)),
+                ('Account status', detail.accountStatus.label),
+              ],
+            );
+            final subscription = entitlement == null
+                ? const _NoEntitlementPanel()
+                : _EntitlementPanel(entitlement: entitlement);
+            if (constraints.maxWidth >= 960) {
+              return Row(
+                key: const Key('admin-user-detail-information-wide'),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: account),
+                  const SizedBox(width: AdminSpacing.lg),
+                  Expanded(child: subscription),
+                ],
+              );
+            }
+            return Column(
+              key: const Key('admin-user-detail-information-stacked'),
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                account,
+                const SizedBox(height: AdminSpacing.lg),
+                subscription,
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: AdminSpacing.lg),
+        _RelatedLinks(detail: detail, entitlement: entitlement),
+        const SizedBox(height: AdminSpacing.lg),
+        _AdministrativeActions(detail: detail, entitlement: entitlement),
+      ],
+    );
+  }
+}
+
+class _IdentitySummary extends StatelessWidget {
+  const _IdentitySummary({required this.detail});
+
+  final AdminUserDetail detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      container: true,
+      label:
+          'User identity: ${detail.email ?? 'No email'}, '
+          'account status: ${detail.accountStatus.label}',
+      child: ExcludeSemantics(
+        child: Row(
+          key: const Key('admin-user-detail-identity'),
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    detail.email ?? 'No email',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: AdminSpacing.xxs),
+                  SelectableText(
+                    detail.userId,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AdminSpacing.md),
+            AdminStatusBadge(
+              label: detail.accountStatus.label,
+              semanticsPrefix: 'Account status',
+              emphasis: _accountEmphasis(detail.accountStatus),
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  static AdminBadgeEmphasis _accountEmphasis(AdminAccountStatus status) =>
+      switch (status) {
+        AdminAccountStatus.active => AdminBadgeEmphasis.positive,
+        AdminAccountStatus.unconfirmed => AdminBadgeEmphasis.caution,
+        AdminAccountStatus.banned => AdminBadgeEmphasis.negative,
+        AdminAccountStatus.anonymous => AdminBadgeEmphasis.information,
+      };
+}
+
+class _RelatedLinks extends StatelessWidget {
+  const _RelatedLinks({required this.detail, required this.entitlement});
+
+  final AdminUserDetail detail;
+  final AdminEntitlementDetail? entitlement;
+
+  @override
+  Widget build(BuildContext context) => AdminCard(
+    key: const Key('admin-user-detail-related'),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeading(
+          title: 'Related',
+          description: "Open this account's server-backed operational records.",
+        ),
         const SizedBox(height: AdminSpacing.sm),
-        // WA-6: the same account's rows in the read-only listings.
         Wrap(
           spacing: AdminSpacing.xs,
           runSpacing: AdminSpacing.xs,
@@ -140,28 +255,57 @@ class _Detail extends StatelessWidget {
               TextButton.icon(
                 key: const Key('admin-user-detail-history'),
                 onPressed: () => context.go(
-                  AdminRoutes.entitlementHistory(entitlement.entitlementId),
+                  AdminRoutes.entitlementHistory(entitlement!.entitlementId),
                 ),
                 icon: const Icon(Icons.timeline_outlined, size: 18),
                 label: const Text('Entitlement history'),
               ),
-            // WA-7: the one privileged action so far. The server decides
-            // whether this account may receive a grant; the button only
-            // opens the reviewed, confirmed workflow.
-            FilledButton.tonalIcon(
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
+class _AdministrativeActions extends StatelessWidget {
+  const _AdministrativeActions({
+    required this.detail,
+    required this.entitlement,
+  });
+
+  final AdminUserDetail detail;
+  final AdminEntitlementDetail? entitlement;
+
+  bool get _isAdminGrantedPilot =>
+      entitlement != null &&
+      entitlement!.planCode == SubscriptionPlanCode.salonPilot &&
+      entitlement!.billingProvider == BillingProvider.adminGranted;
+
+  @override
+  Widget build(BuildContext context) => AdminCard(
+    key: const Key('admin-user-detail-administrative-actions'),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionHeading(
+          title: 'Administrative actions',
+          description:
+              'Open a reviewed workflow. Eligibility and changes remain '
+              'server-authoritative.',
+        ),
+        const SizedBox(height: AdminSpacing.md),
+        Wrap(
+          spacing: AdminSpacing.xs,
+          runSpacing: AdminSpacing.xs,
+          children: [
+            FilledButton.icon(
               key: const Key('admin-user-detail-grant-salon-pilot'),
               onPressed: () =>
                   context.go(AdminRoutes.grantSalonPilot(detail.userId)),
               icon: const Icon(Icons.card_giftcard_outlined, size: 18),
               label: const Text('Grant Salon Pilot'),
             ),
-            // WA-8: only an admin-granted Salon Pilot has an editable
-            // allowance; the server re-checks this whatever the button says.
-            if (entitlement != null &&
-                entitlement.planCode == SubscriptionPlanCode.salonPilot &&
-                entitlement.billingProvider ==
-                    BillingProvider.adminGranted) ...[
-              const SizedBox(width: AdminSpacing.xs),
+            if (_isAdminGrantedPilot)
               FilledButton.tonalIcon(
                 key: const Key('admin-user-detail-adjust-allowance'),
                 onPressed: () =>
@@ -169,23 +313,35 @@ class _Detail extends StatelessWidget {
                 icon: const Icon(Icons.tune_outlined, size: 18),
                 label: const Text('Adjust allowance'),
               ),
-            ],
           ],
         ),
-        if (entitlement != null &&
-            entitlement.planCode == SubscriptionPlanCode.salonPilot &&
-            entitlement.billingProvider == BillingProvider.adminGranted) ...[
-          const SizedBox(height: AdminSpacing.xs),
-          _LifecycleActions(detail: detail, entitlement: entitlement),
+        if (_isAdminGrantedPilot) ...[
+          const SizedBox(height: AdminSpacing.md),
+          _LifecycleActions(detail: detail, entitlement: entitlement!),
         ],
-        const SizedBox(height: AdminSpacing.sm),
-        if (entitlement == null)
-          const _DetailNotice(
-            key: Key('admin-user-detail-no-entitlement'),
-            message: 'No entitlement is available for this account.',
-          )
-        else
-          _EntitlementPanel(entitlement: entitlement),
+      ],
+    ),
+  );
+}
+
+class _SectionHeading extends StatelessWidget {
+  const _SectionHeading({required this.title, required this.description});
+
+  final String title;
+  final String description;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Semantics(
+          header: true,
+          child: Text(title, style: theme.textTheme.titleMedium),
+        ),
+        const SizedBox(height: AdminSpacing.xxs),
+        Text(description, style: theme.textTheme.bodySmall),
       ],
     );
   }
@@ -243,6 +399,10 @@ class _LifecycleActions extends StatelessWidget {
       if (_canRevoke)
         OutlinedButton.icon(
           key: const Key('admin-user-detail-revoke'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Theme.of(context).colorScheme.error,
+            side: BorderSide(color: Theme.of(context).colorScheme.error),
+          ),
           onPressed: () =>
               context.go(AdminRoutes.revokeEntitlement(detail.userId)),
           icon: const Icon(Icons.block_outlined, size: 18),
@@ -307,6 +467,35 @@ class _EntitlementPanel extends StatelessWidget {
       value == null ? 'Not applicable' : formatDate(value);
 }
 
+class _NoEntitlementPanel extends StatelessWidget {
+  const _NoEntitlementPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AdminCard(
+      key: const Key('admin-user-entitlement-detail'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            header: true,
+            child: Text(
+              'Current subscription',
+              style: theme.textTheme.titleMedium,
+            ),
+          ),
+          const SizedBox(height: AdminSpacing.sm),
+          const _DetailNotice(
+            key: Key('admin-user-detail-no-entitlement'),
+            message: 'No entitlement is available for this account.',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Panel extends StatelessWidget {
   const _Panel({super.key, required this.title, required this.rows});
 
@@ -326,27 +515,44 @@ class _Panel extends StatelessWidget {
           ),
           const SizedBox(height: AdminSpacing.sm),
           for (final row in rows)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: AdminSpacing.xxs),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 220,
-                    child: Text(row.$1, style: theme.textTheme.labelMedium),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final value = SelectableText(
+                  row.$2,
+                  style: row.$1 == 'User ID'
+                      ? theme.textTheme.bodyMedium?.copyWith(
+                          fontFamily: 'monospace',
+                        )
+                      : theme.textTheme.bodyMedium,
+                );
+                return Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AdminSpacing.xxs,
                   ),
-                  Expanded(
-                    child: SelectableText(
-                      row.$2,
-                      style: row.$1 == 'User ID'
-                          ? theme.textTheme.bodyMedium?.copyWith(
-                              fontFamily: 'monospace',
-                            )
-                          : theme.textTheme.bodyMedium,
-                    ),
-                  ),
-                ],
-              ),
+                  child: constraints.maxWidth < 420
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(row.$1, style: theme.textTheme.labelMedium),
+                            const SizedBox(height: AdminSpacing.xxs),
+                            value,
+                          ],
+                        )
+                      : Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(
+                              width: 180,
+                              child: Text(
+                                row.$1,
+                                style: theme.textTheme.labelMedium,
+                              ),
+                            ),
+                            Expanded(child: value),
+                          ],
+                        ),
+                );
+              },
             ),
         ],
       ),
