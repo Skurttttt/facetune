@@ -3,8 +3,9 @@ import '../../../features/subscription/domain/errors/subscription_error_code.dar
 import '../../auth/domain/admin_auth_failure.dart';
 
 /// The dashboard's figures, exactly as `public.admin_dashboard_metrics()`
-/// aggregated them on the server. Every number is a count the database
-/// computed; nothing here is derived, summed, or percentaged in the browser.
+/// aggregated them on the server. Every stored number is a count the database
+/// computed. The only derived getters are explicitly bounded presentation
+/// sums over complete fixed-size server aggregates.
 class AdminDashboardMetrics {
   const AdminDashboardMetrics({
     required this.asOf,
@@ -27,6 +28,19 @@ class AdminDashboardMetrics {
   final AiLookCounts aiLooks;
   final SalonPilotCounts salonPilot;
   final PurchasedCreditCounts purchasedCredits;
+
+  /// A fixed eight-value presentation aggregation over the server's complete
+  /// canonical plan map. This counts entitlements, not accounts.
+  int get inForceEntitlements => entitlements.inForceByPlan.values.fold(
+    0,
+    (total, count) => total + count,
+  );
+
+  /// The V1 current-month outcome aggregate across its two authoritative
+  /// funding-source buckets. The result is operations, never "AI Looks".
+  int get committedOperationsThisMonth =>
+      aiLooks.committedThisMonth.subscription +
+      aiLooks.committedThisMonth.purchasedCredit;
 
   /// True when the system holds no accounts at all — the "empty" state.
   bool get isEmpty => accounts.totalUsers == 0 && accounts.anonymousGuests == 0;
@@ -162,7 +176,9 @@ class EntitlementCounts {
 }
 
 /// Committed rows split by the bucket they drew from (Shared Contract §74a).
-/// Deliberately not summed: a purchased credit is not an included AI Look.
+/// Kept separate in the contract: a purchased credit is not an included AI
+/// Look. UI-5 may add the two fixed buckets only for an honestly labelled
+/// operation-outcome comparison.
 class CommittedBySource {
   const CommittedBySource({
     required this.subscription,

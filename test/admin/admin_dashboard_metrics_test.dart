@@ -68,6 +68,8 @@ void main() {
       expect(m.aiLooks.releasedThisMonth, 5);
       expect(m.salonPilot.expiringSoon, 1);
       expect(m.purchasedCredits.activeGrants, 5);
+      expect(m.inForceEntitlements, 26);
+      expect(m.committedOperationsThisMonth, 44);
       expect(m.isEmpty, isFalse);
     });
 

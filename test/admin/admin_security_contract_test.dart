@@ -520,4 +520,46 @@ void main() {
       expect(page, isNot(contains('/ ')));
     });
   });
+
+  group('UI-5 chart boundary', () {
+    test('fl_chart is isolated to Dashboard presentation code', () {
+      final imports = dartFilesIn('lib').where((file) {
+        return codeOf(file).contains("package:fl_chart/fl_chart.dart");
+      }).toList();
+      expect(imports, hasLength(1));
+      expect(
+        imports.single.path.replaceAll('\\', '/'),
+        endsWith(
+          'lib/admin/dashboard/presentation/widgets/'
+          'admin_dashboard_charts.dart',
+        ),
+      );
+    });
+
+    test('consumer and mobile source import no chart dependency', () {
+      for (final directory in ['lib/features', 'lib/theme', 'android', 'ios']) {
+        for (final file in dartFilesIn(directory)) {
+          expect(
+            codeOf(file),
+            isNot(contains('package:fl_chart')),
+            reason: file.path,
+          );
+        }
+      }
+    });
+
+    test('no unrelated Admin feature imports the Dashboard charts', () {
+      for (final file in adminFiles.where(
+        (file) => !file.path.replaceAll('\\', '/').contains('/dashboard/'),
+      )) {
+        final code = codeOf(file);
+        expect(code, isNot(contains('package:fl_chart')), reason: file.path);
+        expect(
+          code,
+          isNot(contains('admin_dashboard_charts.dart')),
+          reason: file.path,
+        );
+      }
+    });
+  });
 }
