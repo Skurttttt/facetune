@@ -525,6 +525,45 @@ void main() {
       expect(find.textContaining('ENTITLEMENT_REVOKED'), findsOneWidget);
       expect(find.textContaining('revocation is terminal'), findsOneWidget);
     });
+
+    testWidgets(
+      'Cancel leaves an acknowledged revoke intent unapplied and editable',
+      (tester) async {
+        final gateway = ScriptedSalonPilotGateway([]);
+        await pumpLifecycle(
+          tester,
+          gateway: gateway,
+          action: SalonPilotLifecycleAction.revoke,
+        );
+        await enterReason(tester, 'Pilot participation ended');
+        await tester.tap(find.byType(Checkbox));
+        await tester.pump();
+        await tester.tap(find.byKey(const Key('admin-lifecycle-preview')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('admin-lifecycle-confirm')),
+            matching: find.text('Revoke access'),
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Cancel'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('admin-lifecycle-edit')));
+        await tester.pumpAndSettle();
+
+        expect(gateway.lifecycleCalls, isEmpty);
+        expect(find.byKey(const Key('admin-lifecycle-form')), findsOneWidget);
+        expect(
+          tester
+              .widget<CheckboxListTile>(
+                find.byKey(const Key('admin-lifecycle-acknowledge')),
+              )
+              .value,
+          isTrue,
+        );
+      },
+    );
   });
 
   group('visibility and routing', () {

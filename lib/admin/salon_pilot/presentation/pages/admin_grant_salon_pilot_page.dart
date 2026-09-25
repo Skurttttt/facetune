@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../shared/admin_dialogs.dart';
 import '../../../shared/admin_form_widgets.dart';
 import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
@@ -75,7 +76,7 @@ class _AdminGrantSalonPilotPageState
     });
   }
 
-  void _preview() {
+  Future<void> _preview(String? email) async {
     final expiresAt = parseExpiration(_expiration.text);
     final allowance = int.tryParse(_allowance.text.trim());
     final reason = _reason.text.trim();
@@ -107,6 +108,26 @@ class _AdminGrantSalonPilotPageState
       initialAllowance: allowance!,
       reason: reason,
     );
+    final state = ref.read(
+      adminGrantSalonPilotControllerProvider(widget.userId),
+    );
+    if (state is! AdminGrantPreviewing) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => _Preview(
+        intent: state.intent,
+        email: email,
+        onCancel: () => Navigator.of(dialogContext).pop(false),
+        onConfirm: () => Navigator.of(dialogContext).pop(true),
+      ),
+    );
+    if (!mounted) return;
+    if (confirmed == true) {
+      await _controller.confirm();
+    } else {
+      _controller.edit();
+    }
   }
 
   @override
@@ -151,13 +172,8 @@ class _AdminGrantSalonPilotPageState
         ),
         const SizedBox(height: AdminSpacing.lg),
         switch (state) {
-          AdminGrantEditing() => _form(),
-          AdminGrantPreviewing(:final intent) => _Preview(
-            intent: intent,
-            email: email,
-            onEdit: _controller.edit,
-            onConfirm: _controller.confirm,
-          ),
+          AdminGrantEditing() => _form(email),
+          AdminGrantPreviewing() => const SizedBox.shrink(),
           AdminGrantSubmitting() => const AdminListLoadingRow(
             key: Key('admin-grant-submitting'),
             label: 'Granting Salon Pilot',
@@ -176,7 +192,7 @@ class _AdminGrantSalonPilotPageState
     );
   }
 
-  Widget _form() {
+  Widget _form(String? email) {
     return ConstrainedBox(
       key: const Key('admin-grant-form'),
       constraints: const BoxConstraints(maxWidth: 640),
@@ -242,7 +258,7 @@ class _AdminGrantSalonPilotPageState
           const SizedBox(height: AdminSpacing.lg),
           FilledButton.icon(
             key: const Key('admin-grant-preview'),
-            onPressed: _preview,
+            onPressed: () => _preview(email),
             icon: const Icon(Icons.preview_outlined, size: 18),
             label: const Text('Preview grant'),
           ),
@@ -256,77 +272,50 @@ class _Preview extends StatelessWidget {
   const _Preview({
     required this.intent,
     required this.email,
-    required this.onEdit,
+    required this.onCancel,
     required this.onConfirm,
   });
 
   final GrantSalonPilotIntent intent;
   final String? email;
-  final VoidCallback onEdit;
-  final Future<void> Function() onConfirm;
+  final VoidCallback onCancel;
+  final VoidCallback onConfirm;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return ConstrainedBox(
+    return AdminConfirmationDialog(
       key: const Key('admin-grant-preview-panel'),
-      constraints: const BoxConstraints(maxWidth: 640),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border.all(color: theme.colorScheme.outlineVariant),
-          borderRadius: BorderRadius.circular(AdminRadii.card),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(AdminSpacing.md),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Semantics(
-                header: true,
-                child: Text(
-                  'Review before granting',
-                  style: theme.textTheme.titleMedium,
-                ),
-              ),
-              const SizedBox(height: AdminSpacing.sm),
-              _row(theme, 'Account', email ?? intent.targetUserId),
-              _row(theme, 'Plan', 'Salon Pilot (salon_pilot)'),
-              _row(theme, 'Billing provider', 'Admin Granted (admin_granted)'),
-              _row(
-                theme,
-                'Initial AI Look allowance',
-                '${intent.initialAllowance}',
-              ),
-              _row(theme, 'Expires', formatUtcDateTime(intent.expiresAt)),
-              _row(theme, 'Auto-renew', 'Off'),
-              _row(theme, 'Reason', intent.reason),
-              const SizedBox(height: AdminSpacing.md),
-              Text(
-                'Confirming writes the entitlement and one audit event under '
-                'your admin identity. A duplicate submission replays this '
-                'grant; it never creates a second one.',
-                style: theme.textTheme.bodySmall,
-              ),
-              const SizedBox(height: AdminSpacing.md),
-              Row(
-                children: [
-                  FilledButton.icon(
-                    key: const Key('admin-grant-confirm'),
-                    onPressed: onConfirm,
-                    icon: const Icon(Icons.check, size: 18),
-                    label: const Text('Confirm grant'),
-                  ),
-                  const SizedBox(width: AdminSpacing.sm),
-                  TextButton(
-                    key: const Key('admin-grant-edit'),
-                    onPressed: onEdit,
-                    child: const Text('Edit'),
-                  ),
-                ],
-              ),
+      title: 'Review before granting',
+      description:
+          'Confirm the target account and the temporary Salon Pilot terms.',
+      confirmLabel: 'Confirm grant',
+      confirmButtonKey: const Key('admin-grant-confirm'),
+      cancelButtonKey: const Key('admin-grant-edit'),
+      onConfirm: onConfirm,
+      onCancel: onCancel,
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AdminDialogDetailRows(
+            rows: [
+              ('Account', email ?? intent.targetUserId),
+              ('Plan', 'Salon Pilot (salon_pilot)'),
+              ('Billing provider', 'Admin Granted (admin_granted)'),
+              ('Initial AI Look allowance', '${intent.initialAllowance}'),
+              ('Expires', formatUtcDateTime(intent.expiresAt)),
+              ('Auto-renew', 'Off'),
+              ('Reason', intent.reason),
             ],
           ),
-        ),
+          const SizedBox(height: AdminSpacing.md),
+          Text(
+            'Confirming writes the entitlement and one audit event under '
+            'your admin identity. A duplicate submission replays this grant; '
+            'it never creates a second one.',
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
       ),
     );
   }

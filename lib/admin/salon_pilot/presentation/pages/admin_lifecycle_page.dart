@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../features/subscription/domain/entities/billing_provider.dart';
 import '../../../../features/subscription/domain/entities/subscription_plan_code.dart';
+import '../../../shared/admin_dialogs.dart';
 import '../../../shared/admin_form_widgets.dart';
 import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
@@ -88,7 +89,10 @@ class _AdminLifecyclePageState extends ConsumerState<AdminLifecyclePage> {
     });
   }
 
-  void _preview(AdminEntitlementDetail entitlement) {
+  Future<void> _preview(
+    AdminEntitlementDetail entitlement,
+    String account,
+  ) async {
     final reason = _reason.text.trim();
     DateTime? newExpiresAt;
     String? dateError;
@@ -119,13 +123,32 @@ class _AdminLifecyclePageState extends ConsumerState<AdminLifecyclePage> {
     if (dateError != null || reasonError != null || acknowledgeError != null) {
       return;
     }
-    ref
-        .read(adminLifecycleControllerProvider(_key(entitlement)).notifier)
-        .preview(
-          reason: reason,
-          expectedVersion: entitlement.version,
-          newExpiresAt: newExpiresAt,
-        );
+    final provider = adminLifecycleControllerProvider(_key(entitlement));
+    final controller = ref.read(provider.notifier);
+    controller.preview(
+      reason: reason,
+      expectedVersion: entitlement.version,
+      newExpiresAt: newExpiresAt,
+    );
+    final state = ref.read(provider);
+    if (state is! AdminLifecyclePreviewing) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => _Preview(
+        account: account,
+        intent: state.intent,
+        entitlement: entitlement,
+        onCancel: () => Navigator.of(dialogContext).pop(false),
+        onConfirm: () => Navigator.of(dialogContext).pop(true),
+      ),
+    );
+    if (!mounted) return;
+    if (confirmed == true) {
+      await controller.confirm();
+    } else {
+      controller.edit();
+    }
   }
 
   @override
@@ -226,13 +249,11 @@ class _AdminLifecyclePageState extends ConsumerState<AdminLifecyclePage> {
         ),
         const SizedBox(height: AdminSpacing.lg),
         switch (state) {
-          AdminLifecycleEditing() => _form(entitlement),
-          AdminLifecyclePreviewing(:final intent) => _Preview(
-            intent: intent,
-            entitlement: entitlement,
-            onEdit: controller.edit,
-            onConfirm: controller.confirm,
+          AdminLifecycleEditing() => _form(
+            entitlement,
+            detail.email ?? detail.userId,
           ),
+          AdminLifecyclePreviewing() => const SizedBox.shrink(),
           AdminLifecycleSubmitting() => AdminListLoadingRow(
             key: const Key('admin-lifecycle-submitting'),
             label: 'Applying: ${widget.action.label}',
@@ -259,7 +280,7 @@ class _AdminLifecyclePageState extends ConsumerState<AdminLifecyclePage> {
     );
   }
 
-  Widget _form(AdminEntitlementDetail entitlement) {
+  Widget _form(AdminEntitlementDetail entitlement, String account) {
     final theme = Theme.of(context);
     return ConstrainedBox(
       key: const Key('admin-lifecycle-form'),
@@ -338,7 +359,7 @@ class _AdminLifecyclePageState extends ConsumerState<AdminLifecyclePage> {
           const SizedBox(height: AdminSpacing.lg),
           FilledButton.icon(
             key: const Key('admin-lifecycle-preview'),
-            onPressed: () => _preview(entitlement),
+            onPressed: () => _preview(entitlement, account),
             icon: const Icon(Icons.preview_outlined, size: 18),
             label: const Text('Review'),
           ),
@@ -350,22 +371,26 @@ class _AdminLifecyclePageState extends ConsumerState<AdminLifecyclePage> {
 
 class _Preview extends StatelessWidget {
   const _Preview({
+    required this.account,
     required this.intent,
     required this.entitlement,
-    required this.onEdit,
+    required this.onCancel,
     required this.onConfirm,
   });
 
+  final String account;
   final LifecycleIntent intent;
   final AdminEntitlementDetail entitlement;
-  final VoidCallback onEdit;
-  final Future<void> Function() onConfirm;
+  final VoidCallback onCancel;
+  final VoidCallback onConfirm;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final action = intent.action;
     final rows = <(String, String)>[
+      ('Account', account),
+      ('Entitlement ID', entitlement.entitlementId),
       ('Action', action.label),
       ('Current status', entitlementStatusLabel(entitlement.storedStatus)),
       if (action == SalonPilotLifecycleAction.extendExpiration) ...[
@@ -389,61 +414,39 @@ class _Preview extends StatelessWidget {
       ('Reason', intent.reason),
       ('Based on version', '${intent.expectedVersion ?? 'not checked'}'),
     ];
-    return ConstrainedBox(
+    return AdminConfirmationDialog(
       key: const Key('admin-lifecycle-preview-panel'),
-      constraints: const BoxConstraints(maxWidth: 640),
-      child: _Panel(
-        title: action.highRisk
-            ? 'Revoke Salon Pilot?'
-            : 'Review before applying',
-        theme: theme,
-        highlighted: action.highRisk,
-        rows: rows,
-        footer: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              action.consequence,
-              key: const Key('admin-lifecycle-consequence'),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: action.highRisk ? theme.colorScheme.error : null,
-              ),
+      title: action.highRisk ? 'Revoke Salon Pilot?' : 'Review before applying',
+      description: action.highRisk
+          ? 'Confirm this permanent entitlement change for the target below.'
+          : 'Confirm the target and frozen lifecycle change below.',
+      confirmLabel: action.confirmLabel,
+      confirmButtonKey: const Key('admin-lifecycle-confirm'),
+      cancelButtonKey: const Key('admin-lifecycle-edit'),
+      confirmIcon: action.highRisk ? Icons.block : Icons.check,
+      destructive: action.highRisk,
+      onConfirm: onConfirm,
+      onCancel: onCancel,
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AdminDialogDetailRows(rows: rows),
+          const SizedBox(height: AdminSpacing.sm),
+          Text(
+            action.consequence,
+            key: const Key('admin-lifecycle-consequence'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: action.highRisk ? theme.colorScheme.error : null,
             ),
-            const SizedBox(height: AdminSpacing.xs),
-            Text(
-              'The server validates the transition and provider boundary, '
-              'records one audit event under your admin identity, and '
-              'replays a duplicate submission instead of applying it twice.',
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: AdminSpacing.md),
-            Row(
-              children: [
-                FilledButton.icon(
-                  key: const Key('admin-lifecycle-confirm'),
-                  style: action.highRisk
-                      ? FilledButton.styleFrom(
-                          backgroundColor: theme.colorScheme.error,
-                          foregroundColor: theme.colorScheme.onError,
-                        )
-                      : null,
-                  onPressed: onConfirm,
-                  icon: Icon(
-                    action.highRisk ? Icons.block : Icons.check,
-                    size: 18,
-                  ),
-                  label: Text(action.confirmLabel),
-                ),
-                const SizedBox(width: AdminSpacing.sm),
-                TextButton(
-                  key: const Key('admin-lifecycle-edit'),
-                  onPressed: onEdit,
-                  child: const Text('Cancel'),
-                ),
-              ],
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: AdminSpacing.xs),
+          Text(
+            'The server validates the transition and provider boundary, '
+            'records one audit event under your admin identity, and replays '
+            'a duplicate submission instead of applying it twice.',
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
       ),
     );
   }

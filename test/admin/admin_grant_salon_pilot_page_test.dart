@@ -204,6 +204,25 @@ void main() {
     expect(find.text('2026-10-22 23:59:59 UTC'), findsOneWidget);
   });
 
+  testWidgets('Cancel closes the preview without sending the frozen intent', (
+    tester,
+  ) async {
+    final gateway = ScriptedSalonPilotGateway([]);
+    await pumpGrant(tester, gateway: gateway);
+    await fillValidForm(tester);
+    await tester.tap(find.byKey(const Key('admin-grant-preview')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Confirm grant'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('admin-grant-edit')));
+    await tester.pumpAndSettle();
+
+    expect(gateway.calls, isEmpty);
+    expect(find.byKey(const Key('admin-grant-form')), findsOneWidget);
+    expect(find.byKey(const Key('admin-grant-preview-panel')), findsNothing);
+  });
+
   testWidgets('a contract refusal is shown with its code and no retry', (
     tester,
   ) async {

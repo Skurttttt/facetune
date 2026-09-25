@@ -471,6 +471,23 @@ void main() {
       },
     );
 
+    testWidgets('Cancel returns to editing without applying an adjustment', (
+      tester,
+    ) async {
+      final gateway = ScriptedSalonPilotGateway([]);
+      await pumpAdjust(tester, gateway: gateway);
+      await submitForm(tester, amount: '+10');
+
+      expect(find.text('Confirm increase'), findsOneWidget);
+      expect(find.text('Cancel'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('admin-adjust-edit')));
+      await tester.pumpAndSettle();
+
+      expect(gateway.adjustCalls, isEmpty);
+      expect(find.byKey(const Key('admin-adjust-form')), findsOneWidget);
+      expect(find.byKey(const Key('admin-adjust-preview-panel')), findsNothing);
+    });
+
     testWidgets('a reduction refusal is shown with its contract code', (
       tester,
     ) async {

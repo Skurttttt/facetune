@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../features/subscription/domain/entities/billing_provider.dart';
 import '../../../../features/subscription/domain/entities/subscription_plan_code.dart';
+import '../../../shared/admin_dialogs.dart';
 import '../../../shared/admin_form_widgets.dart';
 import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
@@ -49,7 +50,10 @@ class _AdminAdjustAllowancePageState
     return RegExp(r'^-?\d+$').hasMatch(trimmed) ? int.tryParse(trimmed) : null;
   }
 
-  void _preview(AdminEntitlementDetail entitlement) {
+  Future<void> _preview(
+    AdminEntitlementDetail entitlement,
+    String account,
+  ) async {
     final amount = parseAmount(_amount.text);
     final reason = _reason.text.trim();
     final amountError = amount == null
@@ -67,20 +71,38 @@ class _AdminAdjustAllowancePageState
       _reasonError = reasonError;
     });
     if (amountError != null || reasonError != null) return;
-    ref
-        .read(
-          adminAdjustAllowanceControllerProvider(
-            entitlement.entitlementId,
-          ).notifier,
-        )
-        .preview(
-          amount: amount!,
-          reason: reason,
-          currentEffectiveAllowance: entitlement.effectiveAllowance,
-          committedUsage: entitlement.committedUsage,
-          reservedUsage: entitlement.reservedUsage,
-          expectedVersion: entitlement.version,
-        );
+    final provider = adminAdjustAllowanceControllerProvider(
+      entitlement.entitlementId,
+    );
+    final controller = ref.read(provider.notifier);
+    controller.preview(
+      amount: amount!,
+      reason: reason,
+      currentEffectiveAllowance: entitlement.effectiveAllowance,
+      committedUsage: entitlement.committedUsage,
+      reservedUsage: entitlement.reservedUsage,
+      expectedVersion: entitlement.version,
+    );
+    final state = ref.read(provider);
+    if (state is! AdminAdjustPreviewing) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => _Preview(
+        account: account,
+        entitlementId: entitlement.entitlementId,
+        intent: state.intent,
+        preview: state.preview,
+        onCancel: () => Navigator.of(dialogContext).pop(false),
+        onConfirm: () => Navigator.of(dialogContext).pop(true),
+      ),
+    );
+    if (!mounted) return;
+    if (confirmed == true) {
+      await controller.confirm();
+    } else {
+      controller.edit();
+    }
   }
 
   @override
@@ -157,13 +179,11 @@ class _AdminAdjustAllowancePageState
         _CurrentFigures(detail: detail, entitlement: entitlement),
         const SizedBox(height: AdminSpacing.lg),
         switch (state) {
-          AdminAdjustEditing() => _form(entitlement),
-          AdminAdjustPreviewing(:final intent, :final preview) => _Preview(
-            intent: intent,
-            preview: preview,
-            onEdit: controller.edit,
-            onConfirm: controller.confirm,
+          AdminAdjustEditing() => _form(
+            entitlement,
+            detail.email ?? detail.userId,
           ),
+          AdminAdjustPreviewing() => const SizedBox.shrink(),
           AdminAdjustSubmitting() => const AdminListLoadingRow(
             key: Key('admin-adjust-submitting'),
             label: 'Applying adjustment',
@@ -200,7 +220,7 @@ class _AdminAdjustAllowancePageState
     );
   }
 
-  Widget _form(AdminEntitlementDetail entitlement) {
+  Widget _form(AdminEntitlementDetail entitlement, String account) {
     return ConstrainedBox(
       key: const Key('admin-adjust-form'),
       constraints: const BoxConstraints(maxWidth: 640),
@@ -256,7 +276,7 @@ class _AdminAdjustAllowancePageState
           const SizedBox(height: AdminSpacing.lg),
           FilledButton.icon(
             key: const Key('admin-adjust-preview'),
-            onPressed: () => _preview(entitlement),
+            onPressed: () => _preview(entitlement, account),
             icon: const Icon(Icons.preview_outlined, size: 18),
             label: const Text('Preview adjustment'),
           ),
@@ -299,16 +319,20 @@ class _CurrentFigures extends StatelessWidget {
 
 class _Preview extends StatelessWidget {
   const _Preview({
+    required this.account,
+    required this.entitlementId,
     required this.intent,
     required this.preview,
-    required this.onEdit,
+    required this.onCancel,
     required this.onConfirm,
   });
 
+  final String account;
+  final String entitlementId;
   final AdjustAllowanceIntent intent;
   final AllowanceAdjustmentPreview preview;
-  final VoidCallback onEdit;
-  final Future<void> Function() onConfirm;
+  final VoidCallback onCancel;
+  final VoidCallback onConfirm;
 
   @override
   Widget build(BuildContext context) {
@@ -320,69 +344,61 @@ class _Preview extends StatelessWidget {
         ? 'This would not cover an AI Look that is currently reserved. The '
               'server will refuse it while the reservation is held.'
         : null;
-    return ConstrainedBox(
+    return AdminConfirmationDialog(
       key: const Key('admin-adjust-preview-panel'),
-      constraints: const BoxConstraints(maxWidth: 640),
-      child: _Panel(
-        title: 'Review before applying',
-        theme: theme,
-        rows: [
-          (
-            'Current effective allowance',
-            '${preview.currentEffectiveAllowance}',
-          ),
-          ('Adjustment', _signed(intent.amount)),
-          ('New effective allowance', '${preview.newEffectiveAllowance}'),
-          ('Committed', '${preview.committedUsage}'),
-          ('Reserved', '${preview.reservedUsage}'),
-          ('New remaining', '${preview.newRemaining}'),
-          ('New available', '${preview.newAvailable}'),
-          ('Reason', intent.reason),
-          ('Based on version', '${intent.expectedVersion ?? 'not checked'}'),
-        ],
-        footer: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (warning != null) ...[
-              Text(
-                warning,
-                key: const Key('admin-adjust-preview-warning'),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
+      title: 'Review allowance adjustment',
+      description:
+          'Confirm the target entitlement and the frozen before/after values.',
+      confirmLabel: intent.isIncrease
+          ? 'Confirm increase'
+          : 'Confirm reduction',
+      confirmButtonKey: const Key('admin-adjust-confirm'),
+      cancelButtonKey: const Key('admin-adjust-edit'),
+      onConfirm: onConfirm,
+      onCancel: onCancel,
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AdminDialogDetailRows(
+            rows: [
+              ('Account', account),
+              ('Entitlement ID', entitlementId),
+              (
+                'Current effective allowance',
+                '${preview.currentEffectiveAllowance}',
               ),
-              const SizedBox(height: AdminSpacing.xs),
+              ('Adjustment', _signed(intent.amount)),
+              ('New effective allowance', '${preview.newEffectiveAllowance}'),
+              ('Committed', '${preview.committedUsage}'),
+              ('Reserved', '${preview.reservedUsage}'),
+              ('New remaining', '${preview.newRemaining}'),
+              ('New available', '${preview.newAvailable}'),
+              ('Reason', intent.reason),
+              (
+                'Based on version',
+                '${intent.expectedVersion ?? 'not checked'}',
+              ),
             ],
+          ),
+          if (warning != null) ...[
+            const SizedBox(height: AdminSpacing.sm),
             Text(
-              'The preview is informational. The server recomputes every '
-              'figure under the account lock, refuses an unsafe reduction, '
-              'and records one audit event under your admin identity. A '
-              'duplicate submission applies once.',
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: AdminSpacing.md),
-            Row(
-              children: [
-                FilledButton.icon(
-                  key: const Key('admin-adjust-confirm'),
-                  onPressed: onConfirm,
-                  icon: const Icon(Icons.check, size: 18),
-                  label: Text(
-                    intent.isIncrease
-                        ? 'Confirm increase'
-                        : 'Confirm reduction',
-                  ),
-                ),
-                const SizedBox(width: AdminSpacing.sm),
-                TextButton(
-                  key: const Key('admin-adjust-edit'),
-                  onPressed: onEdit,
-                  child: const Text('Edit'),
-                ),
-              ],
+              warning,
+              key: const Key('admin-adjust-preview-warning'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
             ),
           ],
-        ),
+          const SizedBox(height: AdminSpacing.sm),
+          Text(
+            'The preview is informational. The server recomputes every '
+            'figure under the account lock, refuses an unsafe reduction, '
+            'and records one audit event under your admin identity. A '
+            'duplicate submission applies once.',
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
       ),
     );
   }
