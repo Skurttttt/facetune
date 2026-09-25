@@ -7,6 +7,7 @@ import '../../../../features/subscription/domain/entities/purchased_credit_summa
     show AllowanceSource;
 import '../../../../features/subscription/domain/entities/subscription_plan_code.dart';
 import '../../../../features/subscription/domain/entities/usage_status.dart';
+import '../../../shared/admin_form_widgets.dart';
 import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
 import '../../../shared/admin_keyset_list_controller.dart';
@@ -119,45 +120,42 @@ class _AdminUsagePageState extends ConsumerState<AdminUsagePage> {
         const SizedBox(height: AdminSpacing.md),
         KeyedSubtree(
           key: ValueKey(_filterGeneration),
-          child: Wrap(
-            spacing: AdminSpacing.sm,
-            runSpacing: AdminSpacing.sm,
-            crossAxisAlignment: WrapCrossAlignment.end,
-            children: [
-              AdminFilterSlot(
-                width: 340,
+          child: AdminFilterPanel(
+            key: const Key('admin-usage-filter-panel'),
+            fields: [
+              AdminLabeledField(
+                label: 'User ID',
                 child: TextField(
                   key: const Key('admin-usage-filter-user'),
                   controller: _userId,
                   textInputAction: TextInputAction.search,
                   onSubmitted: (_) => _apply(),
                   decoration: InputDecoration(
-                    labelText: 'User ID',
                     helperText: 'Exact UUID.',
                     errorText: _userIdError,
                   ),
                 ),
               ),
-              AdminFilterSlot(
-                width: 340,
+              AdminLabeledField(
+                label: 'Entitlement ID',
                 child: TextField(
                   key: const Key('admin-usage-filter-entitlement'),
                   controller: _entitlementId,
                   textInputAction: TextInputAction.search,
                   onSubmitted: (_) => _apply(),
                   decoration: InputDecoration(
-                    labelText: 'Entitlement ID',
                     helperText: 'Exact UUID.',
                     errorText: _entitlementIdError,
                   ),
                 ),
               ),
-              AdminFilterSlot(
+              AdminLabeledField(
+                label: 'Status',
                 child: DropdownButtonFormField<UsageStatus?>(
                   isExpanded: true,
                   key: const Key('admin-usage-filter-status'),
                   initialValue: _status,
-                  decoration: const InputDecoration(labelText: 'Status'),
+                  decoration: const InputDecoration(),
                   items: [
                     const DropdownMenuItem(child: Text('Any status')),
                     for (final status in UsageStatus.values)
@@ -169,12 +167,13 @@ class _AdminUsagePageState extends ConsumerState<AdminUsagePage> {
                   onChanged: (value) => setState(() => _status = value),
                 ),
               ),
-              AdminFilterSlot(
+              AdminLabeledField(
+                label: 'Plan',
                 child: DropdownButtonFormField<SubscriptionPlanCode?>(
                   isExpanded: true,
                   key: const Key('admin-usage-filter-plan'),
                   initialValue: _plan,
-                  decoration: const InputDecoration(labelText: 'Plan'),
+                  decoration: const InputDecoration(),
                   items: [
                     const DropdownMenuItem(child: Text('Any plan')),
                     for (final plan in SubscriptionPlanCode.values)
@@ -186,12 +185,13 @@ class _AdminUsagePageState extends ConsumerState<AdminUsagePage> {
                   onChanged: (value) => setState(() => _plan = value),
                 ),
               ),
-              AdminFilterSlot(
+              AdminLabeledField(
+                label: 'Source',
                 child: DropdownButtonFormField<AllowanceSource?>(
                   isExpanded: true,
                   key: const Key('admin-usage-filter-source'),
                   initialValue: _source,
-                  decoration: const InputDecoration(labelText: 'Source'),
+                  decoration: const InputDecoration(),
                   items: [
                     const DropdownMenuItem(child: Text('Any source')),
                     for (final source in AllowanceSource.values)
@@ -203,15 +203,13 @@ class _AdminUsagePageState extends ConsumerState<AdminUsagePage> {
                   onChanged: (value) => setState(() => _source = value),
                 ),
               ),
-              AdminFilterSlot(
-                width: 260,
+              AdminLabeledField(
+                label: 'Created within',
                 child: DropdownButtonFormField<AdminUsageDateRange?>(
                   isExpanded: true,
                   key: const Key('admin-usage-filter-range'),
                   initialValue: _range,
-                  decoration: const InputDecoration(
-                    labelText: 'Created within',
-                  ),
+                  decoration: const InputDecoration(),
                   items: [
                     const DropdownMenuItem(child: Text('Any time')),
                     for (final range in AdminUsageDateRange.values)
@@ -220,6 +218,8 @@ class _AdminUsagePageState extends ConsumerState<AdminUsagePage> {
                   onChanged: (value) => setState(() => _range = value),
                 ),
               ),
+            ],
+            actions: [
               FilledButton.icon(
                 key: const Key('admin-usage-apply'),
                 onPressed: busy ? null : _apply,

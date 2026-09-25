@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../features/subscription/domain/entities/entitlement_status.dart';
 import '../../../app/admin_routes.dart';
+import '../../../shared/admin_form_widgets.dart';
 import '../../../shared/admin_labels.dart';
 import '../../../shared/admin_list_widgets.dart';
 import '../../../shared/admin_page_header.dart';
@@ -47,33 +48,32 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
           subtitle: 'Find an account by exact email address or User ID.',
         ),
         const SizedBox(height: AdminSpacing.md),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: TextField(
-                  key: const Key('admin-user-search'),
-                  controller: _search,
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: (_) => _submit(),
-                  decoration: const InputDecoration(
-                    labelText: 'Email or User ID',
-                    helperText: 'Exact matches only. Leave blank to browse.',
-                    prefixIcon: Icon(Icons.search),
-                  ),
+        AdminFilterPanel(
+          key: const Key('admin-users-search-panel'),
+          maxWidth: 720,
+          fields: [
+            AdminLabeledField(
+              label: 'Email or User ID',
+              child: TextField(
+                key: const Key('admin-user-search'),
+                controller: _search,
+                textInputAction: TextInputAction.search,
+                onSubmitted: (_) => _submit(),
+                decoration: const InputDecoration(
+                  helperText: 'Exact matches only. Leave blank to browse.',
+                  prefixIcon: Icon(Icons.search),
                 ),
               ),
-              const SizedBox(width: AdminSpacing.sm),
-              FilledButton.icon(
-                key: const Key('admin-user-search-submit'),
-                onPressed: state is AdminUsersLoading ? null : _submit,
-                icon: const Icon(Icons.search, size: 18),
-                label: const Text('Search'),
-              ),
-            ],
-          ),
+            ),
+          ],
+          actions: [
+            FilledButton.icon(
+              key: const Key('admin-user-search-submit'),
+              onPressed: state is AdminUsersLoading ? null : _submit,
+              icon: const Icon(Icons.search, size: 18),
+              label: const Text('Search'),
+            ),
+          ],
         ),
         const SizedBox(height: AdminSpacing.lg),
         switch (state) {

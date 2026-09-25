@@ -257,6 +257,8 @@ abstract final class AdminTheme {
           disabledBackgroundColor: AdminColors.surfaceSecondary,
           disabledForegroundColor: AdminColors.textDisabled,
           textStyle: AdminTypography.button,
+          minimumSize: const Size(AdminTargets.minimum, 44),
+          padding: const EdgeInsets.symmetric(horizontal: AdminSpacing.md),
           shape: controlShape,
         ),
       ),
@@ -266,6 +268,8 @@ abstract final class AdminTheme {
           disabledForegroundColor: AdminColors.textDisabled,
           side: const BorderSide(color: AdminColors.border),
           textStyle: AdminTypography.button,
+          minimumSize: const Size(AdminTargets.minimum, 44),
+          padding: const EdgeInsets.symmetric(horizontal: AdminSpacing.md),
           shape: controlShape,
         ),
       ),
@@ -274,12 +278,28 @@ abstract final class AdminTheme {
           foregroundColor: AdminColors.accent,
           disabledForegroundColor: AdminColors.textDisabled,
           textStyle: AdminTypography.button,
+          minimumSize: const Size(AdminTargets.minimum, 44),
+          padding: const EdgeInsets.symmetric(horizontal: AdminSpacing.md),
           shape: controlShape,
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AdminColors.surfaceSecondary,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AdminSpacing.sm,
+          vertical: 9,
+        ),
+        constraints: const BoxConstraints(minHeight: 44),
+        prefixIconConstraints: const BoxConstraints(
+          minWidth: AdminTargets.minimum,
+          minHeight: AdminTargets.minimum,
+        ),
+        suffixIconConstraints: const BoxConstraints(
+          minWidth: AdminTargets.minimum,
+          minHeight: AdminTargets.minimum,
+        ),
         labelStyle: AdminTypography.formLabel,
         helperStyle: AdminTypography.helperText,
         hintStyle: AdminTypography.helperText,
@@ -298,7 +318,7 @@ abstract final class AdminTheme {
           borderRadius: BorderRadius.circular(AdminRadii.control),
           borderSide: const BorderSide(
             color: AdminColors.accent,
-            width: AdminBorders.strong,
+            width: AdminFocus.ringWidth,
           ),
         ),
         errorBorder: OutlineInputBorder(
@@ -309,7 +329,7 @@ abstract final class AdminTheme {
           borderRadius: BorderRadius.circular(AdminRadii.control),
           borderSide: const BorderSide(
             color: AdminColors.error,
-            width: AdminBorders.strong,
+            width: AdminFocus.ringWidth,
           ),
         ),
         disabledBorder: OutlineInputBorder(

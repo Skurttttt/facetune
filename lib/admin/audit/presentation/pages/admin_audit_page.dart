@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
+import '../../../shared/admin_form_widgets.dart';
 import '../../../shared/admin_keyset_list_controller.dart';
 import '../../../shared/admin_labels.dart';
 import '../../../shared/admin_list_widgets.dart';
@@ -118,54 +119,49 @@ class _AdminAuditPageState extends ConsumerState<AdminAuditPage> {
         const SizedBox(height: AdminSpacing.md),
         KeyedSubtree(
           key: ValueKey(_filterGeneration),
-          child: Wrap(
-            spacing: AdminSpacing.sm,
-            runSpacing: AdminSpacing.sm,
-            crossAxisAlignment: WrapCrossAlignment.end,
-            children: [
-              AdminFilterSlot(
-                width: 330,
+          child: AdminFilterPanel(
+            key: const Key('admin-audit-filter-panel'),
+            fields: [
+              AdminLabeledField(
+                label: 'Admin user ID',
                 child: TextField(
                   key: const Key('admin-audit-filter-admin'),
                   controller: _adminId,
                   decoration: InputDecoration(
-                    labelText: 'Admin user ID',
                     helperText: 'Exact UUID',
                     errorText: _adminError,
                   ),
                 ),
               ),
-              AdminFilterSlot(
-                width: 330,
+              AdminLabeledField(
+                label: 'Target user ID',
                 child: TextField(
                   key: const Key('admin-audit-filter-target-user'),
                   controller: _targetUserId,
                   decoration: InputDecoration(
-                    labelText: 'Target user ID',
                     helperText: 'Exact UUID',
                     errorText: _userError,
                   ),
                 ),
               ),
-              AdminFilterSlot(
-                width: 330,
+              AdminLabeledField(
+                label: 'Target entitlement ID',
                 child: TextField(
                   key: const Key('admin-audit-filter-entitlement'),
                   controller: _entitlementId,
                   decoration: InputDecoration(
-                    labelText: 'Target entitlement ID',
                     helperText: 'Exact UUID',
                     errorText: _entitlementError,
                   ),
                 ),
               ),
-              AdminFilterSlot(
-                width: 250,
+              AdminLabeledField(
+                label: 'Action',
                 child: DropdownButtonFormField<AdminAuditAction?>(
                   key: const Key('admin-audit-filter-action'),
                   initialValue: _action,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Action'),
+                  decoration: const InputDecoration(),
                   items: [
                     const DropdownMenuItem(child: Text('Any action')),
                     for (final action in AdminAuditAction.values)
@@ -177,12 +173,13 @@ class _AdminAuditPageState extends ConsumerState<AdminAuditPage> {
                   onChanged: (value) => setState(() => _action = value),
                 ),
               ),
-              AdminFilterSlot(
+              AdminLabeledField(
+                label: 'Event source',
                 child: DropdownButtonFormField<AdminAuditSource?>(
                   key: const Key('admin-audit-filter-source'),
                   initialValue: _source,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Event source'),
+                  decoration: const InputDecoration(),
                   items: [
                     const DropdownMenuItem(child: Text('Any source')),
                     for (final source in AdminAuditSource.values)
@@ -194,12 +191,13 @@ class _AdminAuditPageState extends ConsumerState<AdminAuditPage> {
                   onChanged: (value) => setState(() => _source = value),
                 ),
               ),
-              AdminFilterSlot(
+              AdminLabeledField(
+                label: 'Date',
                 child: DropdownButtonFormField<AdminAuditDateRange?>(
                   key: const Key('admin-audit-filter-date'),
                   initialValue: _dateRange,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Date'),
+                  decoration: const InputDecoration(),
                   items: [
                     const DropdownMenuItem(child: Text('Any date')),
                     for (final range in AdminAuditDateRange.values)
@@ -208,6 +206,8 @@ class _AdminAuditPageState extends ConsumerState<AdminAuditPage> {
                   onChanged: (value) => setState(() => _dateRange = value),
                 ),
               ),
+            ],
+            actions: [
               FilledButton.icon(
                 key: const Key('admin-audit-apply'),
                 onPressed: busy ? null : _apply,

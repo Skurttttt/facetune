@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../features/subscription/domain/entities/billing_provider.dart';
 import '../../../../features/subscription/domain/entities/entitlement_status.dart';
 import '../../../../features/subscription/domain/entities/subscription_plan_code.dart';
+import '../../../shared/admin_form_widgets.dart';
 import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
 import '../../../shared/admin_keyset_list_controller.dart';
@@ -106,31 +107,29 @@ class _AdminEntitlementsPageState extends ConsumerState<AdminEntitlementsPage> {
         const SizedBox(height: AdminSpacing.md),
         KeyedSubtree(
           key: ValueKey(_filterGeneration),
-          child: Wrap(
-            spacing: AdminSpacing.sm,
-            runSpacing: AdminSpacing.sm,
-            crossAxisAlignment: WrapCrossAlignment.end,
-            children: [
-              AdminFilterSlot(
-                width: 340,
+          child: AdminFilterPanel(
+            key: const Key('admin-entitlements-filter-panel'),
+            fields: [
+              AdminLabeledField(
+                label: 'User ID',
                 child: TextField(
                   key: const Key('admin-entitlements-filter-user'),
                   controller: _userId,
                   textInputAction: TextInputAction.search,
                   onSubmitted: (_) => _apply(),
                   decoration: InputDecoration(
-                    labelText: 'User ID',
                     helperText: 'Exact UUID. Leave blank for all accounts.',
                     errorText: _userIdError,
                   ),
                 ),
               ),
-              AdminFilterSlot(
+              AdminLabeledField(
+                label: 'Plan',
                 child: DropdownButtonFormField<SubscriptionPlanCode?>(
                   isExpanded: true,
                   key: const Key('admin-entitlements-filter-plan'),
                   initialValue: _plan,
-                  decoration: const InputDecoration(labelText: 'Plan'),
+                  decoration: const InputDecoration(),
                   items: [
                     const DropdownMenuItem(child: Text('Any plan')),
                     for (final plan in SubscriptionPlanCode.values)
@@ -142,12 +141,13 @@ class _AdminEntitlementsPageState extends ConsumerState<AdminEntitlementsPage> {
                   onChanged: (value) => setState(() => _plan = value),
                 ),
               ),
-              AdminFilterSlot(
+              AdminLabeledField(
+                label: 'Status',
                 child: DropdownButtonFormField<EntitlementStatus?>(
                   isExpanded: true,
                   key: const Key('admin-entitlements-filter-status'),
                   initialValue: _status,
-                  decoration: const InputDecoration(labelText: 'Status'),
+                  decoration: const InputDecoration(),
                   items: [
                     const DropdownMenuItem(child: Text('Any status')),
                     for (final status in EntitlementStatus.values)
@@ -159,12 +159,13 @@ class _AdminEntitlementsPageState extends ConsumerState<AdminEntitlementsPage> {
                   onChanged: (value) => setState(() => _status = value),
                 ),
               ),
-              AdminFilterSlot(
+              AdminLabeledField(
+                label: 'Provider',
                 child: DropdownButtonFormField<BillingProvider?>(
                   isExpanded: true,
                   key: const Key('admin-entitlements-filter-provider'),
                   initialValue: _provider,
-                  decoration: const InputDecoration(labelText: 'Provider'),
+                  decoration: const InputDecoration(),
                   items: [
                     const DropdownMenuItem(child: Text('Any provider')),
                     for (final provider in BillingProvider.values)
@@ -176,13 +177,13 @@ class _AdminEntitlementsPageState extends ConsumerState<AdminEntitlementsPage> {
                   onChanged: (value) => setState(() => _provider = value),
                 ),
               ),
-              AdminFilterSlot(
-                width: 260,
+              AdminLabeledField(
+                label: 'Expiration',
                 child: DropdownButtonFormField<AdminExpirationWindow?>(
                   isExpanded: true,
                   key: const Key('admin-entitlements-filter-expiration'),
                   initialValue: _expiration,
-                  decoration: const InputDecoration(labelText: 'Expiration'),
+                  decoration: const InputDecoration(),
                   items: [
                     const DropdownMenuItem(child: Text('Any expiration')),
                     for (final window in AdminExpirationWindow.values)
@@ -194,6 +195,8 @@ class _AdminEntitlementsPageState extends ConsumerState<AdminEntitlementsPage> {
                   onChanged: (value) => setState(() => _expiration = value),
                 ),
               ),
+            ],
+            actions: [
               FilledButton.icon(
                 key: const Key('admin-entitlements-apply'),
                 onPressed: busy ? null : _apply,

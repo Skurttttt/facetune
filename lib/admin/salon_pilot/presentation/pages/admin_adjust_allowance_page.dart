@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../features/subscription/domain/entities/billing_provider.dart';
 import '../../../../features/subscription/domain/entities/subscription_plan_code.dart';
+import '../../../shared/admin_form_widgets.dart';
 import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
 import '../../../shared/admin_labels.dart';
@@ -223,29 +224,33 @@ class _AdminAdjustAllowancePageState
             ],
           ),
           const SizedBox(height: AdminSpacing.sm),
-          TextField(
-            key: const Key('admin-adjust-amount'),
-            controller: _amount,
-            keyboardType: const TextInputType.numberWithOptions(signed: true),
-            decoration: InputDecoration(
-              labelText: 'Adjustment (AI Looks)',
-              helperText:
-                  'Positive adds, negative reduces. A reduction cannot go '
-                  'below committed usage or currently reserved AI Looks.',
-              errorText: _amountError,
+          AdminLabeledField(
+            label: 'Adjustment (AI Looks)',
+            child: TextField(
+              key: const Key('admin-adjust-amount'),
+              controller: _amount,
+              keyboardType: const TextInputType.numberWithOptions(signed: true),
+              decoration: InputDecoration(
+                helperText:
+                    'Positive adds, negative reduces. A reduction cannot go '
+                    'below committed usage or currently reserved AI Looks.',
+                errorText: _amountError,
+              ),
             ),
           ),
           const SizedBox(height: AdminSpacing.md),
-          TextField(
-            key: const Key('admin-adjust-reason'),
-            controller: _reason,
-            maxLines: 3,
-            maxLength: adminReasonMaxLength,
-            decoration: InputDecoration(
-              labelText: 'Reason',
-              helperText:
-                  'Required, e.g. "Panel testing extension" or "Administrative correction".',
-              errorText: _reasonError,
+          AdminLabeledField(
+            label: 'Reason',
+            child: TextField(
+              key: const Key('admin-adjust-reason'),
+              controller: _reason,
+              maxLines: 3,
+              maxLength: adminReasonMaxLength,
+              decoration: InputDecoration(
+                helperText:
+                    'Required, e.g. "Panel testing extension" or "Administrative correction".',
+                errorText: _reasonError,
+              ),
             ),
           ),
           const SizedBox(height: AdminSpacing.lg),

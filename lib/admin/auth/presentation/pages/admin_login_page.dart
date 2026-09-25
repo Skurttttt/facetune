@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/admin_form_widgets.dart';
 import '../admin_authorization_controller.dart';
 import '../admin_authorization_state.dart';
 
@@ -82,32 +83,38 @@ class _AdminLoginPageState extends ConsumerState<AdminLoginPage> {
                       ),
                     ],
                     const SizedBox(height: 24),
-                    TextFormField(
-                      key: const Key('admin-email'),
-                      controller: _email,
-                      enabled: !signIn.isSubmitting,
-                      autofillHints: const [AutofillHints.username],
-                      keyboardType: TextInputType.emailAddress,
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(labelText: 'Email'),
-                      validator: (value) =>
-                          (value == null || !value.contains('@'))
-                          ? 'Enter your email address.'
-                          : null,
+                    AdminLabeledField(
+                      label: 'Email',
+                      child: TextFormField(
+                        key: const Key('admin-email'),
+                        controller: _email,
+                        enabled: !signIn.isSubmitting,
+                        autofillHints: const [AutofillHints.username],
+                        keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(),
+                        validator: (value) =>
+                            (value == null || !value.contains('@'))
+                            ? 'Enter your email address.'
+                            : null,
+                      ),
                     ),
                     const SizedBox(height: 12),
-                    TextFormField(
-                      key: const Key('admin-password'),
-                      controller: _password,
-                      enabled: !signIn.isSubmitting,
-                      autofillHints: const [AutofillHints.password],
-                      obscureText: true,
-                      textInputAction: TextInputAction.done,
-                      onFieldSubmitted: (_) => _submit(),
-                      decoration: const InputDecoration(labelText: 'Password'),
-                      validator: (value) => (value == null || value.isEmpty)
-                          ? 'Enter your password.'
-                          : null,
+                    AdminLabeledField(
+                      label: 'Password',
+                      child: TextFormField(
+                        key: const Key('admin-password'),
+                        controller: _password,
+                        enabled: !signIn.isSubmitting,
+                        autofillHints: const [AutofillHints.password],
+                        obscureText: true,
+                        textInputAction: TextInputAction.done,
+                        onFieldSubmitted: (_) => _submit(),
+                        decoration: const InputDecoration(),
+                        validator: (value) => (value == null || value.isEmpty)
+                            ? 'Enter your password.'
+                            : null,
+                      ),
                     ),
                     if (signIn.errorMessage != null) ...[
                       const SizedBox(height: 16),

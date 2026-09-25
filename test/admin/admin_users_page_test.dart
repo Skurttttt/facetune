@@ -1,6 +1,7 @@
 import 'package:facetune/admin/auth/presentation/admin_authorization_controller.dart';
 import 'package:facetune/admin/auth/presentation/admin_authorization_state.dart';
 import 'package:facetune/admin/shared/admin_cards.dart';
+import 'package:facetune/admin/shared/admin_form_widgets.dart';
 import 'package:facetune/admin/shared/admin_list_widgets.dart';
 import 'package:facetune/admin/users/data/admin_users_gateway_provider.dart';
 import 'package:facetune/admin/users/domain/admin_user_models.dart';
@@ -51,6 +52,12 @@ void main() {
     await pumpPage(tester, child: const AdminUsersPage(), gateway: gateway);
 
     expect(find.byKey(const Key('admin-users-results')), findsOneWidget);
+    expect(find.byKey(const Key('admin-users-search-panel')), findsOneWidget);
+    expect(find.byType(AdminLabeledField), findsOneWidget);
+    expect(
+      find.text('Exact matches only. Leave blank to browse.'),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('admin-users-table')), findsOneWidget);
     expect(find.byType(AdminTable), findsOneWidget);
     expect(find.byType(AdminIdentityCell), findsOneWidget);

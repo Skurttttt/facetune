@@ -3,6 +3,7 @@ import 'package:facetune/admin/auth/presentation/admin_authorization_state.dart'
 import 'package:facetune/admin/entitlements/data/admin_entitlements_gateway_provider.dart';
 import 'package:facetune/admin/entitlements/domain/admin_entitlement_models.dart';
 import 'package:facetune/admin/entitlements/presentation/pages/admin_entitlements_page.dart';
+import 'package:facetune/admin/shared/admin_form_widgets.dart';
 import 'package:facetune/admin/shared/admin_list_widgets.dart';
 import 'package:facetune/admin/shared/admin_read_failure.dart';
 import 'package:facetune/admin/usage/data/admin_usage_gateway_provider.dart';
@@ -106,6 +107,11 @@ void main() {
         findsOneWidget,
       );
       expect(find.byKey(const Key('admin-entitlements-table')), findsOneWidget);
+      expect(
+        find.byKey(const Key('admin-entitlements-filter-panel')),
+        findsOneWidget,
+      );
+      expect(find.byType(AdminLabeledField), findsNWidgets(5));
       expect(find.byType(AdminTable), findsOneWidget);
       expect(find.byType(AdminIdentityCell), findsNWidgets(2));
       for (final column in [
@@ -155,6 +161,7 @@ void main() {
         (_, _) async => entitlementPage(nextCursor: 'c2'),
         (_, _) async => entitlementPage(),
         (_, _) async => entitlementPage(items: []),
+        (_, _) async => entitlementPage(),
       ]);
       await pumpPage(
         tester,
@@ -192,6 +199,22 @@ void main() {
       expect(
         find.text('No entitlements matched these filters.'),
         findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('admin-entitlements-clear')));
+      await tester.pump();
+      await tester.pump();
+      final (cleared, clearCursor) = gateway.calls.last;
+      expect(clearCursor, isNull);
+      expect(cleared, AdminEntitlementFilters.none);
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(const Key('admin-entitlements-filter-user')),
+            )
+            .controller
+            ?.text,
+        isEmpty,
       );
     });
 
@@ -242,6 +265,11 @@ void main() {
 
         expect(find.byKey(const Key('admin-usage-results')), findsOneWidget);
         expect(find.byKey(const Key('admin-usage-table')), findsOneWidget);
+        expect(
+          find.byKey(const Key('admin-usage-filter-panel')),
+          findsOneWidget,
+        );
+        expect(find.byType(AdminLabeledField), findsNWidgets(6));
         expect(find.byType(AdminTable), findsOneWidget);
         expect(find.byType(AdminIdentityCell), findsNWidgets(3));
         for (final column in [
@@ -328,6 +356,7 @@ void main() {
         (_, _) async => AdminUsageListItem.decodePage(usagePagePayload()),
         (_, _) async =>
             AdminUsageListItem.decodePage(usagePagePayload(items: [])),
+        (_, _) async => AdminUsageListItem.decodePage(usagePagePayload()),
       ]);
       await pumpPage(tester, child: const AdminUsagePage(), usage: gateway);
 
@@ -358,6 +387,22 @@ void main() {
       expect(
         find.text('No usage records matched these filters.'),
         findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('admin-usage-clear')));
+      await tester.pump();
+      await tester.pump();
+      final (cleared, clearCursor) = gateway.calls.last;
+      expect(clearCursor, isNull);
+      expect(cleared, AdminUsageFilters.none);
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(const Key('admin-usage-filter-entitlement')),
+            )
+            .controller
+            ?.text,
+        isEmpty,
       );
     });
 

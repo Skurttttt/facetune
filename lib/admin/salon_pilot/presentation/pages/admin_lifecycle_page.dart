@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../features/subscription/domain/entities/billing_provider.dart';
 import '../../../../features/subscription/domain/entities/subscription_plan_code.dart';
+import '../../../shared/admin_form_widgets.dart';
 import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
 import '../../../shared/admin_labels.dart';
@@ -267,43 +268,47 @@ class _AdminLifecyclePageState extends ConsumerState<AdminLifecyclePage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (_isExtension) ...[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: TextField(
-                    key: const Key('admin-lifecycle-date'),
-                    controller: _date,
-                    keyboardType: TextInputType.datetime,
-                    decoration: InputDecoration(
-                      labelText: 'New expiration date (UTC)',
-                      helperText:
-                          'YYYY-MM-DD, later than the current expiration. The '
-                          'term ends at the end of that day.',
-                      errorText: _dateError,
+            AdminLabeledField(
+              label: 'New expiration date (UTC)',
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      key: const Key('admin-lifecycle-date'),
+                      controller: _date,
+                      keyboardType: TextInputType.datetime,
+                      decoration: InputDecoration(
+                        helperText:
+                            'YYYY-MM-DD, later than the current expiration. The '
+                            'term ends at the end of that day.',
+                        errorText: _dateError,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: AdminSpacing.sm),
-                OutlinedButton.icon(
-                  key: const Key('admin-lifecycle-pick-date'),
-                  onPressed: () => _pickDate(entitlement),
-                  icon: const Icon(Icons.calendar_today_outlined, size: 18),
-                  label: const Text('Pick date'),
-                ),
-              ],
+                  const SizedBox(width: AdminSpacing.sm),
+                  OutlinedButton.icon(
+                    key: const Key('admin-lifecycle-pick-date'),
+                    onPressed: () => _pickDate(entitlement),
+                    icon: const Icon(Icons.calendar_today_outlined, size: 18),
+                    label: const Text('Pick date'),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: AdminSpacing.md),
           ],
-          TextField(
-            key: const Key('admin-lifecycle-reason'),
-            controller: _reason,
-            maxLines: 3,
-            maxLength: adminReasonMaxLength,
-            decoration: InputDecoration(
-              labelText: 'Reason',
-              helperText: 'Required. Operational and privacy-conscious.',
-              errorText: _reasonError,
+          AdminLabeledField(
+            label: 'Reason',
+            child: TextField(
+              key: const Key('admin-lifecycle-reason'),
+              controller: _reason,
+              maxLines: 3,
+              maxLength: adminReasonMaxLength,
+              decoration: InputDecoration(
+                helperText: 'Required. Operational and privacy-conscious.',
+                errorText: _reasonError,
+              ),
             ),
           ),
           if (widget.action.highRisk) ...[

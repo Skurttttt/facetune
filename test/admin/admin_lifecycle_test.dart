@@ -491,6 +491,15 @@ void main() {
         find.textContaining('Terminates this entitlement permanently'),
         findsWidgets,
       );
+      final confirm = tester.widget<FilledButton>(
+        find.byKey(const Key('admin-lifecycle-confirm')),
+      );
+      expect(
+        confirm.style?.backgroundColor?.resolve({}),
+        Theme.of(
+          tester.element(find.byKey(const Key('admin-lifecycle-confirm'))),
+        ).colorScheme.error,
+      );
     });
 
     testWidgets('revoke displays the terminal server refusal', (tester) async {

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../shared/admin_form_widgets.dart';
 import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
 import '../../../shared/admin_labels.dart';
@@ -182,54 +183,60 @@ class _AdminGrantSalonPilotPageState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: TextField(
-                  key: const Key('admin-grant-expiration'),
-                  controller: _expiration,
-                  keyboardType: TextInputType.datetime,
-                  decoration: InputDecoration(
-                    labelText: 'Expiration date (UTC)',
-                    helperText:
-                        'YYYY-MM-DD. The grant ends at the end of that day. Required.',
-                    errorText: _expirationError,
+          AdminLabeledField(
+            label: 'Expiration date (UTC)',
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: const Key('admin-grant-expiration'),
+                    controller: _expiration,
+                    keyboardType: TextInputType.datetime,
+                    decoration: InputDecoration(
+                      helperText:
+                          'YYYY-MM-DD. The grant ends at the end of that day. Required.',
+                      errorText: _expirationError,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: AdminSpacing.sm),
-              OutlinedButton.icon(
-                key: const Key('admin-grant-pick-date'),
-                onPressed: _pickDate,
-                icon: const Icon(Icons.calendar_today_outlined, size: 18),
-                label: const Text('Pick date'),
-              ),
-            ],
-          ),
-          const SizedBox(height: AdminSpacing.md),
-          TextField(
-            key: const Key('admin-grant-allowance'),
-            controller: _allowance,
-            keyboardType: TextInputType.number,
-            decoration: InputDecoration(
-              labelText: 'Initial AI Look allowance',
-              helperText:
-                  'Default $salonPilotDefaultInitialAllowance. The server validates the submitted value.',
-              errorText: _allowanceError,
+                const SizedBox(width: AdminSpacing.sm),
+                OutlinedButton.icon(
+                  key: const Key('admin-grant-pick-date'),
+                  onPressed: _pickDate,
+                  icon: const Icon(Icons.calendar_today_outlined, size: 18),
+                  label: const Text('Pick date'),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: AdminSpacing.md),
-          TextField(
-            key: const Key('admin-grant-reason'),
-            controller: _reason,
-            maxLines: 3,
-            maxLength: adminReasonMaxLength,
-            decoration: InputDecoration(
-              labelText: 'Reason',
-              helperText:
-                  'Required. Operational and privacy-conscious, e.g. "Panel research cohort A".',
-              errorText: _reasonError,
+          AdminLabeledField(
+            label: 'Initial AI Look allowance',
+            child: TextField(
+              key: const Key('admin-grant-allowance'),
+              controller: _allowance,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                helperText:
+                    'Default $salonPilotDefaultInitialAllowance. The server validates the submitted value.',
+                errorText: _allowanceError,
+              ),
+            ),
+          ),
+          const SizedBox(height: AdminSpacing.md),
+          AdminLabeledField(
+            label: 'Reason',
+            child: TextField(
+              key: const Key('admin-grant-reason'),
+              controller: _reason,
+              maxLines: 3,
+              maxLength: adminReasonMaxLength,
+              decoration: InputDecoration(
+                helperText:
+                    'Required. Operational and privacy-conscious, e.g. "Panel research cohort A".',
+                errorText: _reasonError,
+              ),
             ),
           ),
           const SizedBox(height: AdminSpacing.lg),

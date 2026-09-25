@@ -6,6 +6,7 @@ import 'package:facetune/admin/audit/presentation/pages/admin_audit_page.dart';
 import 'package:facetune/admin/audit/presentation/pages/admin_entitlement_history_page.dart';
 import 'package:facetune/admin/auth/presentation/admin_authorization_controller.dart';
 import 'package:facetune/admin/auth/presentation/admin_authorization_state.dart';
+import 'package:facetune/admin/shared/admin_form_widgets.dart';
 import 'package:facetune/admin/shared/admin_keyset_list_controller.dart';
 import 'package:facetune/admin/shared/admin_list_widgets.dart';
 import 'package:flutter/material.dart';
@@ -213,6 +214,7 @@ void main() {
             ),
           ),
           AdminAuditListItem.decodePage(auditPage(items: [])),
+          AdminAuditListItem.decodePage(auditPage()),
         ],
       );
       await pumpAuditWidget(
@@ -221,6 +223,8 @@ void main() {
         gateway: gateway,
       );
       expect(find.byKey(const Key('admin-audit-results')), findsOneWidget);
+      expect(find.byKey(const Key('admin-audit-filter-panel')), findsOneWidget);
+      expect(find.byType(AdminLabeledField), findsNWidgets(6));
       expect(find.byKey(const Key('admin-audit-table')), findsOneWidget);
       expect(find.byType(AdminTable), findsOneWidget);
       expect(find.byType(AdminIdentityCell), findsNWidgets(2));
@@ -251,6 +255,22 @@ void main() {
       );
       expect(find.byKey(const Key('admin-audit-empty')), findsOneWidget);
       expect(find.byType(AdminTable), findsNothing);
+
+      await tester.tap(find.byKey(const Key('admin-audit-clear')));
+      await tester.pump();
+      await tester.pump();
+      final (cleared, clearCursor) = gateway.auditCalls.last;
+      expect(clearCursor, isNull);
+      expect(cleared, AdminAuditFilters.none);
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(const Key('admin-audit-filter-admin')),
+            )
+            .controller
+            ?.text,
+        isEmpty,
+      );
     },
   );
 
