@@ -12,6 +12,7 @@ import 'package:facetune/admin/dashboard/presentation/widgets/admin_dashboard_ch
 import 'package:facetune/admin/research/data/admin_research_gateway_provider.dart';
 import 'package:facetune/admin/research/domain/admin_research_gateway.dart';
 import 'package:facetune/admin/research/domain/admin_research_models.dart';
+import 'package:facetune/admin/shared/admin_cards.dart';
 import 'package:facetune/admin/shared/admin_keyset_list_controller.dart';
 import 'package:facetune/admin/shared/admin_read_failure.dart';
 import 'package:facetune/features/subscription/domain/entities/subscription_plan_code.dart';
@@ -137,6 +138,8 @@ void main() {
     expect(tileValue(tester, 'tile-in-force-entitlements'), '26');
     expect(tileValue(tester, 'tile-pilot-in-force'), '2');
     expect(tileValue(tester, 'tile-ai-looks-today'), '7');
+    expect(find.byType(AdminStatCard), findsNWidgets(6));
+    expect(find.byType(AdminChartCard), findsNWidgets(4));
     expect(
       find.text('9 Preview credits separate · 2 legacy / unattributed'),
       findsOneWidget,

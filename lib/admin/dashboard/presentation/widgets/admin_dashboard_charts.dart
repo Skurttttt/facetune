@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../features/subscription/domain/entities/entitlement_status.dart';
 import '../../../../features/subscription/domain/entities/subscription_plan_code.dart';
+import '../../../shared/admin_cards.dart';
 import '../../../shared/admin_labels.dart';
 import '../../../theme/admin_tokens.dart';
 import '../../domain/admin_dashboard_v2_metrics.dart';
@@ -45,10 +46,10 @@ class _DashboardActivityChartState extends State<DashboardActivityChart> {
         .map((point) => '${_date(point.day)}: ${point.aiLook}')
         .join(', ');
 
-    return DashboardChartSurface(
+    return AdminChartCard(
       key: const Key('chart-committed-ai-looks'),
       title: 'Committed AI Looks',
-      subtitle: 'Authoritative daily AI Look units · UTC',
+      description: 'Authoritative daily AI Look units · UTC',
       trailing: SegmentedButton<int>(
         key: const Key('dashboard-activity-window'),
         segments: const [
@@ -192,10 +193,10 @@ class DashboardPlanChart extends StatelessWidget {
         .map((plan) => '${planCodeLabel(plan)}: ${deliveries[plan]}')
         .join(', ');
 
-    return DashboardChartSurface(
+    return AdminChartCard(
       key: const Key('chart-final-previews-by-plan'),
       title: 'Final Previews Delivered by Plan',
-      subtitle: 'Last 30 days · UTC',
+      description: 'Last 30 days · UTC',
       footer: unattributed > 0
           ? Text(
               'Legacy / Unattributed: $unattributed',
@@ -305,10 +306,10 @@ class DashboardUsageOutcomesChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final maxValue = math.max(1, math.max(committed, released)).toDouble();
-    return DashboardChartSurface(
+    return AdminChartCard(
       key: const Key('chart-usage-outcomes'),
       title: 'Usage Outcomes',
-      subtitle: 'Current month · Operations',
+      description: 'Current month · Operations',
       child: Semantics(
         label:
             'Usage Outcomes for the current month. Committed Operations: '
@@ -438,10 +439,10 @@ class DashboardEntitlementStatusChart extends StatelessWidget {
         )
         .join(' ');
 
-    return DashboardChartSurface(
+    return AdminChartCard(
       key: const Key('chart-entitlement-status'),
       title: 'Current Entitlement Status',
-      subtitle: 'Current governing entitlements · Effective status',
+      description: 'Current governing entitlements · Effective status',
       child: Semantics(
         label:
             'Current governing entitlement status. Total '
@@ -535,68 +536,6 @@ class DashboardEntitlementStatusChart extends StatelessWidget {
                     );
             },
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class DashboardChartSurface extends StatelessWidget {
-  const DashboardChartSurface({
-    super.key,
-    required this.title,
-    required this.subtitle,
-    required this.child,
-    this.trailing,
-    this.footer,
-  });
-
-  final String title;
-  final String subtitle;
-  final Widget child;
-  final Widget? trailing;
-  final Widget? footer;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(AdminRadii.card),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(AdminSpacing.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(title, style: theme.textTheme.titleMedium),
-                      const SizedBox(height: AdminSpacing.xxs),
-                      Text(subtitle, style: theme.textTheme.bodySmall),
-                    ],
-                  ),
-                ),
-                if (trailing != null) ...[
-                  const SizedBox(width: AdminSpacing.sm),
-                  trailing!,
-                ],
-              ],
-            ),
-            const SizedBox(height: AdminSpacing.lg),
-            child,
-            if (footer != null) ...[
-              const SizedBox(height: AdminSpacing.sm),
-              footer!,
-            ],
-          ],
         ),
       ),
     );

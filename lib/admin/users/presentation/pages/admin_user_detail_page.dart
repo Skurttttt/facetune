@@ -1,4 +1,3 @@
-import '../../../shared/admin_page_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,8 +5,10 @@ import 'package:go_router/go_router.dart';
 import '../../../../features/subscription/domain/entities/billing_provider.dart';
 import '../../../../features/subscription/domain/entities/entitlement_status.dart';
 import '../../../../features/subscription/domain/entities/subscription_plan_code.dart';
-import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
+import '../../../shared/admin_cards.dart';
+import '../../../shared/admin_page_header.dart';
+import '../../../theme/admin_tokens.dart';
 import '../../domain/admin_user_models.dart';
 import '../admin_users_controller.dart';
 import 'admin_users_page.dart' show formatDate;
@@ -315,46 +316,39 @@ class _Panel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(AdminRadii.card),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(AdminSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Semantics(
-              header: true,
-              child: Text(title, style: theme.textTheme.titleMedium),
-            ),
-            const SizedBox(height: AdminSpacing.sm),
-            for (final row in rows)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: AdminSpacing.xxs),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: 220,
-                      child: Text(row.$1, style: theme.textTheme.labelMedium),
+    return AdminCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            header: true,
+            child: Text(title, style: theme.textTheme.titleMedium),
+          ),
+          const SizedBox(height: AdminSpacing.sm),
+          for (final row in rows)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: AdminSpacing.xxs),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 220,
+                    child: Text(row.$1, style: theme.textTheme.labelMedium),
+                  ),
+                  Expanded(
+                    child: SelectableText(
+                      row.$2,
+                      style: row.$1 == 'User ID'
+                          ? theme.textTheme.bodyMedium?.copyWith(
+                              fontFamily: 'monospace',
+                            )
+                          : theme.textTheme.bodyMedium,
                     ),
-                    Expanded(
-                      child: SelectableText(
-                        row.$2,
-                        style: row.$1 == 'User ID'
-                            ? theme.textTheme.bodyMedium?.copyWith(
-                                fontFamily: 'monospace',
-                              )
-                            : theme.textTheme.bodyMedium,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }

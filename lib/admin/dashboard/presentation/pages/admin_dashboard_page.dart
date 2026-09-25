@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/admin_routes.dart';
 import '../../../research/domain/admin_research_models.dart';
 import '../../../research/presentation/admin_pilot_metrics_controller.dart';
+import '../../../shared/admin_cards.dart';
 import '../../../shared/admin_keyset_list_controller.dart';
 import '../../../shared/admin_labels.dart';
 import '../../../shared/admin_page_header.dart';
@@ -135,32 +136,32 @@ class _DashboardBody extends StatelessWidget {
           minItemWidth: 260,
           maxColumns: 4,
           children: [
-            _SummaryMetric(
+            AdminStatCard(
               label: 'Total Users',
               value: '${metrics.accounts.totalUsers}',
               icon: Icons.people_outline,
               key: const Key('tile-total-users'),
             ),
-            _SummaryMetric(
+            AdminStatCard(
               label: 'In-Force Entitlements',
               value: '${metrics.inForceEntitlements}',
-              detail: 'Across 8 canonical plans',
+              metadata: 'Across 8 canonical plans',
               icon: Icons.verified_user_outlined,
               key: const Key('tile-in-force-entitlements'),
             ),
-            _SummaryMetric(
+            AdminStatCard(
               label: 'Salon Pilot',
               value: '${metrics.salonPilot.inForce}',
-              detail: 'In-force entitlements',
+              metadata: 'In-force entitlements',
               icon: Icons.science_outlined,
               key: const Key('tile-pilot-in-force'),
             ),
-            _SummaryMetric(
+            AdminStatCard(
               label: 'AI Looks Today',
               value: v2Metrics == null
                   ? 'Unavailable'
                   : '${v2Metrics.committedTodayByUnit.aiLook}',
-              detail: v2Metrics == null
+              metadata: v2Metrics == null
                   ? 'V2 metrics could not be loaded'
                   : _todayDetail(v2Metrics.committedTodayByUnit),
               icon: Icons.auto_graph_outlined,
@@ -231,16 +232,16 @@ class _DashboardBody extends StatelessWidget {
           minItemWidth: 240,
           maxColumns: 2,
           children: [
-            _SummaryMetric(
+            AdminStatCard(
               label: 'Active Pilots',
               value: '${metrics.salonPilot.inForce}',
               icon: Icons.check_circle_outline,
               key: const Key('tile-active-pilots'),
             ),
-            _SummaryMetric(
+            AdminStatCard(
               label: 'Expiring Soon',
               value: '${metrics.salonPilot.expiringSoon}',
-              detail: 'Within ${metrics.expiringSoonWindowDays} days',
+              metadata: 'Within ${metrics.expiringSoonWindowDays} days',
               icon: Icons.schedule_outlined,
               emphasized: metrics.salonPilot.expiringSoon > 0,
               key: const Key('tile-pilot-expiring'),
@@ -334,13 +335,9 @@ class _PilotRows extends StatelessWidget {
     final rows = page.items.take(5).toList(growable: false);
     final moreAvailable =
         page.items.length > rows.length || page.nextCursor != null;
-    return DecoratedBox(
+    return AdminCard(
       key: const Key('admin-pilot-usage-rows'),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(AdminRadii.card),
-      ),
+      padding: EdgeInsets.zero,
       child: Column(
         children: [
           for (var index = 0; index < rows.length; index++) ...[
@@ -501,72 +498,6 @@ class _ResponsiveGrid extends StatelessWidget {
           ],
         );
       },
-    );
-  }
-}
-
-class _SummaryMetric extends StatelessWidget {
-  const _SummaryMetric({
-    super.key,
-    required this.label,
-    required this.value,
-    required this.icon,
-    this.detail,
-    this.emphasized = false,
-  });
-
-  final String label;
-  final String value;
-  final IconData icon;
-  final String? detail;
-  final bool emphasized;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Semantics(
-      label: '$label: $value${detail == null ? '' : ', $detail'}',
-      child: ExcludeSemantics(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            border: Border.all(
-              color: emphasized
-                  ? theme.colorScheme.tertiary
-                  : theme.colorScheme.outlineVariant,
-            ),
-            borderRadius: BorderRadius.circular(AdminRadii.card),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(AdminSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(icon, size: AdminIconSizes.md),
-                    const SizedBox(width: AdminSpacing.xs),
-                    Expanded(
-                      child: Text(label, style: theme.textTheme.labelMedium),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AdminSpacing.xs),
-                Text(
-                  value,
-                  style: theme.textTheme.headlineMedium?.copyWith(
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-                if (detail != null) ...[
-                  const SizedBox(height: AdminSpacing.xxs),
-                  Text(detail!, style: theme.textTheme.bodySmall),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

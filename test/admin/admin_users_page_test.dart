@@ -1,5 +1,6 @@
 import 'package:facetune/admin/auth/presentation/admin_authorization_controller.dart';
 import 'package:facetune/admin/auth/presentation/admin_authorization_state.dart';
+import 'package:facetune/admin/shared/admin_cards.dart';
 import 'package:facetune/admin/users/data/admin_users_gateway_provider.dart';
 import 'package:facetune/admin/users/domain/admin_user_models.dart';
 import 'package:facetune/admin/users/domain/admin_users_failure.dart';
@@ -98,6 +99,7 @@ void main() {
     );
 
     expect(find.byKey(const Key('admin-user-detail-ready')), findsOneWidget);
+    expect(find.byType(AdminCard), findsNWidgets(2));
     expect(
       find.byKey(const Key('admin-user-entitlement-detail')),
       findsOneWidget,
