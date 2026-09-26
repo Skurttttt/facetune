@@ -64,9 +64,21 @@ class _DashboardActivityChartState extends State<DashboardActivityChart> {
       description: 'Authoritative daily AI Look units · UTC',
       trailing: SegmentedButton<int>(
         key: const Key('dashboard-activity-window'),
-        segments: const [
-          ButtonSegment(value: 7, label: Text('7D')),
-          ButtonSegment(value: 30, label: Text('30D')),
+        segments: [
+          ButtonSegment(
+            value: 7,
+            label: Semantics(
+              label: 'Last 7 days',
+              child: const ExcludeSemantics(child: Text('7D')),
+            ),
+          ),
+          ButtonSegment(
+            value: 30,
+            label: Semantics(
+              label: 'Last 30 days',
+              child: const ExcludeSemantics(child: Text('30D')),
+            ),
+          ),
         ],
         selected: {_days},
         showSelectedIcon: false,

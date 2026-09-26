@@ -201,6 +201,13 @@ abstract final class AdminTheme {
     final controlShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(AdminRadii.control),
     );
+    BorderSide focusSide(Set<WidgetState> states, {BorderSide? resting}) =>
+        states.contains(WidgetState.focused)
+        ? const BorderSide(
+            color: AdminFocus.ringColor,
+            width: AdminFocus.ringWidth,
+          )
+        : resting ?? BorderSide.none;
 
     return ThemeData(
       useMaterial3: true,
@@ -208,6 +215,7 @@ abstract final class AdminTheme {
       colorScheme: scheme,
       scaffoldBackgroundColor: AdminColors.pageBackground,
       canvasColor: AdminColors.pageBackground,
+      focusColor: AdminColors.accentSubtle,
       fontFamily: AdminTypography.fontFamily,
       fontFamilyFallback: AdminTypography.fontFamilyFallback,
       textTheme: AdminTypography.textTheme,
@@ -260,18 +268,25 @@ abstract final class AdminTheme {
           minimumSize: const Size(AdminTargets.minimum, 44),
           padding: const EdgeInsets.symmetric(horizontal: AdminSpacing.md),
           shape: controlShape,
-        ),
+        ).copyWith(side: WidgetStateProperty.resolveWith(focusSide)),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: AdminColors.textPrimary,
-          disabledForegroundColor: AdminColors.textDisabled,
-          side: const BorderSide(color: AdminColors.border),
-          textStyle: AdminTypography.button,
-          minimumSize: const Size(AdminTargets.minimum, 44),
-          padding: const EdgeInsets.symmetric(horizontal: AdminSpacing.md),
-          shape: controlShape,
-        ),
+        style:
+            OutlinedButton.styleFrom(
+              foregroundColor: AdminColors.textPrimary,
+              disabledForegroundColor: AdminColors.textDisabled,
+              textStyle: AdminTypography.button,
+              minimumSize: const Size(AdminTargets.minimum, 44),
+              padding: const EdgeInsets.symmetric(horizontal: AdminSpacing.md),
+              shape: controlShape,
+            ).copyWith(
+              side: WidgetStateProperty.resolveWith(
+                (states) => focusSide(
+                  states,
+                  resting: const BorderSide(color: AdminColors.border),
+                ),
+              ),
+            ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
@@ -281,6 +296,29 @@ abstract final class AdminTheme {
           minimumSize: const Size(AdminTargets.minimum, 44),
           padding: const EdgeInsets.symmetric(horizontal: AdminSpacing.md),
           shape: controlShape,
+        ).copyWith(side: WidgetStateProperty.resolveWith(focusSide)),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: ButtonStyle(
+          minimumSize: const WidgetStatePropertyAll(
+            Size(AdminTargets.minimum, AdminTargets.minimum),
+          ),
+          shape: WidgetStatePropertyAll(controlShape),
+          side: WidgetStateProperty.resolveWith(focusSide),
+        ),
+      ),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          minimumSize: const WidgetStatePropertyAll(
+            Size(AdminTargets.minimum, 44),
+          ),
+          textStyle: const WidgetStatePropertyAll(AdminTypography.button),
+          side: WidgetStateProperty.resolveWith(
+            (states) => focusSide(
+              states,
+              resting: const BorderSide(color: AdminColors.border),
+            ),
+          ),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(

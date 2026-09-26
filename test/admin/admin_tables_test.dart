@@ -2,12 +2,14 @@ import 'package:facetune/admin/shared/admin_list_widgets.dart';
 import 'package:facetune/admin/theme/admin_theme.dart';
 import 'package:facetune/admin/theme/admin_tokens.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Future<void> pumpTable(
   WidgetTester tester, {
   required Widget child,
   double width = 420,
+  TextScaler textScaler = TextScaler.noScaling,
 }) async {
   tester.view.physicalSize = Size(width, 700);
   tester.view.devicePixelRatio = 1;
@@ -15,6 +17,10 @@ Future<void> pumpTable(
   await tester.pumpWidget(
     MaterialApp(
       theme: AdminTheme.dark,
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+        child: child!,
+      ),
       home: Scaffold(
         body: Align(
           alignment: Alignment.topLeft,
@@ -132,6 +138,80 @@ void main() {
 
     expect(find.byKey(actionKey).hitTestable(), findsOneWidget);
     expect(tester.getSize(find.byType(AdminTable)).width, 656);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('keyboard focus reveals the rightmost table action', (
+    tester,
+  ) async {
+    final actionFocus = FocusNode();
+    addTearDown(actionFocus.dispose);
+    const actionKey = Key('keyboard-table-action');
+    await pumpTable(
+      tester,
+      width: 656,
+      child: AdminTable(
+        columns: const [
+          DataColumn(label: Text('Very wide identity column')),
+          DataColumn(label: Text('Very wide operational status')),
+          DataColumn(label: Text('Very wide metadata column')),
+          DataColumn(label: Text('Actions')),
+        ],
+        rows: [
+          DataRow(
+            cells: [
+              const DataCell(Text('member-with-a-long-name@example.invalid')),
+              const DataCell(Text('Pending administrative review')),
+              const DataCell(Text('Long metadata that remains in the table')),
+              DataCell(
+                TextButton(
+                  key: actionKey,
+                  focusNode: actionFocus,
+                  onPressed: () {},
+                  child: const Text('Open'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    expect(find.byKey(actionKey).hitTestable(), findsNothing);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+
+    expect(actionFocus.hasFocus, isTrue);
+    expect(find.byKey(actionKey).hitTestable(), findsOneWidget);
+  });
+
+  testWidgets('table row sizing remains readable with enlarged text', (
+    tester,
+  ) async {
+    await pumpTable(
+      tester,
+      width: 656,
+      textScaler: const TextScaler.linear(2),
+      child: const AdminTable(
+        columns: [
+          DataColumn(label: Text('User')),
+          DataColumn(label: Text('Status')),
+        ],
+        rows: [
+          DataRow(
+            cells: [
+              DataCell(Text('member@example.invalid')),
+              DataCell(Text('Active')),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    final table = tester.widget<DataTable>(find.byType(DataTable));
+    expect(table.headingRowHeight, 56);
+    expect(table.dataRowMinHeight, 64);
+    expect(table.dataRowMaxHeight, 88);
     expect(tester.takeException(), isNull);
   });
 

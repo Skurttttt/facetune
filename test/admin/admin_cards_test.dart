@@ -83,6 +83,7 @@ void main() {
   testWidgets('AdminChartCard keeps title description plot footer hierarchy', (
     tester,
   ) async {
+    final semantics = tester.ensureSemantics();
     await pumpCard(
       tester,
       const SizedBox(
@@ -107,5 +108,10 @@ void main() {
       tester.getTopLeft(find.byKey(const Key('plot'))).dy,
       lessThan(tester.getTopLeft(find.text('Legend')).dy),
     );
+    expect(
+      tester.getSemantics(find.text('Usage Outcomes')),
+      containsSemantics(label: 'Usage Outcomes', isHeader: true),
+    );
+    semantics.dispose();
   });
 }

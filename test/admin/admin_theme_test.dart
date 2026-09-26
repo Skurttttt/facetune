@@ -7,6 +7,16 @@ import 'package:facetune/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+double _contrastRatio(Color foreground, Color background) {
+  final lighter = foreground.computeLuminance() > background.computeLuminance()
+      ? foreground.computeLuminance()
+      : background.computeLuminance();
+  final darker = foreground.computeLuminance() > background.computeLuminance()
+      ? background.computeLuminance()
+      : foreground.computeLuminance();
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 /// WA-13.5-UI-1: the Web Admin's visual token authority.
 ///
 /// These tests protect three properties the type system cannot express:
@@ -69,6 +79,35 @@ void main() {
       expect(semantics.danger, AdminColors.error);
       expect(semantics.information, AdminColors.information);
     });
+
+    test(
+      'readable text and meaningful focus colours meet contrast targets',
+      () {
+        for (final foreground in const [
+          AdminColors.textPrimary,
+          AdminColors.textSecondary,
+          AdminColors.accent,
+          AdminColors.success,
+          AdminColors.warning,
+          AdminColors.error,
+          AdminColors.information,
+        ]) {
+          expect(
+            _contrastRatio(foreground, AdminColors.surface),
+            greaterThanOrEqualTo(4.5),
+            reason: '$foreground must remain readable on the primary surface',
+          );
+        }
+        expect(
+          _contrastRatio(AdminFocus.ringColor, AdminColors.pageBackground),
+          greaterThanOrEqualTo(3),
+        );
+        expect(
+          _contrastRatio(AdminColors.onAccent, AdminColors.accent),
+          greaterThanOrEqualTo(4.5),
+        );
+      },
+    );
 
     test('the four status roles are present and mutually distinct', () {
       final roles = AdminSemanticColors.dark.statusRoles;
@@ -250,6 +289,27 @@ void main() {
 
       expect(shape, isNotNull);
       expect(shape!.borderRadius, BorderRadius.circular(AdminRadii.control));
+    });
+
+    test('shared controls keep practical targets and a 2px focus boundary', () {
+      final theme = AdminTheme.dark;
+      final focused = <WidgetState>{WidgetState.focused};
+      final styles = [
+        theme.filledButtonTheme.style!,
+        theme.outlinedButtonTheme.style!,
+        theme.textButtonTheme.style!,
+        theme.iconButtonTheme.style!,
+        theme.segmentedButtonTheme.style!,
+      ];
+
+      for (final style in styles) {
+        final minimum = style.minimumSize!.resolve(const <WidgetState>{})!;
+        final side = style.side!.resolve(focused)!;
+        expect(minimum.width, greaterThanOrEqualTo(AdminTargets.minimum));
+        expect(minimum.height, greaterThanOrEqualTo(AdminTargets.minimum));
+        expect(side.color, AdminFocus.ringColor);
+        expect(side.width, AdminFocus.ringWidth);
+      }
     });
 
     test('cards are bordered rather than elevated', () {

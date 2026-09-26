@@ -132,6 +132,7 @@ void main() {
   testWidgets('renders honest summaries and all four authoritative charts', (
     tester,
   ) async {
+    final semantics = tester.ensureSemantics();
     await pumpDashboard(tester, [fixture]);
     await tester.pump();
 
@@ -194,6 +195,8 @@ void main() {
           .selected,
       {30},
     );
+    expect(find.bySemanticsLabel('Last 7 days'), findsOneWidget);
+    expect(find.bySemanticsLabel('Last 30 days'), findsOneWidget);
     await tester.tap(find.text('7D'));
     await tester.pump();
     expect(
@@ -204,6 +207,7 @@ void main() {
           .selected,
       {7},
     );
+    semantics.dispose();
   });
 
   testWidgets('AI Looks Today never includes Preview credits or unattributed', (

@@ -50,6 +50,11 @@ class _AdminTableState extends State<AdminTable> {
   @override
   Widget build(BuildContext context) {
     final colors = AdminSemanticColors.of(context);
+    final textScale = MediaQuery.textScalerOf(context).scale(1);
+    final scaleAdjustment = (textScale - 1).clamp(0.0, 1.0);
+    final headingRowHeight = 44.0 + (12 * scaleAdjustment);
+    final dataRowMinHeight = 52.0 + (12 * scaleAdjustment);
+    final dataRowMaxHeight = 64.0 + (24 * scaleAdjustment);
     return LayoutBuilder(
       builder: (context, constraints) {
         final availableWidth = constraints.hasBoundedWidth
@@ -82,9 +87,9 @@ class _AdminTableState extends State<AdminTable> {
                     child: ConstrainedBox(
                       constraints: BoxConstraints(minWidth: availableWidth),
                       child: DataTable(
-                        headingRowHeight: 44,
-                        dataRowMinHeight: 52,
-                        dataRowMaxHeight: 64,
+                        headingRowHeight: headingRowHeight,
+                        dataRowMinHeight: dataRowMinHeight,
+                        dataRowMaxHeight: dataRowMaxHeight,
                         horizontalMargin: AdminSpacing.md,
                         columnSpacing: AdminSpacing.xl,
                         dividerThickness: AdminBorders.hairline,
