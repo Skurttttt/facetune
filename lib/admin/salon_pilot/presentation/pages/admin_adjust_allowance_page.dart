@@ -138,12 +138,15 @@ class _AdminAdjustAllowancePageState
           AdminUserDetailNotFound() => const AdminListNotice(
             key: Key('admin-adjust-not-found'),
             icon: Icons.info_outline,
-            message: 'User not found.',
+            title: 'User not found',
+            message: 'No account matches this User ID.',
           ),
           AdminUserDetailUnavailable() => const AdminListNotice(
             key: Key('admin-adjust-unavailable'),
             icon: Icons.error_outline,
-            message: 'The entitlement could not be loaded.',
+            title: 'Entitlement could not be loaded',
+            message: 'The account entitlement is temporarily unavailable.',
+            error: true,
           ),
           AdminUserDetailReady(:final detail) => _body(detail, theme),
         },
@@ -159,6 +162,7 @@ class _AdminAdjustAllowancePageState
       return const AdminListNotice(
         key: Key('admin-adjust-not-editable'),
         icon: Icons.info_outline,
+        title: 'Allowance cannot be adjusted here',
         message:
             'This account has no admin-granted Salon Pilot entitlement in '
             'force. Only a Salon Pilot allowance can be adjusted.',
@@ -187,6 +191,7 @@ class _AdminAdjustAllowancePageState
           AdminAdjustSubmitting() => const AdminListLoadingRow(
             key: Key('admin-adjust-submitting'),
             label: 'Applying adjustment',
+            skeleton: false,
           ),
           AdminAdjustSucceeded(:final intent, :final outcome) => _Result(
             intent: intent,
@@ -476,8 +481,9 @@ class _Failure extends StatelessWidget {
       constraints: const BoxConstraints(maxWidth: 640),
       child: AdminListNotice(
         icon: Icons.error_outline,
-        message:
-            '${failure.message ?? _fallback(failure.code)} (${failure.code.code})',
+        title: 'Allowance adjustment failed',
+        message: '${_fallback(failure.code)} (${failure.code.code})',
+        error: true,
         action: failure.retryable
             ? TextButton(
                 key: const Key('admin-adjust-retry'),

@@ -55,12 +55,16 @@ class AdminEntitlementHistoryPage extends ConsumerWidget {
           AdminListRejected() => const AdminListNotice(
             key: Key('admin-entitlement-history-rejected'),
             icon: Icons.error_outline,
-            message: 'The history request was not accepted.',
+            title: 'History request was not accepted',
+            message: 'Return to the entitlement and open its history again.',
+            error: true,
           ),
           AdminListUnavailable(:final retryable) => AdminListNotice(
             key: const Key('admin-entitlement-history-unavailable'),
             icon: Icons.error_outline,
-            message: 'Entitlement history could not be loaded.',
+            title: 'Entitlement history could not be loaded',
+            message: 'The lifecycle history is temporarily unavailable.',
+            error: true,
             action: retryable
                 ? TextButton(
                     onPressed: controller.load,
@@ -72,6 +76,7 @@ class AdminEntitlementHistoryPage extends ConsumerWidget {
             const AdminListNotice(
               key: Key('admin-entitlement-history-empty'),
               icon: Icons.timeline_outlined,
+              title: 'No lifecycle history yet',
               message: 'No lifecycle events are recorded for this entitlement.',
             ),
           AdminListReady() => _HistoryResults(

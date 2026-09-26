@@ -229,7 +229,7 @@ void main() {
     final gateway = ScriptedSalonPilotGateway([
       (_) async => throw const AdminMutationFailure(
         AdminMutationErrorCode.salonPilotAlreadyGranted,
-        message: 'This account already holds a Salon Pilot entitlement.',
+        message: 'SQLSTATE 23505 internal entitlement index failure',
       ),
     ]);
     await pumpGrant(tester, gateway: gateway);
@@ -242,6 +242,11 @@ void main() {
 
     expect(find.byKey(const Key('admin-grant-failed')), findsOneWidget);
     expect(find.textContaining('SALON_PILOT_ALREADY_GRANTED'), findsOneWidget);
+    expect(
+      find.textContaining('already holds a Salon Pilot entitlement'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('SQLSTATE'), findsNothing);
     expect(find.byKey(const Key('admin-grant-retry')), findsNothing);
     expect(find.byKey(const Key('admin-grant-start-over')), findsOneWidget);
   });

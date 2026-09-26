@@ -179,12 +179,15 @@ class _AdminLifecyclePageState extends ConsumerState<AdminLifecyclePage> {
           AdminUserDetailNotFound() => const AdminListNotice(
             key: Key('admin-lifecycle-not-found'),
             icon: Icons.info_outline,
-            message: 'User not found.',
+            title: 'User not found',
+            message: 'No account matches this User ID.',
           ),
           AdminUserDetailUnavailable() => const AdminListNotice(
             key: Key('admin-lifecycle-unavailable'),
             icon: Icons.error_outline,
-            message: 'The entitlement could not be loaded.',
+            title: 'Entitlement could not be loaded',
+            message: 'The account entitlement is temporarily unavailable.',
+            error: true,
           ),
           AdminUserDetailReady(:final detail) => _body(detail),
         },
@@ -200,6 +203,7 @@ class _AdminLifecyclePageState extends ConsumerState<AdminLifecyclePage> {
       return const AdminListNotice(
         key: Key('admin-lifecycle-not-editable'),
         icon: Icons.info_outline,
+        title: 'Lifecycle action is unavailable',
         message:
             'This account has no admin-granted Salon Pilot entitlement. '
             'Store-backed subscriptions follow the provider lifecycle and '
@@ -257,6 +261,7 @@ class _AdminLifecyclePageState extends ConsumerState<AdminLifecyclePage> {
           AdminLifecycleSubmitting() => AdminListLoadingRow(
             key: const Key('admin-lifecycle-submitting'),
             label: 'Applying: ${widget.action.label}',
+            skeleton: false,
           ),
           AdminLifecycleSucceeded(:final intent, :final outcome) => _Result(
             intent: intent,
@@ -516,8 +521,9 @@ class _Failure extends StatelessWidget {
     constraints: const BoxConstraints(maxWidth: 640),
     child: AdminListNotice(
       icon: Icons.error_outline,
-      message:
-          '${failure.message ?? _fallback(failure.code)} (${failure.code.code})',
+      title: 'Lifecycle action failed',
+      message: '${_fallback(failure.code)} (${failure.code.code})',
+      error: true,
       action: failure.retryable
           ? TextButton(
               key: const Key('admin-lifecycle-retry'),

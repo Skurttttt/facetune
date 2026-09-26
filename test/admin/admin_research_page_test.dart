@@ -511,7 +511,11 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(find.byKey(const Key('admin-section-dashboard')), findsOneWidget);
-      await tester.tap(find.byKey(const Key('admin-dashboard-research-link')));
+      final researchLink = find.byKey(
+        const Key('admin-dashboard-research-link'),
+      );
+      await tester.ensureVisible(researchLink);
+      await tester.tap(researchLink);
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('admin-section-research')), findsOneWidget);
       final router = GoRouter.of(

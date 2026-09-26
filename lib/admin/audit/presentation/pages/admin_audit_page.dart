@@ -242,12 +242,16 @@ class _AdminAuditPageState extends ConsumerState<AdminAuditPage> {
           AdminListRejected() => const AdminListNotice(
             key: Key('admin-audit-rejected'),
             icon: Icons.error_outline,
-            message: 'The server did not accept these audit filters.',
+            title: 'Filters were not accepted',
+            message: 'Adjust the audit filters and apply them again.',
+            error: true,
           ),
           AdminListUnavailable(:final retryable) => AdminListNotice(
             key: const Key('admin-audit-unavailable'),
             icon: Icons.error_outline,
-            message: 'Audit events could not be loaded.',
+            title: 'Audit events could not be loaded',
+            message: 'The immutable audit log is temporarily unavailable.',
+            error: true,
             action: retryable
                 ? TextButton(
                     onPressed: _controller.load,
@@ -255,12 +259,15 @@ class _AdminAuditPageState extends ConsumerState<AdminAuditPage> {
                   )
                 : null,
           ),
-          AdminListReady(:final page) when page.items.isEmpty =>
-            const AdminTable(
+          AdminListReady(:final page, :final filters) when page.items.isEmpty =>
+            AdminTable(
               key: Key('admin-audit-table'),
               columns: _auditColumns,
-              rows: [],
-              emptyState: _AuditNoResults(key: Key('admin-audit-empty')),
+              rows: const [],
+              emptyState: _AuditNoResults(
+                key: const Key('admin-audit-empty'),
+                filtered: _hasAuditFilters(filters),
+              ),
             ),
           AdminListReady() => _AuditResults(
             state: state,
@@ -344,29 +351,25 @@ class _AuditResults extends StatelessWidget {
 }
 
 class _AuditNoResults extends StatelessWidget {
-  const _AuditNoResults({super.key});
+  const _AuditNoResults({super.key, required this.filtered});
+
+  final bool filtered;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Semantics(
-      container: true,
-      label: 'No audit events matched these filters.',
-      child: Padding(
-        padding: const EdgeInsets.all(AdminSpacing.lg),
-        child: Row(
-          children: [
-            Icon(
-              Icons.history_outlined,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: AdminSpacing.sm),
-            const Expanded(
-              child: Text('No audit events matched these filters.'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => AdminListNotice(
+    icon: Icons.history_outlined,
+    title: filtered ? 'No matching audit events' : 'No audit events yet',
+    message: filtered
+        ? 'No audit events matched these filters.'
+        : 'Immutable events will appear after the first Admin operation.',
+    bordered: false,
+  );
 }
+
+bool _hasAuditFilters(AdminAuditFilters filters) =>
+    filters.adminUserId != null ||
+    filters.action != null ||
+    filters.targetUserId != null ||
+    filters.targetEntitlementId != null ||
+    filters.source != null ||
+    filters.dateRange != null;

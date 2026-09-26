@@ -77,69 +77,39 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
         ),
         const SizedBox(height: AdminSpacing.lg),
         switch (state) {
-          AdminUsersLoading() => const _Loading(),
-          AdminUsersUnavailable(:final retryable) => _Unavailable(
-            retryable: retryable,
-            onRetry: controller.load,
+          AdminUsersLoading() => const AdminListLoadingRow(
+            key: Key('admin-users-loading'),
+            label: 'Loading users',
           ),
-          AdminUsersReady(:final page) when page.items.isEmpty =>
-            const _NoResults(),
+          AdminUsersUnavailable(:final retryable) => AdminListNotice(
+            key: const Key('admin-users-unavailable'),
+            icon: Icons.error_outline,
+            title: 'Users could not be loaded',
+            message: 'The account list is temporarily unavailable.',
+            error: true,
+            action: retryable
+                ? TextButton(
+                    onPressed: controller.load,
+                    child: const Text('Try again'),
+                  )
+                : null,
+          ),
+          AdminUsersReady(:final page, :final search) when page.items.isEmpty =>
+            AdminListNotice(
+              key: const Key('admin-users-empty'),
+              icon: search == null
+                  ? Icons.people_outline
+                  : Icons.person_search_outlined,
+              title: search == null ? 'No users yet' : 'No matching users',
+              message: search == null
+                  ? 'Accounts will appear after the first user signs up.'
+                  : 'Try another exact email address or User ID.',
+            ),
           AdminUsersReady() => _Results(state: state, controller: controller),
         },
       ],
     );
   }
-}
-
-class _Loading extends StatelessWidget {
-  const _Loading();
-
-  @override
-  Widget build(BuildContext context) => const Padding(
-    key: Key('admin-users-loading'),
-    padding: EdgeInsets.symmetric(vertical: AdminSpacing.lg),
-    child: Row(
-      children: [
-        SizedBox.square(
-          dimension: 20,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            semanticsLabel: 'Loading users',
-          ),
-        ),
-        SizedBox(width: AdminSpacing.sm),
-        Text('Loading accounts…'),
-      ],
-    ),
-  );
-}
-
-class _NoResults extends StatelessWidget {
-  const _NoResults();
-
-  @override
-  Widget build(BuildContext context) => const _Notice(
-    key: Key('admin-users-empty'),
-    icon: Icons.person_search_outlined,
-    message: 'No users matched your search.',
-  );
-}
-
-class _Unavailable extends StatelessWidget {
-  const _Unavailable({required this.retryable, required this.onRetry});
-
-  final bool retryable;
-  final Future<void> Function() onRetry;
-
-  @override
-  Widget build(BuildContext context) => _Notice(
-    key: const Key('admin-users-unavailable'),
-    icon: Icons.error_outline,
-    message: 'Accounts could not be loaded. Try again in a moment.',
-    action: retryable
-        ? TextButton(onPressed: onRetry, child: const Text('Try again'))
-        : null,
-  );
 }
 
 class _Results extends StatelessWidget {
@@ -258,41 +228,6 @@ class _Results extends StatelessWidget {
         AdminAccountStatus.banned => AdminBadgeEmphasis.negative,
         AdminAccountStatus.anonymous => AdminBadgeEmphasis.information,
       };
-}
-
-class _Notice extends StatelessWidget {
-  const _Notice({
-    super.key,
-    required this.icon,
-    required this.message,
-    this.action,
-  });
-
-  final IconData icon;
-  final String message;
-  final Widget? action;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(AdminRadii.card),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(AdminSpacing.md),
-        child: Row(
-          children: [
-            Icon(icon, color: theme.colorScheme.onSurfaceVariant),
-            const SizedBox(width: AdminSpacing.sm),
-            Expanded(child: Text(message)),
-            ?action,
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 String formatDate(DateTime value) {

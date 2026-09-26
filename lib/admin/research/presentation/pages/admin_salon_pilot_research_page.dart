@@ -76,9 +76,11 @@ class AdminSalonPilotResearchPage extends ConsumerWidget {
           AdminResearchUnavailable(:final retryable) => AdminListNotice(
             key: const Key('admin-research-unavailable'),
             icon: Icons.error_outline,
+            title: 'Research metrics could not be loaded',
             message:
-                'Research metrics could not be loaded. '
-                '${retryable ? 'Try again in a moment.' : 'Sign in again to continue.'}',
+                'Authoritative Salon Pilot metrics are temporarily '
+                'unavailable.',
+            error: true,
             action: retryable
                 ? TextButton(
                     key: const Key('admin-research-retry'),
@@ -92,6 +94,7 @@ class AdminSalonPilotResearchPage extends ConsumerWidget {
                 ? const AdminListNotice(
                     key: Key('admin-research-empty'),
                     icon: Icons.science_outlined,
+                    title: 'No Salon Pilot grants yet',
                     message:
                         'No Salon Pilot has been granted yet. Figures will '
                         'appear with the first grant.',
@@ -118,14 +121,18 @@ class AdminSalonPilotResearchPage extends ConsumerWidget {
           AdminListRejected() => const AdminListNotice(
             key: Key('admin-pilots-rejected'),
             icon: Icons.error_outline,
+            title: 'Pilot page request was not accepted',
             message:
                 'The server did not accept this page request. Reload the '
                 'section to start from the first page.',
+            error: true,
           ),
           AdminListUnavailable(:final retryable) => AdminListNotice(
             key: const Key('admin-pilots-unavailable'),
             icon: Icons.error_outline,
-            message: 'Pilot rows could not be loaded. Try again in a moment.',
+            title: 'Pilot rows could not be loaded',
+            message: 'The bounded pilot list is temporarily unavailable.',
+            error: true,
             action: retryable
                 ? TextButton(
                     key: const Key('admin-pilots-retry'),
@@ -138,7 +145,8 @@ class AdminSalonPilotResearchPage extends ConsumerWidget {
             const AdminListNotice(
               key: Key('admin-pilots-empty'),
               icon: Icons.science_outlined,
-              message: 'No Salon Pilot grants exist.',
+              title: 'No Salon Pilot grants yet',
+              message: 'Pilot rows will appear after the first grant.',
             ),
           AdminListReady() => _PilotTable(
             state: pilots,

@@ -135,62 +135,260 @@ class AdminTableActions extends StatelessWidget {
 }
 
 class AdminListLoadingRow extends StatelessWidget {
-  const AdminListLoadingRow({super.key, required this.label});
+  const AdminListLoadingRow({
+    super.key,
+    required this.label,
+    this.skeleton = true,
+  });
 
   final String label;
+  final bool skeleton;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: AdminSpacing.lg),
-    child: Row(
-      children: [
-        SizedBox.square(
-          dimension: 20,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            semanticsLabel: label,
-          ),
-        ),
-        const SizedBox(width: AdminSpacing.sm),
-        Text('$label…'),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) {
+    if (!skeleton) return AdminProgressState(label: label);
+    return AdminSkeletonRows(label: label);
+  }
 }
 
 class AdminListNotice extends StatelessWidget {
   const AdminListNotice({
     super.key,
     required this.icon,
+    required this.title,
     required this.message,
     this.action,
+    this.error = false,
+    this.bordered = true,
   });
 
   final IconData icon;
+  final String title;
   final String message;
   final Widget? action;
+  final bool error;
+  final bool bordered;
+
+  @override
+  Widget build(BuildContext context) => AdminStatePanel(
+    icon: icon,
+    title: title,
+    message: message,
+    action: action,
+    error: error,
+    bordered: bordered,
+  );
+}
+
+/// Canonical compact surface for empty, no-result, unavailable, and rejected
+/// read states. Callers retain state classification and retry behavior.
+class AdminStatePanel extends StatelessWidget {
+  const AdminStatePanel({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.message,
+    this.action,
+    this.error = false,
+    this.bordered = true,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final Widget? action;
+  final bool error;
+  final bool bordered;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(AdminRadii.card),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(AdminSpacing.md),
-        child: Row(
-          children: [
-            Icon(icon, color: theme.colorScheme.onSurfaceVariant),
-            const SizedBox(width: AdminSpacing.sm),
-            Expanded(child: Text(message)),
-            ?action,
-          ],
+    final colors = AdminSemanticColors.of(context);
+    final semanticColor = error ? colors.danger : colors.textSecondary;
+    return Semantics(
+      container: true,
+      liveRegion: error,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.surface,
+          border: bordered
+              ? Border.all(
+                  color: error ? colors.danger : colors.border,
+                  width: AdminBorders.hairline,
+                )
+              : null,
+          borderRadius: BorderRadius.circular(AdminRadii.card),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(AdminSpacing.md),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final content = Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(icon, color: semanticColor, size: AdminIconSizes.lg),
+                  const SizedBox(width: AdminSpacing.sm),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: theme.textTheme.titleSmall),
+                        const SizedBox(height: AdminSpacing.xxs),
+                        Text(message, style: theme.textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+              if (action == null) return content;
+              if (constraints.maxWidth < 520) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    content,
+                    const SizedBox(height: AdminSpacing.sm),
+                    Align(alignment: Alignment.centerLeft, child: action),
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(child: content),
+                  action!,
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
   }
+}
+
+/// Static skeleton rows for server-backed read surfaces. The semantic label
+/// remains available while decorative placeholders stay out of the tree.
+class AdminSkeletonRows extends StatelessWidget {
+  const AdminSkeletonRows({
+    super.key,
+    required this.label,
+    this.rowCount = 4,
+    this.bordered = true,
+  });
+
+  final String label;
+  final int rowCount;
+  final bool bordered;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AdminSemanticColors.of(context);
+    return Semantics(
+      label: label,
+      liveRegion: true,
+      child: ExcludeSemantics(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.surface,
+            border: bordered
+                ? Border.all(color: colors.border, width: AdminBorders.hairline)
+                : null,
+            borderRadius: BorderRadius.circular(AdminRadii.card),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(AdminSpacing.md),
+                child: Text(
+                  label,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              for (var index = 0; index < rowCount; index++) ...[
+                if (index > 0) Divider(height: 1, color: colors.border),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AdminSpacing.md,
+                    vertical: AdminSpacing.sm,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: _SkeletonBar(color: colors.surfaceSecondary),
+                      ),
+                      const SizedBox(width: AdminSpacing.lg),
+                      Expanded(
+                        flex: 2,
+                        child: _SkeletonBar(color: colors.surfaceSecondary),
+                      ),
+                      const SizedBox(width: AdminSpacing.lg),
+                      Expanded(
+                        child: _SkeletonBar(color: colors.surfaceSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Progress treatment for mutations, where a read-surface skeleton would be
+/// misleading. This does not change whether a workflow is blocking.
+class AdminProgressState extends StatelessWidget {
+  const AdminProgressState({super.key, required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AdminSemanticColors.of(context);
+    return Semantics(
+      label: label,
+      liveRegion: true,
+      child: ExcludeSemantics(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.surface,
+            border: Border.all(color: colors.border),
+            borderRadius: BorderRadius.circular(AdminRadii.card),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(AdminSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(height: AdminSpacing.sm),
+                const LinearProgressIndicator(minHeight: 3),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SkeletonBar extends StatelessWidget {
+  const _SkeletonBar({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 12,
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(AdminRadii.control),
+    ),
+  );
 }
 
 /// A status written as text inside a subtle outline. The [semanticsPrefix]

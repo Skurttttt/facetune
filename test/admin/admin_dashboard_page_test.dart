@@ -14,6 +14,7 @@ import 'package:facetune/admin/research/domain/admin_research_gateway.dart';
 import 'package:facetune/admin/research/domain/admin_research_models.dart';
 import 'package:facetune/admin/shared/admin_cards.dart';
 import 'package:facetune/admin/shared/admin_keyset_list_controller.dart';
+import 'package:facetune/admin/shared/admin_list_widgets.dart';
 import 'package:facetune/admin/shared/admin_read_failure.dart';
 import 'package:facetune/features/subscription/domain/entities/subscription_plan_code.dart';
 import 'package:facetune/features/subscription/domain/errors/subscription_error_code.dart';
@@ -214,47 +215,82 @@ void main() {
     expect(tileValue(tester, 'tile-ai-looks-today'), isNot('18'));
   });
 
-  testWidgets(
-    'all-zero plan distribution and entitlement total render safely',
-    (tester) async {
-      Future<AdminDashboardV2Metrics> zeros() async =>
-          AdminDashboardV2Metrics.decode(
-            dashboardV2Payload(
-              plans: [
-                for (final plan in SubscriptionPlanCode.values)
-                  {'planCode': plan.code, 'delivered': 0},
-              ],
-              overrides: {
-                'finalPreviewsUnattributed30d': 0,
-                'entitlementStatusDistribution': {
-                  'total': 0,
-                  'byStoredStatus': {
-                    'pending': 0,
-                    'active': 0,
-                    'grace_period': 0,
-                    'expired': 0,
-                    'suspended': 0,
-                    'revoked': 0,
-                  },
-                  'byEffectiveStatus': {
-                    'pending': 0,
-                    'active': 0,
-                    'grace_period': 0,
-                    'expired': 0,
-                    'suspended': 0,
-                    'revoked': 0,
-                  },
+  testWidgets('all zero-valued chart series render explicit no-data states', (
+    tester,
+  ) async {
+    Future<AdminDashboardMetrics> noOutcomes() async =>
+        AdminDashboardMetrics.decode(
+          payload(
+            overrides: {
+              'aiLooks': {
+                'committedToday': {'subscription': 0, 'purchasedCredit': 0},
+                'committedThisMonth': {'subscription': 0, 'purchasedCredit': 0},
+                'reservedOpen': 0,
+                'releasedToday': 0,
+                'releasedThisMonth': 0,
+              },
+            },
+          ),
+        );
+    final daily = dashboardV2Payload()['committedDaily']! as List<Object?>;
+    Future<AdminDashboardV2Metrics> zeros() async =>
+        AdminDashboardV2Metrics.decode(
+          dashboardV2Payload(
+            daily: [
+              for (final value in daily)
+                {...Map<String, Object?>.from(value! as Map), 'aiLook': 0},
+            ],
+            plans: [
+              for (final plan in SubscriptionPlanCode.values)
+                {'planCode': plan.code, 'delivered': 0},
+            ],
+            overrides: {
+              'finalPreviewsUnattributed30d': 0,
+              'entitlementStatusDistribution': {
+                'total': 0,
+                'byStoredStatus': {
+                  'pending': 0,
+                  'active': 0,
+                  'grace_period': 0,
+                  'expired': 0,
+                  'suspended': 0,
+                  'revoked': 0,
+                },
+                'byEffectiveStatus': {
+                  'pending': 0,
+                  'active': 0,
+                  'grace_period': 0,
+                  'expired': 0,
+                  'suspended': 0,
+                  'revoked': 0,
                 },
               },
-            ),
-          );
-      await pumpDashboard(tester, [fixture], v2Answers: [zeros]);
-      await tester.pump();
-      expect(find.text('Free 0'), findsOneWidget);
-      expect(find.text('No governing entitlements'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    },
-  );
+            },
+          ),
+        );
+    await pumpDashboard(tester, [noOutcomes], v2Answers: [zeros]);
+    await tester.pump();
+    expect(
+      find.byKey(const Key('chart-committed-ai-looks-empty')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('chart-final-previews-by-plan-empty')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('chart-usage-outcomes-empty')), findsOneWidget);
+    expect(
+      find.byKey(const Key('chart-entitlement-status-empty')),
+      findsOneWidget,
+    );
+    expect(find.text('No committed AI Looks'), findsOneWidget);
+    expect(find.text('No final previews delivered'), findsOneWidget);
+    expect(find.text('No usage outcomes yet'), findsOneWidget);
+    expect(find.text('No governing entitlements'), findsOneWidget);
+    expect(find.byKey(const Key('chart-committed-ai-looks')), findsNothing);
+    expect(find.byKey(const Key('chart-usage-outcomes')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('usage outcome sums only fixed committed source buckets', (
     tester,
@@ -387,6 +423,8 @@ void main() {
   ) async {
     final (_, gateway, _, _) = await pumpDashboard(tester, []);
     expect(find.byKey(const Key('admin-dashboard-loading')), findsOneWidget);
+    expect(find.byType(AdminSkeletonRows), findsNWidgets(3));
+    expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(
       tester
           .widget<OutlinedButton>(
@@ -396,6 +434,7 @@ void main() {
       isNull,
     );
     gateway.pending!.complete(await empty());
+    await tester.pump();
     await tester.pump();
     expect(find.byKey(const Key('admin-dashboard-empty')), findsOneWidget);
   });

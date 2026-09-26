@@ -7,6 +7,7 @@ import '../../../../features/subscription/domain/entities/entitlement_status.dar
 import '../../../../features/subscription/domain/entities/subscription_plan_code.dart';
 import '../../../shared/admin_cards.dart';
 import '../../../shared/admin_labels.dart';
+import '../../../shared/admin_list_widgets.dart';
 import '../../../theme/admin_tokens.dart';
 import '../../domain/admin_dashboard_v2_metrics.dart';
 
@@ -35,6 +36,17 @@ class _DashboardActivityChartState extends State<DashboardActivityChart> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.points.every((point) => point.aiLook == 0)) {
+      return const AdminChartCard(
+        key: Key('chart-committed-ai-looks-empty'),
+        title: 'Committed AI Looks',
+        description: 'Authoritative daily AI Look units · UTC',
+        child: _ChartEmptyContent(
+          title: 'No committed AI Looks',
+          message: 'No AI Look usage was committed in this reporting window.',
+        ),
+      );
+    }
     final theme = Theme.of(context);
     final points = dashboardDailyWindow(widget.points, _days);
     final maxValue = points.fold<int>(
@@ -184,6 +196,17 @@ class DashboardPlanChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (deliveries.values.every((value) => value == 0) && unattributed == 0) {
+      return const AdminChartCard(
+        key: Key('chart-final-previews-by-plan-empty'),
+        title: 'Final Previews Delivered by Plan',
+        description: 'Last 30 days · UTC',
+        child: _ChartEmptyContent(
+          title: 'No final previews delivered',
+          message: 'No final-preview deliveries were reported in this window.',
+        ),
+      );
+    }
     final plans = SubscriptionPlanCode.values;
     final maxValue = plans.fold<int>(
       0,
@@ -305,6 +328,18 @@ class DashboardUsageOutcomesChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (committed == 0 && released == 0) {
+      return const AdminChartCard(
+        key: Key('chart-usage-outcomes-empty'),
+        title: 'Usage Outcomes',
+        description: 'Current month · Operations',
+        child: _ChartEmptyContent(
+          title: 'No usage outcomes yet',
+          message:
+              'No committed or released operations were reported this month.',
+        ),
+      );
+    }
     final maxValue = math.max(1, math.max(committed, released)).toDouble();
     return AdminChartCard(
       key: const Key('chart-usage-outcomes'),
@@ -428,6 +463,17 @@ class DashboardEntitlementStatusChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (distribution.total == 0) {
+      return const AdminChartCard(
+        key: Key('chart-entitlement-status-empty'),
+        title: 'Current Entitlement Status',
+        description: 'Current governing entitlements · Effective status',
+        child: _ChartEmptyContent(
+          title: 'No governing entitlements',
+          message: 'There are no current entitlement statuses to chart.',
+        ),
+      );
+    }
     final visible = EntitlementStatus.values
         .where((status) => distribution.byEffectiveStatus[status]! > 0)
         .toList(growable: false);
@@ -589,6 +635,21 @@ class _LegendItem extends StatelessWidget {
       ],
     );
   }
+}
+
+class _ChartEmptyContent extends StatelessWidget {
+  const _ChartEmptyContent({required this.title, required this.message});
+
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => AdminListNotice(
+    icon: Icons.query_stats_outlined,
+    title: title,
+    message: message,
+    bordered: false,
+  );
 }
 
 Widget _axisLabel(BuildContext context, String label) => Text(

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:facetune/admin/auth/presentation/admin_authorization_controller.dart';
 import 'package:facetune/admin/auth/presentation/admin_authorization_state.dart';
 import 'package:facetune/admin/shared/admin_cards.dart';
@@ -78,6 +80,27 @@ void main() {
 
     expect(gateway.searchCalls.last.$1, 'member@example.invalid');
     expect(find.byKey(const Key('admin-users-empty')), findsOneWidget);
+    expect(find.text('No matching users'), findsOneWidget);
+    expect(
+      find.text('Try another exact email address or User ID.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('distinguishes an empty user dataset from search no-results', (
+    tester,
+  ) async {
+    final gateway = ScriptedUsersGateway(
+      searches: [(_, _) async => page(items: [])],
+    );
+    await pumpPage(tester, child: const AdminUsersPage(), gateway: gateway);
+
+    expect(find.byKey(const Key('admin-users-empty')), findsOneWidget);
+    expect(find.text('No users yet'), findsOneWidget);
+    expect(
+      find.text('Accounts will appear after the first user signs up.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('pagination controls replace rather than append user rows', (
@@ -224,6 +247,23 @@ void main() {
       find.byKey(const Key('admin-user-detail-not-found')),
       findsOneWidget,
     );
-    expect(find.text('User not found.'), findsOneWidget);
+    expect(find.text('User not found'), findsOneWidget);
+    expect(find.text('No account matches this User ID.'), findsOneWidget);
+  });
+
+  testWidgets('detail read loading uses the shared skeleton state', (
+    tester,
+  ) async {
+    final pending = Completer<AdminUserDetail>();
+    final gateway = ScriptedUsersGateway(details: [(_) => pending.future]);
+    await pumpPage(
+      tester,
+      child: const AdminUserDetailPage(userId: userId),
+      gateway: gateway,
+    );
+
+    expect(find.byKey(const Key('admin-user-detail-loading')), findsOneWidget);
+    expect(find.byType(AdminSkeletonRows), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 }

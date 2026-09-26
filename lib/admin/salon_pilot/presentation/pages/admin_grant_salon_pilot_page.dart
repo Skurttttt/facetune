@@ -177,6 +177,7 @@ class _AdminGrantSalonPilotPageState
           AdminGrantSubmitting() => const AdminListLoadingRow(
             key: Key('admin-grant-submitting'),
             label: 'Granting Salon Pilot',
+            skeleton: false,
           ),
           AdminGrantSucceeded(:final outcome) => _Result(
             outcome: outcome,
@@ -444,9 +445,9 @@ class _Failure extends StatelessWidget {
       constraints: const BoxConstraints(maxWidth: 640),
       child: AdminListNotice(
         icon: Icons.error_outline,
-        message:
-            '${failure.message ?? _fallback(failure.code)} '
-            '(${failure.code.code})',
+        title: 'Salon Pilot could not be granted',
+        message: '${_fallback(failure.code)} (${failure.code.code})',
+        error: true,
         action: failure.retryable
             ? TextButton(
                 key: const Key('admin-grant-retry'),

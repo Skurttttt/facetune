@@ -43,14 +43,23 @@ class AdminUserDetailPage extends ConsumerWidget {
         ),
         const SizedBox(height: AdminSpacing.lg),
         switch (state) {
-          AdminUserDetailLoading() => const _DetailLoading(),
-          AdminUserDetailNotFound() => const _DetailNotice(
-            key: Key('admin-user-detail-not-found'),
-            message: 'User not found.',
+          AdminUserDetailLoading() => const AdminSkeletonRows(
+            key: Key('admin-user-detail-loading'),
+            label: 'Loading user detail',
+            rowCount: 6,
           ),
-          AdminUserDetailUnavailable(:final retryable) => _DetailNotice(
+          AdminUserDetailNotFound() => const AdminListNotice(
+            key: Key('admin-user-detail-not-found'),
+            icon: Icons.person_search_outlined,
+            title: 'User not found',
+            message: 'No account matches this User ID.',
+          ),
+          AdminUserDetailUnavailable(:final retryable) => AdminListNotice(
             key: const Key('admin-user-detail-unavailable'),
-            message: 'User detail could not be loaded.',
+            icon: Icons.error_outline,
+            title: 'User detail could not be loaded',
+            message: 'The account record is temporarily unavailable.',
+            error: true,
             action: retryable
                 ? TextButton(
                     onPressed: ref
@@ -67,26 +76,6 @@ class AdminUserDetailPage extends ConsumerWidget {
       ],
     );
   }
-}
-
-class _DetailLoading extends StatelessWidget {
-  const _DetailLoading();
-
-  @override
-  Widget build(BuildContext context) => const Row(
-    key: Key('admin-user-detail-loading'),
-    children: [
-      SizedBox.square(
-        dimension: 20,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          semanticsLabel: 'Loading user detail',
-        ),
-      ),
-      SizedBox(width: AdminSpacing.sm),
-      Text('Loading user detail...'),
-    ],
-  );
 }
 
 class _Detail extends StatelessWidget {
@@ -486,9 +475,12 @@ class _NoEntitlementPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AdminSpacing.sm),
-          const _DetailNotice(
+          const AdminListNotice(
             key: Key('admin-user-detail-no-entitlement'),
+            icon: Icons.card_membership_outlined,
+            title: 'No current subscription',
             message: 'No entitlement is available for this account.',
+            bordered: false,
           ),
         ],
       ),
@@ -555,35 +547,6 @@ class _Panel extends StatelessWidget {
               },
             ),
         ],
-      ),
-    );
-  }
-}
-
-class _DetailNotice extends StatelessWidget {
-  const _DetailNotice({super.key, required this.message, this.action});
-
-  final String message;
-  final Widget? action;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(AdminRadii.card),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(AdminSpacing.md),
-        child: Row(
-          children: [
-            const Icon(Icons.info_outline),
-            const SizedBox(width: AdminSpacing.sm),
-            Expanded(child: Text(message)),
-            ?action,
-          ],
-        ),
       ),
     );
   }

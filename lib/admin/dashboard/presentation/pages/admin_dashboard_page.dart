@@ -8,6 +8,7 @@ import '../../../research/presentation/admin_pilot_metrics_controller.dart';
 import '../../../shared/admin_cards.dart';
 import '../../../shared/admin_keyset_list_controller.dart';
 import '../../../shared/admin_labels.dart';
+import '../../../shared/admin_list_widgets.dart';
 import '../../../shared/admin_page_header.dart';
 import '../../../theme/admin_tokens.dart';
 import '../../domain/admin_dashboard_metrics.dart';
@@ -58,12 +59,10 @@ class AdminDashboardPage extends ConsumerWidget {
         const SizedBox(height: AdminSpacing.lg),
         switch (state) {
           AdminDashboardLoading() => const _Loading(),
-          AdminDashboardUnavailable(:final code, :final retryable) =>
-            _Unavailable(
-              code: code.code,
-              retryable: retryable,
-              onRetry: () => _refreshAll(ref),
-            ),
+          AdminDashboardUnavailable(:final retryable) => _Unavailable(
+            retryable: retryable,
+            onRetry: () => _refreshAll(ref),
+          ),
           AdminDashboardReady(:final metrics, :final refreshing) =>
             metrics.isEmpty
                 ? const _Empty()
@@ -177,6 +176,8 @@ class _DashboardBody extends StatelessWidget {
         const SizedBox(height: AdminSpacing.sm),
         _V2Region(
           state: v2State,
+          title: 'Committed AI Looks',
+          description: 'Authoritative daily AI Look units · UTC',
           unavailableKey: const Key('chart-committed-ai-looks-unavailable'),
           child: v2Metrics == null
               ? null
@@ -189,6 +190,8 @@ class _DashboardBody extends StatelessWidget {
           children: [
             _V2Region(
               state: v2State,
+              title: 'Final Previews Delivered by Plan',
+              description: 'Last 30 days · UTC',
               unavailableKey: const Key(
                 'chart-final-previews-by-plan-unavailable',
               ),
@@ -210,6 +213,8 @@ class _DashboardBody extends StatelessWidget {
         const SizedBox(height: AdminSpacing.sm),
         _V2Region(
           state: v2State,
+          title: 'Current Entitlement Status',
+          description: 'Current governing entitlements · Effective status',
           unavailableKey: const Key('chart-entitlement-status-unavailable'),
           child: v2Metrics == null
               ? null
@@ -271,18 +276,31 @@ class _DashboardBody extends StatelessWidget {
 class _V2Region extends StatelessWidget {
   const _V2Region({
     required this.state,
+    required this.title,
+    required this.description,
     required this.unavailableKey,
     required this.child,
   });
 
   final AdminDashboardV2State state;
+  final String title;
+  final String description;
   final Key unavailableKey;
   final Widget? child;
 
   @override
   Widget build(BuildContext context) => switch (state) {
-    AdminDashboardV2Loading() => const _ChartPlaceholder(),
-    AdminDashboardV2Unavailable() => _ChartUnavailable(key: unavailableKey),
+    AdminDashboardV2Loading() => _ChartStateCard.loading(
+      title: title,
+      description: description,
+    ),
+    AdminDashboardV2Unavailable() => _ChartStateCard.error(
+      key: unavailableKey,
+      title: title,
+      description: description,
+      message:
+          'Authoritative metrics are unavailable. No values were fabricated.',
+    ),
     AdminDashboardV2Ready() => child!,
   };
 }
@@ -301,22 +319,30 @@ class _PilotUsage extends StatelessWidget {
         const SizedBox(height: AdminSpacing.sm),
         switch (state) {
           AdminListLoading<AdminPilotMetricsRow, void>() =>
-            const _ChartPlaceholder(key: Key('admin-pilot-usage-loading')),
+            const AdminSkeletonRows(
+              key: Key('admin-pilot-usage-loading'),
+              label: 'Loading pilot usage',
+              rowCount: 3,
+            ),
           AdminListUnavailable<AdminPilotMetricsRow, void>() ||
           AdminListRejected<
             AdminPilotMetricsRow,
             void
-          >() => const _ChartUnavailable(
+          >() => const AdminListNotice(
             key: Key('admin-pilot-usage-unavailable'),
+            icon: Icons.error_outline,
+            title: 'Pilot usage could not be loaded',
             message:
                 'Pilot usage detail is unavailable. Summary counts remain current.',
+            error: true,
           ),
           AdminListReady<AdminPilotMetricsRow, void>(:final page) =>
             page.items.isEmpty
-                ? const _ChartUnavailable(
+                ? const AdminListNotice(
                     key: Key('admin-pilot-usage-empty'),
+                    icon: Icons.science_outlined,
+                    title: 'No pilot usage yet',
                     message: 'No Salon Pilot grants to show.',
-                    isError: false,
                   )
                 : _PilotRows(page: page),
         },
@@ -543,149 +569,97 @@ class _Loading extends StatelessWidget {
   const _Loading();
 
   @override
-  Widget build(BuildContext context) {
-    return const Padding(
-      key: Key('admin-dashboard-loading'),
-      padding: EdgeInsets.symmetric(vertical: AdminSpacing.xl),
-      child: Row(
-        children: [
-          SizedBox.square(
-            dimension: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              semanticsLabel: 'Loading dashboard',
-            ),
-          ),
-          SizedBox(width: AdminSpacing.sm),
-          Text('Loading dashboard…'),
-        ],
+  Widget build(BuildContext context) => const Column(
+    key: Key('admin-dashboard-loading'),
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      AdminSkeletonRows(label: 'Loading dashboard summary', rowCount: 2),
+      SizedBox(height: AdminSpacing.lg),
+      _ChartStateCard.loading(
+        title: 'Committed AI Looks',
+        description: 'Authoritative daily AI Look units · UTC',
       ),
-    );
-  }
+      SizedBox(height: AdminSpacing.lg),
+      _ChartStateCard.loading(
+        title: 'Usage Outcomes',
+        description: 'Current month · Operations',
+      ),
+    ],
+  );
 }
 
 class _Empty extends StatelessWidget {
   const _Empty();
 
   @override
-  Widget build(BuildContext context) {
-    return const _MessagePanel(
-      key: Key('admin-dashboard-empty'),
-      icon: Icons.inbox_outlined,
-      message:
-          'No accounts exist yet. Metrics will appear after the first user signs up.',
-    );
-  }
+  Widget build(BuildContext context) => const AdminListNotice(
+    key: Key('admin-dashboard-empty'),
+    icon: Icons.inbox_outlined,
+    title: 'No accounts yet',
+    message: 'Metrics will appear after the first user signs up.',
+  );
 }
 
 class _Unavailable extends StatelessWidget {
-  const _Unavailable({
-    required this.code,
-    required this.retryable,
-    required this.onRetry,
-  });
+  const _Unavailable({required this.retryable, required this.onRetry});
 
-  final String code;
   final bool retryable;
   final Future<void> Function() onRetry;
 
   @override
-  Widget build(BuildContext context) {
-    return _MessagePanel(
-      key: const Key('admin-dashboard-unavailable'),
-      icon: Icons.error_outline,
-      error: true,
-      message:
-          'The dashboard is unavailable. '
-          '${retryable ? 'Try again in a moment.' : 'Sign in again to continue.'} '
-          '($code)',
-      action: retryable
-          ? TextButton(
-              key: const Key('admin-dashboard-retry'),
-              onPressed: onRetry,
-              child: const Text('Try again'),
-            )
-          : null,
-    );
-  }
+  Widget build(BuildContext context) => AdminListNotice(
+    key: const Key('admin-dashboard-unavailable'),
+    icon: Icons.error_outline,
+    title: 'Dashboard could not be loaded',
+    message: retryable
+        ? 'Authoritative metrics are temporarily unavailable.'
+        : 'Your Admin session can no longer load this dashboard.',
+    error: true,
+    action: retryable
+        ? TextButton(
+            key: const Key('admin-dashboard-retry'),
+            onPressed: onRetry,
+            child: const Text('Try again'),
+          )
+        : null,
+  );
 }
 
-class _ChartPlaceholder extends StatelessWidget {
-  const _ChartPlaceholder({super.key});
+class _ChartStateCard extends StatelessWidget {
+  const _ChartStateCard.loading({
+    required this.title,
+    required this.description,
+  }) : message = null,
+       error = false;
 
-  @override
-  Widget build(BuildContext context) {
-    return const _MessagePanel(
-      icon: Icons.query_stats_outlined,
-      message: 'Loading authoritative metrics…',
-    );
-  }
-}
-
-class _ChartUnavailable extends StatelessWidget {
-  const _ChartUnavailable({
+  const _ChartStateCard.error({
     super.key,
-    this.message =
-        'Authoritative metrics are unavailable. No values were fabricated.',
-    this.isError = true,
-  });
-
-  final String message;
-  final bool isError;
-
-  @override
-  Widget build(BuildContext context) {
-    return _MessagePanel(
-      icon: isError ? Icons.error_outline : Icons.inbox_outlined,
-      error: isError,
-      message: message,
-    );
-  }
-}
-
-class _MessagePanel extends StatelessWidget {
-  const _MessagePanel({
-    super.key,
-    required this.icon,
+    required this.title,
+    required this.description,
     required this.message,
-    this.error = false,
-    this.action,
-  });
+  }) : error = true;
 
-  final IconData icon;
-  final String message;
+  final String title;
+  final String description;
+  final String? message;
   final bool error;
-  final Widget? action;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = error
-        ? theme.colorScheme.error
-        : theme.colorScheme.onSurfaceVariant;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        border: Border.all(
-          color: error
-              ? theme.colorScheme.error
-              : theme.colorScheme.outlineVariant,
-        ),
-        borderRadius: BorderRadius.circular(AdminRadii.card),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(AdminSpacing.md),
-        child: Row(
-          children: [
-            Icon(icon, color: color),
-            const SizedBox(width: AdminSpacing.sm),
-            Expanded(
-              child: Semantics(liveRegion: error, child: Text(message)),
-            ),
-            ?action,
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => AdminChartCard(
+    title: title,
+    description: description,
+    child: message == null
+        ? const AdminSkeletonRows(
+            label: 'Loading authoritative metrics',
+            rowCount: 3,
+            bordered: false,
+          )
+        : AdminListNotice(
+            icon: Icons.error_outline,
+            title: 'Chart data could not be loaded',
+            message: message!,
+            error: error,
+            bordered: false,
+          ),
+  );
 }

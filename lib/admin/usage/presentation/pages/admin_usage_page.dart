@@ -244,14 +244,18 @@ class _AdminUsagePageState extends ConsumerState<AdminUsagePage> {
           AdminListRejected() => const AdminListNotice(
             key: Key('admin-usage-rejected'),
             icon: Icons.error_outline,
+            title: 'Filters were not accepted',
             message:
                 'The server did not accept these filters. Adjust them and '
                 'apply again.',
+            error: true,
           ),
           AdminListUnavailable(:final retryable) => AdminListNotice(
             key: const Key('admin-usage-unavailable'),
             icon: Icons.error_outline,
-            message: 'Usage could not be loaded. Try again in a moment.',
+            title: 'Usage could not be loaded',
+            message: 'The usage ledger is temporarily unavailable.',
+            error: true,
             action: retryable
                 ? TextButton(
                     onPressed: _controller.load,
@@ -259,11 +263,16 @@ class _AdminUsagePageState extends ConsumerState<AdminUsagePage> {
                   )
                 : null,
           ),
-          AdminListReady(:final page) when page.items.isEmpty =>
-            const AdminListNotice(
+          AdminListReady(:final page, :final filters) when page.items.isEmpty =>
+            AdminListNotice(
               key: Key('admin-usage-empty'),
               icon: Icons.receipt_long_outlined,
-              message: 'No usage records matched these filters.',
+              title: filters.isEmpty
+                  ? 'No usage records yet'
+                  : 'No matching usage records',
+              message: filters.isEmpty
+                  ? 'Ledger entries will appear after the first usage event.'
+                  : 'Adjust or clear the current filters and try again.',
             ),
           AdminListReady() => _Results(state: state, controller: _controller),
         },

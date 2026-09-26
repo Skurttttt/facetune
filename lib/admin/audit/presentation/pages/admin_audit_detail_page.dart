@@ -42,12 +42,15 @@ class AdminAuditDetailPage extends ConsumerWidget {
           AdminAuditDetailNotFound() => const AdminListNotice(
             key: Key('admin-audit-detail-not-found'),
             icon: Icons.search_off_outlined,
-            message: 'Audit event not found.',
+            title: 'Audit event not found',
+            message: 'No immutable event matches this identifier.',
           ),
           AdminAuditDetailUnavailable(:final retryable) => AdminListNotice(
             key: const Key('admin-audit-detail-unavailable'),
             icon: Icons.error_outline,
-            message: 'Audit event could not be loaded.',
+            title: 'Audit event could not be loaded',
+            message: 'The immutable event is temporarily unavailable.',
+            error: true,
             action: retryable
                 ? TextButton(
                     onPressed: ref

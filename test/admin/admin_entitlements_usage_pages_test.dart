@@ -196,8 +196,9 @@ void main() {
       expect(filters.expiration, AdminExpirationWindow.within14Days);
       expect(filters.userId, userId);
       expect(find.byKey(const Key('admin-entitlements-empty')), findsOneWidget);
+      expect(find.text('No matching entitlements'), findsOneWidget);
       expect(
-        find.text('No entitlements matched these filters.'),
+        find.text('Adjust or clear the current filters and try again.'),
         findsOneWidget,
       );
 
@@ -399,8 +400,9 @@ void main() {
       expect(filters.fromInclusive, isNotNull);
       expect(filters.toRpcParams()['p_status'], 'released');
       expect(find.byKey(const Key('admin-usage-empty')), findsOneWidget);
+      expect(find.text('No matching usage records'), findsOneWidget);
       expect(
-        find.text('No usage records matched these filters.'),
+        find.text('Adjust or clear the current filters and try again.'),
         findsOneWidget,
       );
 

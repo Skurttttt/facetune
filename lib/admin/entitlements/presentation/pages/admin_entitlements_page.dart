@@ -221,14 +221,18 @@ class _AdminEntitlementsPageState extends ConsumerState<AdminEntitlementsPage> {
           AdminListRejected() => const AdminListNotice(
             key: Key('admin-entitlements-rejected'),
             icon: Icons.error_outline,
+            title: 'Filters were not accepted',
             message:
                 'The server did not accept these filters. Adjust them and '
                 'apply again.',
+            error: true,
           ),
           AdminListUnavailable(:final retryable) => AdminListNotice(
             key: const Key('admin-entitlements-unavailable'),
             icon: Icons.error_outline,
-            message: 'Entitlements could not be loaded. Try again in a moment.',
+            title: 'Entitlements could not be loaded',
+            message: 'The entitlement list is temporarily unavailable.',
+            error: true,
             action: retryable
                 ? TextButton(
                     onPressed: _controller.load,
@@ -236,11 +240,16 @@ class _AdminEntitlementsPageState extends ConsumerState<AdminEntitlementsPage> {
                   )
                 : null,
           ),
-          AdminListReady(:final page) when page.items.isEmpty =>
-            const AdminListNotice(
+          AdminListReady(:final page, :final filters) when page.items.isEmpty =>
+            AdminListNotice(
               key: Key('admin-entitlements-empty'),
               icon: Icons.verified_user_outlined,
-              message: 'No entitlements matched these filters.',
+              title: filters.isEmpty
+                  ? 'No entitlements yet'
+                  : 'No matching entitlements',
+              message: filters.isEmpty
+                  ? 'Entitlements will appear when an account receives one.'
+                  : 'Adjust or clear the current filters and try again.',
             ),
           AdminListReady() => _Results(state: state, controller: _controller),
         },
