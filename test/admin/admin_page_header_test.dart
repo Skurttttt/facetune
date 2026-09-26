@@ -86,6 +86,37 @@ void main() {
       expect(subtitle.top, greaterThanOrEqualTo(title.bottom));
       expect(subtitle.left, title.left);
     });
+
+    testWidgets('actions stack below context at compact laptop width', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(680, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        _harness(
+          AdminPageHeader(
+            title: 'Dashboard',
+            subtitle: 'Authoritative subscription and delivery operations.',
+            actions: [
+              const Text('Last updated 12:00 UTC'),
+              OutlinedButton(onPressed: () {}, child: const Text('Refresh')),
+            ],
+          ),
+        ),
+      );
+
+      final subtitle = tester.getRect(
+        find.byKey(const Key('admin-page-subtitle')),
+      );
+      final actions = tester.getRect(
+        find.byKey(const Key('admin-page-actions')),
+      );
+      expect(actions.top, greaterThanOrEqualTo(subtitle.bottom));
+      expect(actions.right, lessThanOrEqualTo(680));
+      expect(find.text('Refresh'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
   });
 
   group('AdminBreadcrumb', () {

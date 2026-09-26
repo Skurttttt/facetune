@@ -143,46 +143,78 @@ void main() {
     expect(focused.borderSide.width, AdminFocus.ringWidth);
   });
 
-  testWidgets(
-    'responsive grid uses deliberate four, two, and one-column rows',
-    (tester) async {
-      Future<void> verify(double width, int columns) async {
-        tester.view.physicalSize = Size(width, 900);
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: AdminTheme.dark,
-            home: Scaffold(
-              body: SizedBox(
-                width: width,
-                child: AdminResponsiveFormGrid(children: gridFields()),
-              ),
+  testWidgets('responsive grid follows the four browser width classes', (
+    tester,
+  ) async {
+    Future<void> verify(double width, int columns) async {
+      tester.view.physicalSize = Size(width, 900);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AdminTheme.dark,
+          home: Scaffold(
+            body: SizedBox(
+              width: width,
+              child: AdminResponsiveFormGrid(children: gridFields()),
             ),
           ),
+        ),
+      );
+      await tester.pump();
+
+      final firstTop = tester.getTopLeft(find.byKey(const Key('field-0'))).dy;
+      for (var index = 1; index < columns; index++) {
+        expect(
+          tester.getTopLeft(find.byKey(Key('field-$index'))).dy,
+          firstTop,
+          reason: '$width px should place field $index in the first row',
         );
-        await tester.pump();
-
-        final firstTop = tester.getTopLeft(find.byKey(const Key('field-0'))).dy;
-        for (var index = 1; index < columns; index++) {
-          expect(
-            tester.getTopLeft(find.byKey(Key('field-$index'))).dy,
-            firstTop,
-            reason: '$width px should place field $index in the first row',
-          );
-        }
-        if (columns < 6) {
-          expect(
-            tester.getTopLeft(find.byKey(Key('field-$columns'))).dy,
-            greaterThan(firstTop),
-          );
-        }
-        expect(tester.takeException(), isNull);
       }
+      if (columns < 6) {
+        expect(
+          tester.getTopLeft(find.byKey(Key('field-$columns'))).dy,
+          greaterThan(firstTop),
+        );
+      }
+      expect(tester.takeException(), isNull);
+    }
 
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-      await verify(1200, 4);
-      await verify(800, 2);
-      await verify(520, 1);
-    },
-  );
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await verify(1440, 4);
+    await verify(1200, 3);
+    await verify(1024, 2);
+    await verify(768, 2);
+    await verify(767, 1);
+  });
+
+  testWidgets('responsive grid clamps columns to usable field width', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AdminTheme.dark,
+        home: Scaffold(
+          body: SizedBox(
+            width: 500,
+            child: AdminResponsiveFormGrid(children: gridFields()),
+          ),
+        ),
+      ),
+    );
+
+    final firstTop = tester.getTopLeft(find.byKey(const Key('field-0'))).dy;
+    expect(tester.getTopLeft(find.byKey(const Key('field-1'))).dy, firstTop);
+    expect(
+      tester.getTopLeft(find.byKey(const Key('field-2'))).dy,
+      greaterThan(firstTop),
+    );
+    expect(
+      tester.getSize(find.byKey(const Key('field-0'))).width,
+      greaterThanOrEqualTo(220),
+    );
+    expect(tester.takeException(), isNull);
+  });
 }

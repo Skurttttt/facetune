@@ -71,6 +71,27 @@ void main() {
       expect(railSize.width, AdminShell.sidebarWidth);
     });
 
+    for (final entry in const [
+      (1440.0, true),
+      (1200.0, true),
+      (1024.0, false),
+      (768.0, false),
+    ]) {
+      testWidgets(
+        'the ${entry.$1.toInt()}px width class uses the safe sidebar mode',
+        (tester) async {
+          await pumpAdmin(tester, size: Size(entry.$1, 900));
+
+          final sidebar = tester.widget<AdminSidebar>(
+            find.byKey(const Key('admin-nav-rail')),
+          );
+          expect(sidebar.extended, entry.$2);
+          expect(find.byKey(const Key('admin-nav-drawer')), findsNothing);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+
     testWidgets('the top utility bar is 64 tall', (tester) async {
       await pumpAdmin(tester, size: const Size(1600, 900));
 
@@ -116,10 +137,9 @@ void main() {
     for (final size in const [
       Size(1920, 1080),
       Size(1440, 900),
-      Size(1366, 768),
-      Size(1280, 800),
+      Size(1200, 800),
       Size(1024, 768),
-      Size(800, 720),
+      Size(768, 720),
     ]) {
       testWidgets('the frame does not overflow at ${size.width.toInt()}px', (
         tester,

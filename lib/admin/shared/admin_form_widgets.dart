@@ -84,23 +84,50 @@ class AdminResponsiveFormGrid extends StatelessWidget {
     required this.children,
     this.columnSpacing = AdminSpacing.ml,
     this.rowSpacing = AdminSpacing.ml,
+    this.minimumFieldWidth = 220,
   });
 
   final List<Widget> children;
   final double columnSpacing;
   final double rowSpacing;
+  final double minimumFieldWidth;
 
   @visibleForTesting
-  static int columnCountFor(double width) {
-    if (width >= 1040) return 4;
-    if (width >= 640) return 2;
+  static int preferredColumnCountFor(double viewportWidth) {
+    if (viewportWidth >= 1440) return 4;
+    if (viewportWidth >= 1200) return 3;
+    if (viewportWidth >= 768) return 2;
     return 1;
+  }
+
+  @visibleForTesting
+  static int columnCountFor({
+    required double viewportWidth,
+    required double availableWidth,
+    required int childCount,
+    double columnSpacing = AdminSpacing.ml,
+    double minimumFieldWidth = 220,
+  }) {
+    if (childCount == 0) return 1;
+    final preferred = preferredColumnCountFor(viewportWidth);
+    final fitting =
+        ((availableWidth + columnSpacing) / (minimumFieldWidth + columnSpacing))
+            .floor()
+            .clamp(1, childCount);
+    return preferred.clamp(1, fitting);
   }
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      final columns = columnCountFor(constraints.maxWidth);
+      if (children.isEmpty) return const SizedBox.shrink();
+      final columns = columnCountFor(
+        viewportWidth: MediaQuery.sizeOf(context).width,
+        availableWidth: constraints.maxWidth,
+        childCount: children.length,
+        columnSpacing: columnSpacing,
+        minimumFieldWidth: minimumFieldWidth,
+      );
       final fieldWidth =
           (constraints.maxWidth - (columnSpacing * (columns - 1))) / columns;
       final rows = <Widget>[];

@@ -14,6 +14,7 @@ Future<void> pumpDialogHarness(
   required VoidCallback onConfirm,
   bool destructive = false,
   Size size = const Size(520, 700),
+  Widget? content,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -44,16 +45,18 @@ Future<void> pumpDialogHarness(
                     onConfirm();
                     Navigator.of(dialogContext).pop();
                   },
-                  content: const AdminDialogDetailRows(
-                    rows: [
-                      ('Account', 'pilot@example.invalid'),
-                      (
-                        'Entitlement ID',
-                        '11111111-2222-4333-8444-555555555555',
+                  content:
+                      content ??
+                      const AdminDialogDetailRows(
+                        rows: [
+                          ('Account', 'pilot@example.invalid'),
+                          (
+                            'Entitlement ID',
+                            '11111111-2222-4333-8444-555555555555',
+                          ),
+                          ('Reason', 'Panel review completed'),
+                        ],
                       ),
-                      ('Reason', 'Panel review completed'),
-                    ],
-                  ),
                 ),
               ),
               child: const Text('Open'),
@@ -132,4 +135,41 @@ void main() {
     expect(cancelled, 1);
     expect(confirmed, 1);
   });
+
+  testWidgets(
+    'dialog stays inside a short 768px viewport and remains scrollable',
+    (tester) async {
+      await pumpDialogHarness(
+        tester,
+        size: const Size(768, 480),
+        onCancel: () {},
+        onConfirm: () {},
+        content: const SizedBox(
+          height: 640,
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: Text('Long operational confirmation'),
+          ),
+        ),
+      );
+
+      final frame = tester.getRect(
+        find.byKey(const Key('admin-confirmation-dialog-frame')),
+      );
+      expect(frame.left, greaterThanOrEqualTo(AdminSpacing.lg));
+      expect(frame.right, lessThanOrEqualTo(768 - AdminSpacing.lg));
+      expect(frame.top, greaterThanOrEqualTo(AdminSpacing.lg));
+      expect(frame.bottom, lessThanOrEqualTo(480 - AdminSpacing.lg));
+
+      final scroll = find.descendant(
+        of: find.byType(AdminConfirmationDialog),
+        matching: find.byType(SingleChildScrollView),
+      );
+      expect(scroll, findsOneWidget);
+      await tester.ensureVisible(find.byKey(_confirmKey));
+      await tester.pumpAndSettle();
+      expect(find.byKey(_confirmKey).hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

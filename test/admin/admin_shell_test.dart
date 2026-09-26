@@ -193,6 +193,35 @@ void main() {
       expect(find.byKey(const Key('admin-section-usage')), findsOneWidget);
     });
 
+    testWidgets('a long identity truncates while Sign out stays reachable', (
+      tester,
+    ) async {
+      const longIdentity = AdminIdentity(
+        userId: 'admin-1',
+        email:
+            'operations-administrator-with-an-intentionally-long-address@example.invalid',
+      );
+      await pumpAdmin(
+        tester,
+        state: const AdminAuthorized(longIdentity),
+        size: const Size(768, 800),
+      );
+
+      final identityText = tester.widget<Text>(
+        find.byKey(const Key('admin-identity')),
+      );
+      expect(identityText.maxLines, 1);
+      expect(identityText.overflow, TextOverflow.ellipsis);
+      expect(
+        tester.getSize(find.byKey(const Key('admin-identity'))).width,
+        lessThanOrEqualTo(180),
+      );
+      final signOut = find.byKey(const Key('admin-sign-out'));
+      expect(signOut.hitTestable(), findsOneWidget);
+      expect(tester.getRect(signOut).right, lessThanOrEqualTo(768));
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets(
       'all five sections are implemented without future placeholders',
       (tester) async {

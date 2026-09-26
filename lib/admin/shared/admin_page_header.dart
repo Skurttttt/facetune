@@ -32,42 +32,62 @@ class AdminPageHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final heading = Semantics(
+      header: true,
+      child: Text(
+        title,
+        key: const Key('admin-page-title'),
+        style: theme.textTheme.headlineSmall,
+      ),
+    );
+    final description = Text(
+      subtitle,
+      key: const Key('admin-page-subtitle'),
+      style: theme.textTheme.bodyMedium,
+    );
+    final actionRow = Wrap(
+      key: const Key('admin-page-actions'),
+      spacing: AdminSpacing.xs,
+      runSpacing: AdminSpacing.xs,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: actions,
+    );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Semantics(
-                header: true,
-                child: Text(
-                  title,
-                  key: const Key('admin-page-title'),
-                  style: theme.textTheme.headlineSmall,
-                ),
-              ),
-            ),
-            if (actions.isNotEmpty) ...[
-              const SizedBox(width: AdminSpacing.md),
-              Wrap(
-                spacing: AdminSpacing.xs,
-                runSpacing: AdminSpacing.xs,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: actions,
-              ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stackActions = actions.isNotEmpty && constraints.maxWidth < 720;
+        if (stackActions) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              heading,
+              const SizedBox(height: AdminSpacing.xxs),
+              description,
+              const SizedBox(height: AdminSpacing.sm),
+              actionRow,
             ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: heading),
+                if (actions.isNotEmpty) ...[
+                  const SizedBox(width: AdminSpacing.md),
+                  actionRow,
+                ],
+              ],
+            ),
+            const SizedBox(height: AdminSpacing.xxs),
+            description,
           ],
-        ),
-        const SizedBox(height: AdminSpacing.xxs),
-        Text(
-          subtitle,
-          key: const Key('admin-page-subtitle'),
-          style: theme.textTheme.bodyMedium,
-        ),
-      ],
+        );
+      },
     );
   }
 }

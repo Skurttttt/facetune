@@ -508,7 +508,7 @@ void main() {
   testWidgets('representative dashboard widths do not overflow', (
     tester,
   ) async {
-    for (final width in [1600.0, 1366.0, 1100.0, 1024.0, 768.0]) {
+    for (final width in [1440.0, 1200.0, 1024.0, 768.0]) {
       await pumpDashboard(tester, [fixture], size: Size(width, 1800));
       await tester.pump();
       expect(
@@ -517,6 +517,58 @@ void main() {
         reason: 'dashboard overflowed at width $width',
       );
     }
+  });
+
+  testWidgets('summary cards follow the responsive column progression', (
+    tester,
+  ) async {
+    Future<void> verify(double width, int firstRowColumns) async {
+      await pumpDashboard(tester, [fixture], size: Size(width, 1800));
+      await tester.pump();
+      final keys = [
+        'tile-total-users',
+        'tile-in-force-entitlements',
+        'tile-pilot-in-force',
+        'tile-ai-looks-today',
+      ];
+      final firstTop = tester.getTopLeft(find.byKey(Key(keys.first))).dy;
+      for (var index = 1; index < firstRowColumns; index++) {
+        expect(
+          tester.getTopLeft(find.byKey(Key(keys[index]))).dy,
+          firstTop,
+          reason: '$width px should keep card $index in the first row',
+        );
+      }
+      if (firstRowColumns < keys.length) {
+        expect(
+          tester.getTopLeft(find.byKey(Key(keys[firstRowColumns]))).dy,
+          greaterThan(firstTop),
+        );
+      }
+      expect(tester.takeException(), isNull);
+    }
+
+    await verify(1440, 4);
+    await verify(1200, 3);
+    await verify(1024, 3);
+    await verify(768, 2);
+  });
+
+  testWidgets('chart plots retain readable height at 768px', (tester) async {
+    await pumpDashboard(tester, [fixture], size: const Size(768, 2400));
+    await tester.pump();
+
+    for (final entry in const [
+      ('chart-committed-ai-looks-plot', 280.0),
+      ('chart-final-previews-by-plan-plot', 210.0),
+      ('chart-usage-outcomes-plot', 230.0),
+      ('chart-entitlement-status-plot', 230.0),
+    ]) {
+      final plot = find.byKey(Key(entry.$1));
+      expect(plot, findsOneWidget);
+      expect(tester.getSize(plot).height, greaterThanOrEqualTo(entry.$2));
+    }
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('dashboard requests and renders no private product data', (

@@ -89,7 +89,9 @@ void main() {
     const actionKey = Key('rightmost-table-action');
     await pumpTable(
       tester,
-      width: 360,
+      // 768px browser width minus the supported compact sidebar and page
+      // insets: this reproduces the smallest supported table region.
+      width: 656,
       child: AdminTable(
         columns: const [
           DataColumn(label: Text('Very wide identity column')),
@@ -129,6 +131,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(actionKey).hitTestable(), findsOneWidget);
+    expect(tester.getSize(find.byType(AdminTable)).width, 656);
     expect(tester.takeException(), isNull);
   });
 

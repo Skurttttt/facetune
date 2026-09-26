@@ -79,6 +79,7 @@ class _DashboardActivityChartState extends State<DashboardActivityChart> {
             'Committed AI Looks for the last $_days days in UTC. $description',
         child: ExcludeSemantics(
           child: SizedBox(
+            key: const Key('chart-committed-ai-looks-plot'),
             height: 280,
             child: LineChart(
               LineChartData(
@@ -233,6 +234,7 @@ class DashboardPlanChart extends StatelessWidget {
           child: Column(
             children: [
               SizedBox(
+                key: const Key('chart-final-previews-by-plan-plot'),
                 height: 210,
                 child: BarChart(
                   BarChartData(
@@ -353,6 +355,7 @@ class DashboardUsageOutcomesChart extends StatelessWidget {
           child: Column(
             children: [
               SizedBox(
+                key: const Key('chart-usage-outcomes-plot'),
                 height: 230,
                 child: BarChart(
                   BarChartData(
@@ -498,6 +501,7 @@ class DashboardEntitlementStatusChart extends StatelessWidget {
             builder: (context, constraints) {
               final compact = constraints.maxWidth < 620;
               final chart = SizedBox(
+                key: const Key('chart-entitlement-status-plot'),
                 height: 230,
                 width: compact ? double.infinity : 280,
                 child: Stack(

@@ -262,11 +262,14 @@ class _IdentityChip extends StatelessWidget {
         ),
         const SizedBox(width: AdminSpacing.xs),
         ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 260),
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.sizeOf(context).width < 1200 ? 180 : 260,
+          ),
           child: Text(
             label,
             key: const Key('admin-identity'),
             style: theme.textTheme.bodyMedium,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
         ),
