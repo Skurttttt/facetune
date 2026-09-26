@@ -9,6 +9,7 @@ import '../../../shared/admin_dialogs.dart';
 import '../../../shared/admin_form_widgets.dart';
 import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
+import '../../../shared/admin_cards.dart';
 import '../../../shared/admin_labels.dart';
 import '../../../shared/admin_list_widgets.dart';
 import '../../../users/domain/admin_user_models.dart';
@@ -535,50 +536,41 @@ class _Panel extends StatelessWidget {
   final bool highlighted;
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(
-      border: Border.all(
-        color: highlighted
-            ? theme.colorScheme.primary
-            : theme.colorScheme.outlineVariant,
-      ),
-      borderRadius: BorderRadius.circular(AdminRadii.card),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.all(AdminSpacing.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Semantics(
-            header: true,
-            child: Text(title, style: theme.textTheme.titleMedium),
-          ),
-          const SizedBox(height: AdminSpacing.sm),
-          for (final row in rows)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: AdminSpacing.xxs),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 240,
-                    child: Text(row.$1, style: theme.textTheme.labelMedium),
+  Widget build(BuildContext context) => AdminCard(
+    borderColor: highlighted ? theme.colorScheme.primary : null,
+    padding: const EdgeInsets.all(AdminSpacing.md),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Semantics(
+          header: true,
+          child: Text(title, style: theme.textTheme.titleMedium),
+        ),
+        const SizedBox(height: AdminSpacing.sm),
+        for (final row in rows)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AdminSpacing.xxs),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 240,
+                  child: Text(row.$1, style: theme.textTheme.labelMedium),
+                ),
+                Expanded(
+                  child: SelectableText(
+                    row.$2,
+                    style: theme.textTheme.bodyMedium,
                   ),
-                  Expanded(
-                    child: SelectableText(
-                      row.$2,
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          if (footer != null) ...[
-            const SizedBox(height: AdminSpacing.sm),
-            footer!,
-          ],
+          ),
+        if (footer != null) ...[
+          const SizedBox(height: AdminSpacing.sm),
+          footer!,
         ],
-      ),
+      ],
     ),
   );
 }

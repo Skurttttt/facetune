@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../features/subscription/domain/entities/entitlement_status.dart';
 import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
+import '../../../shared/admin_cards.dart';
 import '../../../shared/admin_labels.dart';
 import '../../../shared/admin_list_widgets.dart';
 import '../../domain/admin_audit_models.dart';
@@ -189,37 +190,31 @@ class _ReadOnlyPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(AdminRadii.card),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(AdminSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Semantics(
-              header: true,
-              child: Text(title, style: theme.textTheme.titleMedium),
-            ),
-            const SizedBox(height: AdminSpacing.sm),
-            for (final row in rows)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: AdminSpacing.xxs),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: 210,
-                      child: Text(row.$1, style: theme.textTheme.labelMedium),
-                    ),
-                    Expanded(child: SelectableText(row.$2)),
-                  ],
-                ),
+    return AdminCard(
+      padding: const EdgeInsets.all(AdminSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            header: true,
+            child: Text(title, style: theme.textTheme.titleMedium),
+          ),
+          const SizedBox(height: AdminSpacing.sm),
+          for (final row in rows)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: AdminSpacing.xxs),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 210,
+                    child: Text(row.$1, style: theme.textTheme.labelMedium),
+                  ),
+                  Expanded(child: SelectableText(row.$2)),
+                ],
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }

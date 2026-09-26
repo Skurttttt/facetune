@@ -12,6 +12,8 @@ import 'package:facetune/admin/research/domain/admin_research_models.dart';
 import 'package:facetune/admin/research/presentation/admin_research_controller.dart';
 import 'package:facetune/admin/research/presentation/pages/admin_salon_pilot_research_page.dart';
 import 'package:facetune/admin/shared/admin_keyset_list_controller.dart';
+import 'package:facetune/admin/shared/admin_cards.dart';
+import 'package:facetune/admin/shared/admin_list_widgets.dart';
 import 'package:facetune/admin/shared/admin_read_failure.dart';
 import 'package:facetune/features/subscription/domain/errors/subscription_error_code.dart';
 import 'package:flutter/material.dart';
@@ -338,6 +340,41 @@ void main() {
         find.byKey(const Key('admin-pilots-next')),
       );
       expect(next.onPressed, isNull, reason: 'no next cursor on the last page');
+    });
+
+    testWidgets('uses the shared card and operational table system', (
+      tester,
+    ) async {
+      await pumpResearch(tester);
+      await tester.pump();
+
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('tile-pilot-users')),
+          matching: find.byType(AdminStatCard),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('tile-ops-final-preview')),
+          matching: find.byType(AdminCard),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byType(AdminTable), findsOneWidget);
+      expect(find.byType(AdminIdentityCell), findsNWidgets(2));
+      expect(find.byType(AdminTableActions), findsNWidgets(2));
+      expect(
+        find.byKey(const Key('view-user-31000000-0000-4000-8000-000000000001')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const Key('view-usage-31000000-0000-4000-8000-000000000001'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('pages forward and back with the server cursor', (

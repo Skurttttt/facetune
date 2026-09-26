@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../features/subscription/domain/entities/entitlement_status.dart';
 import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
+import '../../../shared/admin_cards.dart';
 import '../../../shared/admin_keyset_list_controller.dart';
 import '../../../shared/admin_labels.dart';
 import '../../../shared/admin_list_widgets.dart';
@@ -408,41 +409,12 @@ class _Tile extends StatelessWidget {
   final bool emphasis;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Semantics(
-      label: '$label: $value${detail == null ? '' : ', $detail'}',
-      child: ExcludeSemantics(
-        child: Container(
-          width: 200,
-          padding: const EdgeInsets.all(AdminSpacing.md),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: emphasis
-                  ? theme.colorScheme.tertiary
-                  : theme.colorScheme.outlineVariant,
-            ),
-            borderRadius: BorderRadius.circular(AdminRadii.card),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: theme.textTheme.labelMedium),
-              const SizedBox(height: AdminSpacing.xxs),
-              Text(
-                value,
-                style: theme.textTheme.headlineMedium?.copyWith(
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
-              if (detail != null)
-                Text(detail!, style: theme.textTheme.bodySmall),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => AdminStatCard(
+    label: label,
+    value: value,
+    metadata: detail,
+    emphasized: emphasis,
+  );
 }
 
 /// The four telemetry outcomes of one operation kind, written out.
@@ -464,30 +436,28 @@ class _OutcomeTile extends StatelessWidget {
           '$label: ${o.succeeded} succeeded, ${o.failed} failed, '
           '${o.denied} denied, ${o.duplicate} duplicate',
       child: ExcludeSemantics(
-        child: Container(
-          width: 200,
-          padding: const EdgeInsets.all(AdminSpacing.md),
-          decoration: BoxDecoration(
-            border: Border.all(color: theme.colorScheme.outlineVariant),
-            borderRadius: BorderRadius.circular(AdminRadii.card),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: theme.textTheme.labelMedium),
-              const SizedBox(height: AdminSpacing.xxs),
-              Text(
-                '${o.succeeded}',
-                style: theme.textTheme.headlineMedium?.copyWith(
-                  fontFeatures: const [FontFeature.tabularFigures()],
+        child: SizedBox(
+          width: 220,
+          child: AdminCard(
+            padding: const EdgeInsets.all(AdminSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: theme.textTheme.labelMedium),
+                const SizedBox(height: AdminSpacing.xxs),
+                Text(
+                  '${o.succeeded}',
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
                 ),
-              ),
-              Text('succeeded', style: theme.textTheme.bodySmall),
-              const SizedBox(height: AdminSpacing.xxs),
-              Text('${o.failed} failed', style: numeric),
-              Text('${o.denied} denied', style: numeric),
-              Text('${o.duplicate} duplicate', style: numeric),
-            ],
+                Text('succeeded', style: theme.textTheme.bodySmall),
+                const SizedBox(height: AdminSpacing.xxs),
+                Text('${o.failed} failed', style: numeric),
+                Text('${o.denied} denied', style: numeric),
+                Text('${o.duplicate} duplicate', style: numeric),
+              ],
+            ),
           ),
         ),
       ),
@@ -509,124 +479,112 @@ class _PilotTable extends StatelessWidget {
         key: const Key('admin-pilots-results'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Scrollbar(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columnSpacing: AdminSpacing.md,
-                columns: const [
-                  DataColumn(label: Text('User')),
-                  DataColumn(label: Text('Status')),
-                  DataColumn(label: Text('Effective allowance'), numeric: true),
-                  DataColumn(label: Text('Committed'), numeric: true),
-                  DataColumn(label: Text('Reserved'), numeric: true),
-                  DataColumn(label: Text('Remaining'), numeric: true),
-                  DataColumn(label: Text('Delivered'), numeric: true),
-                  DataColumn(label: Text('Released'), numeric: true),
-                  DataColumn(label: Text('Preview failures'), numeric: true),
-                  DataColumn(label: Text('Tutorial ops'), numeric: true),
-                  DataColumn(label: Text('Tutorial failures'), numeric: true),
-                  DataColumn(label: Text('Attempts'), numeric: true),
-                  DataColumn(label: Text('Tokens'), numeric: true),
-                  DataColumn(label: Text('Images'), numeric: true),
-                  DataColumn(label: Text('Starts')),
-                  DataColumn(label: Text('Expires')),
-                  DataColumn(label: Text('Last activity')),
-                  DataColumn(label: Text('')),
-                ],
-                rows: [
-                  for (final row in state.page.items)
-                    DataRow(
-                      key: ValueKey('admin-pilot-${row.entitlementId}'),
-                      cells: [
-                        DataCell(
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(row.email ?? 'No email'),
-                              AdminIdCell(row.userId),
-                            ],
-                          ),
-                        ),
-                        DataCell(
-                          AdminStatusBadge(
-                            key: Key('pilot-status-${row.entitlementId}'),
-                            label: _status(row),
-                            semanticsPrefix: 'Entitlement status',
-                            emphasis: _emphasis(row.effectiveStatus),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            '${row.effectiveAllowance}',
-                            key: Key('pilot-effective-${row.entitlementId}'),
-                          ),
-                        ),
-                        DataCell(Text('${row.committed}')),
-                        DataCell(Text('${row.reserved}')),
-                        DataCell(Text('${row.remaining}')),
-                        DataCell(
-                          Text(
-                            '${row.deliveredFinalPreviews}',
-                            key: Key('pilot-delivered-${row.entitlementId}'),
-                          ),
-                        ),
-                        DataCell(Text('${row.releasedOperations}')),
-                        DataCell(Text('${row.finalPreviewFailures}')),
-                        DataCell(Text('${row.tutorialOperations}')),
-                        DataCell(Text('${row.tutorialFailures}')),
-                        DataCell(Text('${row.providerAttempts}')),
-                        DataCell(
-                          Text(
-                            '${row.totalTokens}',
-                            key: Key('pilot-tokens-${row.entitlementId}'),
-                          ),
-                        ),
-                        DataCell(Text('${row.outputImages}')),
-                        DataCell(Text(formatUtcDate(row.startsAt))),
-                        DataCell(
-                          Text(
-                            row.expiresAt == null
-                                ? 'Not applicable'
-                                : formatUtcDate(row.expiresAt!),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            row.lastActivityAt == null
-                                ? 'None'
-                                : formatUtcDate(row.lastActivityAt!),
-                          ),
-                        ),
-                        DataCell(
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              TextButton(
-                                key: Key('view-user-${row.entitlementId}'),
-                                onPressed: () => context.go(
-                                  AdminRoutes.userDetail(row.userId),
-                                ),
-                                child: const Text('View user'),
-                              ),
-                              TextButton(
-                                key: Key('view-usage-${row.entitlementId}'),
-                                onPressed: () => context.go(
-                                  AdminRoutes.usageForEntitlement(
-                                    row.entitlementId,
-                                  ),
-                                ),
-                                child: const Text('View usage'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+          AdminTable(
+            columns: const [
+              DataColumn(label: Text('User')),
+              DataColumn(label: Text('Status')),
+              DataColumn(label: Text('Effective allowance'), numeric: true),
+              DataColumn(label: Text('Committed'), numeric: true),
+              DataColumn(label: Text('Reserved'), numeric: true),
+              DataColumn(label: Text('Remaining'), numeric: true),
+              DataColumn(label: Text('Delivered'), numeric: true),
+              DataColumn(label: Text('Released'), numeric: true),
+              DataColumn(label: Text('Preview failures'), numeric: true),
+              DataColumn(label: Text('Tutorial ops'), numeric: true),
+              DataColumn(label: Text('Tutorial failures'), numeric: true),
+              DataColumn(label: Text('Attempts'), numeric: true),
+              DataColumn(label: Text('Tokens'), numeric: true),
+              DataColumn(label: Text('Images'), numeric: true),
+              DataColumn(label: Text('Starts')),
+              DataColumn(label: Text('Expires')),
+              DataColumn(label: Text('Last activity')),
+              DataColumn(label: Text('')),
+            ],
+            rows: [
+              for (final row in state.page.items)
+                DataRow(
+                  key: ValueKey('admin-pilot-${row.entitlementId}'),
+                  cells: [
+                    DataCell(
+                      AdminIdentityCell(
+                        email: row.email ?? 'No email',
+                        userId: row.userId,
+                      ),
                     ),
-                ],
-              ),
-            ),
+                    DataCell(
+                      AdminStatusBadge(
+                        key: Key('pilot-status-${row.entitlementId}'),
+                        label: _status(row),
+                        semanticsPrefix: 'Entitlement status',
+                        emphasis: _emphasis(row.effectiveStatus),
+                      ),
+                    ),
+                    DataCell(
+                      Text(
+                        '${row.effectiveAllowance}',
+                        key: Key('pilot-effective-${row.entitlementId}'),
+                      ),
+                    ),
+                    DataCell(Text('${row.committed}')),
+                    DataCell(Text('${row.reserved}')),
+                    DataCell(Text('${row.remaining}')),
+                    DataCell(
+                      Text(
+                        '${row.deliveredFinalPreviews}',
+                        key: Key('pilot-delivered-${row.entitlementId}'),
+                      ),
+                    ),
+                    DataCell(Text('${row.releasedOperations}')),
+                    DataCell(Text('${row.finalPreviewFailures}')),
+                    DataCell(Text('${row.tutorialOperations}')),
+                    DataCell(Text('${row.tutorialFailures}')),
+                    DataCell(Text('${row.providerAttempts}')),
+                    DataCell(
+                      Text(
+                        '${row.totalTokens}',
+                        key: Key('pilot-tokens-${row.entitlementId}'),
+                      ),
+                    ),
+                    DataCell(Text('${row.outputImages}')),
+                    DataCell(Text(formatUtcDate(row.startsAt))),
+                    DataCell(
+                      Text(
+                        row.expiresAt == null
+                            ? 'Not applicable'
+                            : formatUtcDate(row.expiresAt!),
+                      ),
+                    ),
+                    DataCell(
+                      Text(
+                        row.lastActivityAt == null
+                            ? 'None'
+                            : formatUtcDate(row.lastActivityAt!),
+                      ),
+                    ),
+                    DataCell(
+                      AdminTableActions(
+                        children: [
+                          TextButton(
+                            key: Key('view-user-${row.entitlementId}'),
+                            onPressed: () =>
+                                context.go(AdminRoutes.userDetail(row.userId)),
+                            child: const Text('View user'),
+                          ),
+                          TextButton(
+                            key: Key('view-usage-${row.entitlementId}'),
+                            onPressed: () => context.go(
+                              AdminRoutes.usageForEntitlement(
+                                row.entitlementId,
+                              ),
+                            ),
+                            child: const Text('View usage'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+            ],
           ),
           const SizedBox(height: AdminSpacing.sm),
           AdminPaginationBar(

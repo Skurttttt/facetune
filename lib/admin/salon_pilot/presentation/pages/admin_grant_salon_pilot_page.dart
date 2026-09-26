@@ -7,6 +7,7 @@ import '../../../shared/admin_dialogs.dart';
 import '../../../shared/admin_form_widgets.dart';
 import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
+import '../../../shared/admin_cards.dart';
 import '../../../shared/admin_labels.dart';
 import '../../../shared/admin_list_widgets.dart';
 import '../../../users/presentation/admin_users_controller.dart';
@@ -350,77 +351,71 @@ class _Result extends StatelessWidget {
     return ConstrainedBox(
       key: const Key('admin-grant-succeeded'),
       constraints: const BoxConstraints(maxWidth: 640),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border.all(color: theme.colorScheme.primary),
-          borderRadius: BorderRadius.circular(AdminRadii.card),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(AdminSpacing.md),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Semantics(
-                header: true,
-                child: Text(
-                  outcome.replayed
-                      ? 'Salon Pilot was already granted by this request'
-                      : 'Salon Pilot granted',
-                  style: theme.textTheme.titleMedium,
+      child: AdminCard(
+        borderColor: theme.colorScheme.primary,
+        padding: const EdgeInsets.all(AdminSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Semantics(
+              header: true,
+              child: Text(
+                outcome.replayed
+                    ? 'Salon Pilot was already granted by this request'
+                    : 'Salon Pilot granted',
+                style: theme.textTheme.titleMedium,
+              ),
+            ),
+            const SizedBox(height: AdminSpacing.sm),
+            _Preview._row(theme, 'Entitlement ID', outcome.entitlementId),
+            _Preview._row(theme, 'Plan', planCodeLabel(outcome.planCode)),
+            _Preview._row(
+              theme,
+              'Status',
+              entitlementStatusLabel(outcome.status),
+            ),
+            _Preview._row(
+              theme,
+              'Effective allowance',
+              '${outcome.effectiveAllowance}',
+            ),
+            _Preview._row(theme, 'Committed', '${outcome.committedUsage}'),
+            _Preview._row(theme, 'Reserved', '${outcome.reservedUsage}'),
+            _Preview._row(theme, 'Remaining', '${outcome.remainingAiLooks}'),
+            _Preview._row(
+              theme,
+              'Available for a new generation',
+              '${outcome.availableAiLooks}',
+            ),
+            _Preview._row(
+              theme,
+              'Expires',
+              outcome.expiresAt == null
+                  ? 'Not applicable'
+                  : formatUtcDateTime(outcome.expiresAt!),
+            ),
+            _Preview._row(
+              theme,
+              'Updated',
+              formatUtcDateTime(outcome.updatedAt),
+            ),
+            const SizedBox(height: AdminSpacing.md),
+            Row(
+              children: [
+                FilledButton(
+                  key: const Key('admin-grant-done'),
+                  onPressed: () => context.go(AdminRoutes.userDetail(userId)),
+                  child: const Text('Back to user'),
                 ),
-              ),
-              const SizedBox(height: AdminSpacing.sm),
-              _Preview._row(theme, 'Entitlement ID', outcome.entitlementId),
-              _Preview._row(theme, 'Plan', planCodeLabel(outcome.planCode)),
-              _Preview._row(
-                theme,
-                'Status',
-                entitlementStatusLabel(outcome.status),
-              ),
-              _Preview._row(
-                theme,
-                'Effective allowance',
-                '${outcome.effectiveAllowance}',
-              ),
-              _Preview._row(theme, 'Committed', '${outcome.committedUsage}'),
-              _Preview._row(theme, 'Reserved', '${outcome.reservedUsage}'),
-              _Preview._row(theme, 'Remaining', '${outcome.remainingAiLooks}'),
-              _Preview._row(
-                theme,
-                'Available for a new generation',
-                '${outcome.availableAiLooks}',
-              ),
-              _Preview._row(
-                theme,
-                'Expires',
-                outcome.expiresAt == null
-                    ? 'Not applicable'
-                    : formatUtcDateTime(outcome.expiresAt!),
-              ),
-              _Preview._row(
-                theme,
-                'Updated',
-                formatUtcDateTime(outcome.updatedAt),
-              ),
-              const SizedBox(height: AdminSpacing.md),
-              Row(
-                children: [
-                  FilledButton(
-                    key: const Key('admin-grant-done'),
-                    onPressed: () => context.go(AdminRoutes.userDetail(userId)),
-                    child: const Text('Back to user'),
-                  ),
-                  const SizedBox(width: AdminSpacing.sm),
-                  TextButton(
-                    key: const Key('admin-grant-view-usage'),
-                    onPressed: () =>
-                        context.go(AdminRoutes.usageForUser(userId)),
-                    child: const Text('View usage'),
-                  ),
-                ],
-              ),
-            ],
-          ),
+                const SizedBox(width: AdminSpacing.sm),
+                TextButton(
+                  key: const Key('admin-grant-view-usage'),
+                  onPressed: () => context.go(AdminRoutes.usageForUser(userId)),
+                  child: const Text('View usage'),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

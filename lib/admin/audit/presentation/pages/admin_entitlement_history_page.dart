@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../theme/admin_tokens.dart';
 import '../../../app/admin_routes.dart';
+import '../../../shared/admin_cards.dart';
 import '../../../shared/admin_keyset_list_controller.dart';
 import '../../../shared/admin_labels.dart';
 import '../../../shared/admin_list_widgets.dart';
@@ -124,57 +125,51 @@ class _HistoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return DecoratedBox(
+    return AdminCard(
       key: ValueKey('admin-history-${event.source.code}-${event.id}'),
-      decoration: BoxDecoration(
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(AdminRadii.card),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(AdminSpacing.md),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              event.source == AdminAuditSource.provider
-                  ? Icons.cloud_sync_outlined
-                  : Icons.admin_panel_settings_outlined,
-              color: theme.colorScheme.primary,
-            ),
-            const SizedBox(width: AdminSpacing.sm),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          _title(event),
-                          style: theme.textTheme.titleMedium,
-                        ),
+      padding: const EdgeInsets.all(AdminSpacing.md),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            event.source == AdminAuditSource.provider
+                ? Icons.cloud_sync_outlined
+                : Icons.admin_panel_settings_outlined,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: AdminSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _title(event),
+                        style: theme.textTheme.titleMedium,
                       ),
-                      Text(formatUtcDateTime(event.occurredAt)),
-                    ],
-                  ),
-                  const SizedBox(height: AdminSpacing.xs),
-                  Text(_summary(event)),
-                  if (event.reason != null) ...[
-                    const SizedBox(height: AdminSpacing.xs),
-                    Text('Reason: ${event.reason}'),
-                  ],
-                  const SizedBox(height: AdminSpacing.xs),
-                  Text(
-                    _actor(event),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
                     ),
-                  ),
+                    Text(formatUtcDateTime(event.occurredAt)),
+                  ],
+                ),
+                const SizedBox(height: AdminSpacing.xs),
+                Text(_summary(event)),
+                if (event.reason != null) ...[
+                  const SizedBox(height: AdminSpacing.xs),
+                  Text('Reason: ${event.reason}'),
                 ],
-              ),
+                const SizedBox(height: AdminSpacing.xs),
+                Text(
+                  _actor(event),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
