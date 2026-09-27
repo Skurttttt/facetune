@@ -121,7 +121,7 @@ void main() {
         jsonEncode({
           'schemaVersion': 1,
           'plans': <Object?>[],
-          'previews': [
+          'futureEntries': [
             {'operationId': 'kept'},
           ],
         }),
@@ -131,7 +131,7 @@ void main() {
 
       final decoded =
           jsonDecode(storeFile().readAsStringSync()) as Map<String, Object?>;
-      expect(decoded['previews'], [
+      expect(decoded['futureEntries'], [
         {'operationId': 'kept'},
       ]);
       expect((decoded['plans']! as List).length, 1);
@@ -457,8 +457,10 @@ class _ScriptedRemote implements MakeupKitLookRemoteDataSource {
   }
 
   @override
-  Future<Object?> generatePreview({required String kitRecommendationId}) =>
-      throw UnimplementedError();
+  Future<Object?> generatePreview({
+    required String kitRecommendationId,
+    String? operationId,
+  }) => throw UnimplementedError();
 
   @override
   Future<String> createSignedUrl(String storagePath) =>
@@ -479,4 +481,16 @@ class _FailingStore implements PdmkPendingRequestStore {
 
   @override
   Future<void> clearPlan(PendingPlanRequest request) async {}
+
+  @override
+  Future<PendingPreviewOperation?> pendingPreview({
+    required String userId,
+  }) async => null;
+
+  @override
+  Future<void> savePreview(PendingPreviewOperation operation) =>
+      Future.error(const FileSystemException('disk full'));
+
+  @override
+  Future<void> clearPreview(PendingPreviewOperation operation) async {}
 }

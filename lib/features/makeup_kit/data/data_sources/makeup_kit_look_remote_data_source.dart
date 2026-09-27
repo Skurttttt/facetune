@@ -13,7 +13,12 @@ abstract interface class MakeupKitLookRemoteDataSource {
     String? planRequestId,
   });
 
-  Future<Object?> generatePreview({required String kitRecommendationId});
+  /// [operationId] is the durable AI Look operation of a plan-driven preview.
+  /// A replay with the same id continues or returns that one request.
+  Future<Object?> generatePreview({
+    required String kitRecommendationId,
+    String? operationId,
+  });
 
   Future<String> createSignedUrl(String storagePath);
 }
@@ -24,12 +29,19 @@ class MakeupKitLookRemoteFailure implements Exception {
     required this.code,
     required this.message,
     required this.retryable,
+    this.operationState,
+    this.retryAfterMs,
   });
 
   final int status;
   final String code;
   final String message;
   final bool retryable;
+
+  /// The server's verdict on the operation, when the reply carried one:
+  /// `in_progress` or `failed`. Absent means the request may be replayed.
+  final String? operationState;
+  final int? retryAfterMs;
 }
 
 class SupabaseMakeupKitLookRemoteDataSource extends SupabaseRemoteDataSource
@@ -51,10 +63,13 @@ class SupabaseMakeupKitLookRemoteDataSource extends SupabaseRemoteDataSource
   });
 
   @override
-  Future<Object?> generatePreview({required String kitRecommendationId}) =>
-      _invoke('generate-kit-makeup-preview', {
-        'kitRecommendationId': kitRecommendationId,
-      });
+  Future<Object?> generatePreview({
+    required String kitRecommendationId,
+    String? operationId,
+  }) => _invoke('generate-kit-makeup-preview', {
+    'kitRecommendationId': kitRecommendationId,
+    'operationId': ?operationId,
+  });
 
   @override
   Future<String> createSignedUrl(String storagePath) =>
@@ -73,6 +88,8 @@ class SupabaseMakeupKitLookRemoteDataSource extends SupabaseRemoteDataSource
       final payload = nested is Map
           ? nested.map((key, value) => MapEntry(key.toString(), value))
           : root;
+      final operation = root['operation'];
+      final retryAfter = operation is Map ? operation['retryAfterMs'] : null;
       throw MakeupKitLookRemoteFailure(
         status: error.status,
         code: payload['code']?.toString() ?? '',
@@ -80,6 +97,10 @@ class SupabaseMakeupKitLookRemoteDataSource extends SupabaseRemoteDataSource
             payload['message']?.toString() ??
             'Your kit-based look could not be generated.',
         retryable: payload['retryable'] == true,
+        operationState: operation is Map
+            ? operation['state']?.toString()
+            : null,
+        retryAfterMs: retryAfter is num ? retryAfter.toInt() : null,
       );
     }
   }

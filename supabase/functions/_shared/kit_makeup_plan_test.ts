@@ -10,6 +10,7 @@ import {
   buildCanonicalPlan,
   type BuildPlanInput,
   canonicalJson,
+  type CanonicalPlan,
   deriveVisibleIntent,
   type DraftOmission,
   type DraftSelection,
@@ -20,6 +21,7 @@ import {
   PlanViolation,
   ROLE_RULES,
   STYLE_PROFILES,
+  verifyStoredPlan,
 } from "./kit_makeup_plan.ts";
 import { TUTORIAL_CATEGORIES } from "./tutorial_vocabulary.ts";
 
@@ -540,6 +542,51 @@ Deno.test("the role table covers every inventory category", () => {
     assert(rule.maximum >= 1 && rule.maximum <= rule.roles.length);
   }
   assertEquals(new Set(ALL_ROLES).size, ALL_ROLES.length);
+});
+
+Deno.test("a stored plan is verified by shape, derivation, and digest", async () => {
+  const built = await buildCanonicalPlan(
+    input("full_glam", fullKit, glamSelections),
+  );
+  const verified = await verifyStoredPlan(
+    structuredClone(built.plan),
+    built.planDigest,
+  );
+  assertEquals(verified.plan_id, built.plan.plan_id);
+
+  async function code(mutate: (plan: CanonicalPlan) => void) {
+    const plan = structuredClone(built.plan);
+    mutate(plan);
+    const error = await assertRejects(
+      () => verifyStoredPlan(plan, built.planDigest),
+      PlanViolation,
+    );
+    return (error as PlanViolation).code;
+  }
+  assertEquals(
+    await code((plan) => {
+      plan.selected_items[0].visible_intent = "subtle_allowed";
+    }),
+    "plan_item",
+  );
+  assertEquals(
+    await code((plan) => {
+      plan.forbidden_visual_categories = ["foundation"];
+    }),
+    "plan_partition",
+  );
+  assertEquals(
+    await code((plan) => {
+      plan.overall_intensity = "sheer";
+    }),
+    "plan_digest_mismatch",
+  );
+  assertEquals(
+    await code((plan) => {
+      (plan as { plan_version: string }).plan_version = "kit_makeup_plan_v9";
+    }),
+    "unsupported_plan_version",
+  );
 });
 
 Deno.test("an unsupported style is refused", async () => {

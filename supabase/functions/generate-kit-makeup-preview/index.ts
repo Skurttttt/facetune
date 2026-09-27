@@ -28,6 +28,9 @@ import { KIT_MAKEUP_PREVIEW_PROMPT_VERSION } from "./prompt.ts";
 import type { CurrentKitProduct } from "./types.ts";
 import { FunctionFailure } from "./types.ts";
 import { normalizeAndValidateKitPreviewPlan } from "./validation.ts";
+import { resolvePreviewRoute } from "./plan_route.ts";
+import { handlePlanPreview } from "./plan_preview_supabase.ts";
+import { previewResponse } from "./preview_response.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -117,26 +120,6 @@ function operationId(value: unknown): string {
   return supplied;
 }
 
-function previewResponse(
-  row: Record<string, unknown>,
-  originalImagePath: string,
-) {
-  return {
-    preview: {
-      id: row.id,
-      mode: "makeup_kit",
-      analysisId: row.analysis_id,
-      kitRecommendationId: row.kit_recommendation_id,
-      originalImagePath,
-      generatedImagePath: row.storage_path,
-      generationNumber: row.generation_number,
-      modelId: row.model_name,
-      promptVersion: row.prompt_version,
-      createdAt: row.created_at,
-    },
-  };
-}
-
 function imagesAreIdentical(first: Uint8Array, second: Uint8Array): boolean {
   if (first.length !== second.length) return false;
   return first.every((value, index) => value === second[index]);
@@ -219,7 +202,7 @@ Deno.serve(async (request) => {
     const { data: recommendation, error: recommendationError } = await client
       .from("kit_makeup_recommendations")
       .select(
-        "id,analysis_id,makeup_style,recommendation_json,product_snapshot_json",
+        "id,analysis_id,makeup_style,recommendation_json,product_snapshot_json,plan_id,plan_json,plan_digest",
       )
       .eq("id", requestedId)
       .maybeSingle();
@@ -245,6 +228,22 @@ Deno.serve(async (request) => {
         "invalid_kit_plan",
         "The saved kit-based makeup plan is invalid.",
       );
+    }
+    // A plan-backed look is rendered only by kit_makeup_preview_v2 through the
+    // validated, bounded orchestration, which owns its own reservation and
+    // replies. Nothing below this branch runs for it.
+    const route = await resolvePreviewRoute(recommendationRow);
+    if (route.kind === "plan_v2") {
+      const reply = await handlePlanPreview({
+        userClient: client,
+        userId: authData.user.id,
+        body,
+        recommendation: recommendationRow,
+        plan: route.plan,
+        telemetryClient,
+        telemetryEventId,
+      });
+      return jsonResponse(reply.body, reply.status);
     }
     const snapshots = recommendationRow.product_snapshot_json;
     const selectedIds = Array.isArray(snapshots)

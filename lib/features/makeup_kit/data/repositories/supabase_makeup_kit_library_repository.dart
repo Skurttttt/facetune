@@ -262,6 +262,7 @@ class SupabaseMakeupKitLibraryRepository implements MakeupKitLibraryRepository {
             'modelId': recommendationRow['model_name'],
             'promptVersion': recommendationRow['prompt_version'],
             'createdAt': recommendationRow['created_at'],
+            'planId': recommendationRow['plan_id'],
           },
         }).recommendation;
         final previewDto = KitGeneratedPreviewDto.fromResponse({

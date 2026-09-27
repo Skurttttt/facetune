@@ -10,9 +10,14 @@ class KitMakeupRecommendation {
     required this.modelId,
     required this.promptVersion,
     required this.createdAt,
+    this.planId,
   });
 
   final String id;
+
+  /// The canonical plan this look was built from. Null for looks created
+  /// before plan-driven generation, which keep their original behaviour.
+  final String? planId;
   final String analysisId;
   final String styleCode;
   final List<KitMakeupSelection> selections;

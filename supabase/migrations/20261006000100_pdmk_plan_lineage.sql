@@ -265,7 +265,9 @@ create table if not exists public.kit_preview_attempts (
         validator_version is not null
         and candidate_sha256 is not null
         and (cardinality(mismatch_categories) > 0
-          or cardinality(missing_required_categories) > 0)
+          or cardinality(missing_required_categories) > 0
+          -- A changed identity is a mismatch no category names.
+          or reason_code is not null)
       )
     ),
   constraint kit_preview_attempts_no_verdict_without_validation

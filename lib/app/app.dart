@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/app_config.dart';
 import '../core/constants/app_constants.dart';
+import '../features/makeup_kit/presentation/widgets/pdmk_preview_resume_listener.dart';
 import '../features/settings/presentation/controllers/theme_mode_controller.dart';
 import '../features/subscription/presentation/widgets/subscription_resume_refresher.dart';
 import '../theme/app_theme.dart';
@@ -29,8 +30,11 @@ class FaceTuneApp extends ConsumerWidget {
       // background, and returning to the foreground re-asks the server rather
       // than trusting what was on screen before. See the widget for why this
       // is a display concern and never an entitlement decision.
-      builder: (context, child) =>
-          SubscriptionResumeRefresher(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) => SubscriptionResumeRefresher(
+        child: PdmkPreviewResumeListener(
+          child: child ?? const SizedBox.shrink(),
+        ),
+      ),
     );
   }
 }

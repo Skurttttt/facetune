@@ -5,6 +5,7 @@ import 'package:facetune/features/authentication/data/providers/auth_repository_
 import 'package:facetune/features/authentication/domain/entities/auth_user.dart';
 import 'package:facetune/features/authentication/presentation/pages/reset_password_page.dart';
 import 'package:facetune/features/history/data/providers/history_providers.dart';
+import 'package:facetune/features/makeup_kit/data/providers/makeup_kit_look_providers.dart';
 import 'package:facetune/features/profile/data/providers/profile_providers.dart';
 import 'package:facetune/features/saved_looks/data/providers/saved_looks_providers.dart';
 import 'package:facetune/features/saved_looks/data/repositories/unavailable_saved_looks_repository.dart';
@@ -28,6 +29,7 @@ void main() {
       ProviderScope(
         overrides: [
           supabaseAvailableProvider.overrideWithValue(true),
+          pdmkPendingPreviewResumerProvider.overrideWithValue(null),
           authRepositoryProvider.overrideWithValue(repository),
         ],
         child: const MaterialApp(home: ResetPasswordPage()),
@@ -47,6 +49,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         supabaseAvailableProvider.overrideWithValue(true),
+        pdmkPendingPreviewResumerProvider.overrideWithValue(null),
         authRepositoryProvider.overrideWithValue(authRepository),
         profileRepositoryProvider.overrideWithValue(FakeProfileRepository()),
         settingsRepositoryProvider.overrideWithValue(FakeSettingsRepository()),

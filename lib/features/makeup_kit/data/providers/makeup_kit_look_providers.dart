@@ -6,6 +6,7 @@ import '../../../../core/supabase/supabase_client_provider.dart';
 import '../../domain/repositories/makeup_kit_look_repository.dart';
 import '../data_sources/makeup_kit_look_remote_data_source.dart';
 import '../data_sources/pdmk_pending_request_store.dart';
+import '../repositories/pdmk_pending_preview_resumer.dart';
 import '../repositories/supabase_makeup_kit_look_repository.dart';
 import '../repositories/unavailable_makeup_kit_look_repository.dart';
 
@@ -15,6 +16,18 @@ import '../repositories/unavailable_makeup_kit_look_repository.dart';
 final pdmkPendingRequestStoreProvider = Provider<PdmkPendingRequestStore?>(
   (ref) => kIsWeb ? null : FilePdmkPendingRequestStore(),
 );
+
+/// Continues an interrupted plan-driven preview through the same data layer
+/// as the kit look repository. Absent when that repository is not the Supabase
+/// one, or has no durable store.
+final pdmkPendingPreviewResumerProvider = Provider<PdmkPendingPreviewResumer?>((
+  ref,
+) {
+  final repository = ref.watch(makeupKitLookRepositoryProvider);
+  return repository is SupabaseMakeupKitLookRepository
+      ? repository.pendingPreviewResumer()
+      : null;
+});
 
 final makeupKitLookRepositoryProvider = Provider<MakeupKitLookRepository>((
   ref,

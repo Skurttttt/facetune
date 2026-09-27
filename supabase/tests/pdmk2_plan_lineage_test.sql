@@ -9,7 +9,7 @@
 -- Legacy (v2) rows keep their behaviour. Rolled back.
 begin;
 
-select plan(82);
+select plan(83);
 
 -- ---------------------------------------------------------------------------
 -- Helpers
@@ -370,7 +370,7 @@ select throws_ok($$ update public.kit_preview_attempts
       validator_version = 'kit_preview_validator_v1',
       completed_at = timezone('utc', now())
   where id = '26000000-0000-4000-8000-000000000002' $$,
-  '23514', null, 'a mismatch names at least one category');
+  '23514', null, 'a mismatch names a category or a reason');
 select throws_ok($$ update public.kit_preview_attempts
   set status = 'completed', outcome = 'retryable_mismatch',
       validator_version = 'kit_preview_validator_v1',
@@ -558,6 +558,22 @@ select lives_ok($$ update public.kit_preview_generations
       completed_at = timezone('utc', now()), lease_expires_at = null
   where id = '25000000-0000-4000-8000-000000000003' $$,
   'a released operation ends its generation as reservation_released');
+
+-- A candidate whose only defect is a changed identity.
+select pg_temp.stale_reservation('24000000-0000-4000-8000-000000000005');
+select pg_temp.generation('25000000-0000-4000-8000-000000000004',
+  '24000000-0000-4000-8000-000000000005', repeat('1', 64));
+select pg_temp.attempt('26000000-0000-4000-8000-000000000041',
+  '25000000-0000-4000-8000-000000000004', 1);
+update public.kit_preview_attempts
+  set status = 'validating', candidate_sha256 = repeat('5', 64)
+  where id = '26000000-0000-4000-8000-000000000041';
+select lives_ok($$ update public.kit_preview_attempts
+  set status = 'completed', outcome = 'retryable_mismatch',
+      validator_version = 'kit_preview_validator_v1',
+      reason_code = 'identity_changed', completed_at = timezone('utc', now())
+  where id = '26000000-0000-4000-8000-000000000041' $$,
+  'a changed identity is a mismatch without a category');
 
 -- ===========================================================================
 -- 8. Legacy previews and cascades

@@ -10,6 +10,8 @@ import '../../domain/entities/kit_makeup_recommendation.dart';
 import '../../domain/repositories/makeup_kit_look_repository.dart';
 import '../data_sources/makeup_kit_look_remote_data_source.dart';
 import '../data_sources/pdmk_pending_request_store.dart';
+import 'pdmk_pending_preview_resumer.dart';
+import 'pdmk_preview_operation_driver.dart';
 import '../models/kit_generated_preview_dto.dart';
 import '../models/kit_makeup_recommendation_dto.dart';
 
@@ -19,12 +21,16 @@ class SupabaseMakeupKitLookRepository implements MakeupKitLookRepository {
     PdmkPendingRequestStore? pendingRequests,
     String Function()? newRequestId,
     DateTime Function()? now,
+    Future<void> Function(Duration)? delay,
+    Duration previewPatience = const Duration(minutes: 8),
     Duration recommendationTimeout = const Duration(seconds: 105),
     Duration previewTimeout = const Duration(seconds: 180),
     Duration signedUrlTimeout = const Duration(seconds: 30),
   }) : _pendingRequests = pendingRequests,
        _newRequestId = newRequestId,
        _now = now,
+       _delay = delay,
+       _previewPatience = previewPatience,
        _recommendationTimeout = recommendationTimeout,
        _previewTimeout = previewTimeout,
        _signedUrlTimeout = signedUrlTimeout;
@@ -36,6 +42,11 @@ class SupabaseMakeupKitLookRepository implements MakeupKitLookRepository {
   final PdmkPendingRequestStore? _pendingRequests;
   final String Function()? _newRequestId;
   final DateTime Function()? _now;
+  final Future<void> Function(Duration)? _delay;
+
+  /// How long one call may keep replaying an in-progress preview before it
+  /// returns and leaves the operation pending for the next attempt.
+  final Duration _previewPatience;
   final Duration _recommendationTimeout;
   final Duration _previewTimeout;
   final Duration _signedUrlTimeout;
@@ -136,9 +147,12 @@ class SupabaseMakeupKitLookRepository implements MakeupKitLookRepository {
   }) async {
     _requireAuthentication();
     try {
-      final response = await _remote
-          .generatePreview(kitRecommendationId: recommendation.id)
-          .timeout(_previewTimeout);
+      final store = _pendingRequests;
+      final response = recommendation.planId == null || store == null
+          ? await _remote
+                .generatePreview(kitRecommendationId: recommendation.id)
+                .timeout(_previewTimeout)
+          : await _planPreview(recommendation, store);
       final dto = KitGeneratedPreviewDto.fromResponse(response);
       if (dto.kitRecommendationId != recommendation.id ||
           dto.analysisId != recommendation.analysisId ||
@@ -156,6 +170,91 @@ class SupabaseMakeupKitLookRepository implements MakeupKitLookRepository {
     } catch (error) {
       throw _map(error, stage: 'preview');
     }
+  }
+
+  /// A plan-driven preview: one durable operation per logical request.
+  ///
+  /// A pending operation for this look is continued rather than replaced. A
+  /// pending operation for another look is carried to its end first, because
+  /// a user never holds two plan-driven requests at once. A new operation id
+  /// is recorded durably before it is ever sent.
+  Future<Object?> _planPreview(
+    KitMakeupRecommendation recommendation,
+    PdmkPendingRequestStore store,
+  ) async {
+    final userId = _remote.currentUserId!;
+    final driver = PdmkPreviewOperationDriver(
+      remote: _remote,
+      store: store,
+      callTimeout: _previewTimeout,
+      patience: _previewPatience,
+      delay: _delay,
+      now: _now,
+    );
+    var pending = await _readPending(
+      () => store.pendingPreview(userId: userId),
+    );
+    if (pending != null && pending.kitRecommendationId != recommendation.id) {
+      try {
+        await driver.drive(pending);
+      } on MakeupKitLookRemoteFailure catch (failure) {
+        // The earlier request ended in failure and was forgotten; this one may
+        // start. Anything else means it is still unresolved.
+        if (failure.operationState != 'failed') rethrow;
+      } on PreviewFailure catch (failure) {
+        if (failure.technicalCode != 'PREVIEW_IN_PROGRESS') rethrow;
+        throw const PreviewFailure(
+          PreviewFailureType.server,
+          'Your previous look is still being prepared. Try again in a moment.',
+          retryable: true,
+          technicalCode: 'PREVIOUS_PREVIEW_IN_PROGRESS',
+        );
+      }
+      pending = null;
+    }
+    final operation =
+        pending ??
+        PendingPreviewOperation(
+          userId: userId,
+          analysisId: recommendation.analysisId,
+          kitRecommendationId: recommendation.id,
+          planId: recommendation.planId!,
+          operationId: (_newRequestId ?? const Uuid().v4)(),
+          createdAt: (_now ?? DateTime.now)().toUtc(),
+        );
+    if (pending == null) {
+      await _readPending(() async {
+        await store.savePreview(operation);
+        return null;
+      });
+    }
+    return driver.drive(operation);
+  }
+
+  Future<T> _readPending<T>(Future<T> Function() read) async {
+    try {
+      return await read();
+    } catch (_) {
+      throw const PreviewFailure(
+        PreviewFailureType.server,
+        "Couldn't prepare your request. Try again.",
+        retryable: true,
+        technicalCode: 'LOCAL_REQUEST_STORE_UNAVAILABLE',
+      );
+    }
+  }
+
+  /// A resumer over this repository's own remote and durable store, or null
+  /// when plan-driven previews have no store here.
+  PdmkPendingPreviewResumer? pendingPreviewResumer() {
+    final store = _pendingRequests;
+    return store == null
+        ? null
+        : PdmkPendingPreviewResumer(
+            remote: _remote,
+            store: store,
+            callTimeout: _previewTimeout,
+          );
   }
 
   void _requireAuthentication() {
@@ -208,6 +307,14 @@ class SupabaseMakeupKitLookRepository implements MakeupKitLookRepository {
           'This look needs to be started again.',
           retryable: true,
           technicalCode: 'PLAN_REQUEST_CONFLICT',
+        );
+      }
+      if (code == 'OPERATION_EXPIRED' || code == 'OPERATION_CONFLICT') {
+        return PreviewFailure(
+          PreviewFailureType.validation,
+          error.message,
+          retryable: true,
+          technicalCode: code,
         );
       }
       if (error.status == 409 || code == 'INVENTORY_CHANGED') {

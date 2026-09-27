@@ -66,11 +66,76 @@ class PendingPlanRequest {
   }
 }
 
+/// A plan-driven preview request that has not yet reached a terminal state.
+///
+/// Like [PendingPlanRequest], only a replay handle: the operation id is
+/// re-sent until the server answers `accepted` or `failed`, so one logical
+/// request holds one AI Look reservation however often it is retried.
+class PendingPreviewOperation {
+  const PendingPreviewOperation({
+    required this.userId,
+    required this.analysisId,
+    required this.kitRecommendationId,
+    required this.planId,
+    required this.operationId,
+    required this.createdAt,
+  });
+
+  final String userId;
+  final String analysisId;
+  final String kitRecommendationId;
+  final String planId;
+  final String operationId;
+  final DateTime createdAt;
+
+  Map<String, Object?> toJson() => {
+    'userId': userId,
+    'analysisId': analysisId,
+    'kitRecommendationId': kitRecommendationId,
+    'planId': planId,
+    'operationId': operationId,
+    'createdAt': createdAt.toUtc().toIso8601String(),
+  };
+
+  static PendingPreviewOperation? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final createdAt = DateTime.tryParse(value['createdAt']?.toString() ?? '');
+    final fields = [
+      value['userId'],
+      value['analysisId'],
+      value['kitRecommendationId'],
+      value['planId'],
+      value['operationId'],
+    ];
+    if (fields.any((field) => field is! String) || createdAt == null) {
+      return null;
+    }
+    return PendingPreviewOperation(
+      userId: fields[0]! as String,
+      analysisId: fields[1]! as String,
+      kitRecommendationId: fields[2]! as String,
+      planId: fields[3]! as String,
+      operationId: fields[4]! as String,
+      createdAt: createdAt.toUtc(),
+    );
+  }
+}
+
 /// Durable storage for pending plan-driven My Makeup Kit requests.
 ///
 /// A save must complete before the request it describes is sent, so that a
 /// crash after dispatch always finds the identifier again.
 abstract interface class PdmkPendingRequestStore {
+  /// The user's pending preview operation. There is at most one: a new
+  /// preview request waits until the previous one has ended.
+  Future<PendingPreviewOperation?> pendingPreview({required String userId});
+
+  /// Durably records [operation] as the user's pending preview.
+  Future<void> savePreview(PendingPreviewOperation operation);
+
+  /// Forgets [operation], and only that operation.
+  Future<void> clearPreview(PendingPreviewOperation operation);
+
   /// The pending plan request for exactly this user, analysis, and style.
   Future<PendingPlanRequest?> pendingPlan({
     required String userId,
@@ -123,17 +188,18 @@ class FilePdmkPendingRequestStore implements PdmkPendingRequestStore {
   @override
   Future<void> savePlan(PendingPlanRequest request) => _serial(() async {
     final document = await _read();
-    final plans = _plans(document)
-        .where(
-          (entry) => !entry.matches(
-            userId: request.userId,
-            analysisId: request.analysisId,
-            styleCode: request.styleCode,
-          ),
-        )
-        .toList()
-      ..add(request);
-    await _write(document, plans);
+    final plans =
+        _plans(document)
+            .where(
+              (entry) => !entry.matches(
+                userId: request.userId,
+                analysisId: request.analysisId,
+                styleCode: request.styleCode,
+              ),
+            )
+            .toList()
+          ..add(request);
+    await _write(document, plans: plans, previews: _previews(document));
   });
 
   @override
@@ -148,8 +214,54 @@ class FilePdmkPendingRequestStore implements PdmkPendingRequestStore {
         )
         .toList();
     if (remaining.length == plans.length) return;
-    await _write(document, remaining);
+    await _write(document, plans: remaining, previews: _previews(document));
   });
+
+  @override
+  Future<PendingPreviewOperation?> pendingPreview({required String userId}) =>
+      _serial(() async {
+        for (final entry in _previews(await _read())) {
+          if (entry.userId == userId) return entry;
+        }
+        return null;
+      });
+
+  @override
+  Future<void> savePreview(PendingPreviewOperation operation) =>
+      _serial(() async {
+        final document = await _read();
+        final previews =
+            _previews(
+                document,
+              ).where((entry) => entry.userId != operation.userId).toList()
+              ..add(operation);
+        await _write(document, plans: _plans(document), previews: previews);
+      });
+
+  @override
+  Future<void> clearPreview(PendingPreviewOperation operation) =>
+      _serial(() async {
+        final document = await _read();
+        final previews = _previews(document);
+        final remaining = previews
+            .where(
+              (entry) =>
+                  entry.userId != operation.userId ||
+                  entry.operationId != operation.operationId,
+            )
+            .toList();
+        if (remaining.length == previews.length) return;
+        await _write(document, plans: _plans(document), previews: remaining);
+      });
+
+  List<PendingPreviewOperation> _previews(Map<String, Object?> document) {
+    final values = document['previews'];
+    if (values is! List) return <PendingPreviewOperation>[];
+    return values
+        .map(PendingPreviewOperation.fromJson)
+        .whereType<PendingPreviewOperation>()
+        .toList();
+  }
 
   Future<T> _serial<T>(Future<T> Function() operation) {
     final result = _tail.then((_) => operation());
@@ -159,8 +271,10 @@ class FilePdmkPendingRequestStore implements PdmkPendingRequestStore {
 
   Future<File> _file() async {
     final root = await _directory();
-    return File('${root.path}${Platform.pathSeparator}pdmk'
-        '${Platform.pathSeparator}$_fileName');
+    return File(
+      '${root.path}${Platform.pathSeparator}pdmk'
+      '${Platform.pathSeparator}$_fileName',
+    );
   }
 
   Future<Map<String, Object?>> _read() async {
@@ -188,15 +302,17 @@ class FilePdmkPendingRequestStore implements PdmkPendingRequestStore {
   }
 
   Future<void> _write(
-    Map<String, Object?> document,
-    List<PendingPlanRequest> plans,
-  ) async {
+    Map<String, Object?> document, {
+    required List<PendingPlanRequest> plans,
+    required List<PendingPreviewOperation> previews,
+  }) async {
     final file = await _file();
     await file.parent.create(recursive: true);
     final contents = jsonEncode(<String, Object?>{
       ...document,
       'schemaVersion': _schemaVersion,
       'plans': plans.map((entry) => entry.toJson()).toList(),
+      'previews': previews.map((entry) => entry.toJson()).toList(),
     });
     final temporary = File('${file.path}.tmp');
     await temporary.writeAsString(contents, flush: true);

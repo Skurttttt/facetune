@@ -424,3 +424,57 @@ Deno.test("the sanitized log carries no personal data", async () => {
   assertEquals(line.includes("oval"), false);
   assertEquals(line.includes(context.stepId), true);
 });
+
+// PDMK-7: the accepted bytes of a plan-driven kit preview are verified before
+// a step is grounded in them. The fixture storage returns eight zero bytes.
+async function zeroBytesSha(): Promise<string> {
+  const hash = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", new Uint8Array(8)),
+  );
+  return [...hash].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+Deno.test("a plan-driven preview with its accepted bytes resolves", async () => {
+  const context = await resolveTutorialSource(
+    client({
+      session: kitSession(),
+      preview: {
+        id: previewId,
+        storage_path: previewPath("kit-generated"),
+        plan_id: "plan-1",
+        content_sha256: await zeroBytesSha(),
+      },
+    }),
+    userId,
+    { tutorialSessionId: sessionId, category: "lips" },
+  );
+  assertEquals(context.sourceMode, "my_makeup_kit");
+});
+
+Deno.test("a plan-driven preview whose bytes changed is refused", async () => {
+  await expectFailure(
+    {
+      session: kitSession(),
+      preview: {
+        id: previewId,
+        storage_path: previewPath("kit-generated"),
+        plan_id: "plan-1",
+        content_sha256: "f".repeat(64),
+      },
+    },
+    "lips",
+    "kit_preview_integrity_mismatch",
+  );
+});
+
+Deno.test("a legacy kit preview is not hash-checked", async () => {
+  const context = await resolveTutorialSource(
+    client({
+      session: kitSession(),
+      preview: { id: previewId, storage_path: previewPath("kit-generated") },
+    }),
+    userId,
+    { tutorialSessionId: sessionId, category: "lips" },
+  );
+  assertEquals(context.sourceMode, "my_makeup_kit");
+});

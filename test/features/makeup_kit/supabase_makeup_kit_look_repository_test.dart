@@ -159,6 +159,7 @@ class _FakeLookRemote implements MakeupKitLookRemoteDataSource {
   @override
   Future<Object?> generatePreview({
     required String kitRecommendationId,
+    String? operationId,
   }) async => previewResponse ?? (throw UnimplementedError());
 
   @override

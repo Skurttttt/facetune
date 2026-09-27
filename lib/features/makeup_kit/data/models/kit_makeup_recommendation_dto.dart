@@ -71,6 +71,7 @@ class KitMakeupRecommendationDto {
         modelId: _string(data, 'modelId'),
         promptVersion: _string(data, 'promptVersion'),
         createdAt: DateTime.parse(_string(data, 'createdAt')).toUtc(),
+        planId: _nullableString(data['planId']),
       ),
     );
   }

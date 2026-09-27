@@ -1,5 +1,7 @@
 import { validateGeneratedImage } from "../generate-makeup-preview/image_validation.ts";
+import type { CanonicalPlan } from "../_shared/kit_makeup_plan.ts";
 import { kitMakeupPreviewPrompt } from "./prompt.ts";
+import { kitMakeupPreviewV2Prompt } from "./prompt_v2.ts";
 import {
   noteProviderAttempt,
   readProviderUsage,
@@ -52,7 +54,7 @@ function generatedImage(payload: unknown): GeneratedImage {
   );
 }
 
-export async function requestGeminiKitPreview(
+export function requestGeminiKitPreview(
   apiKey: string,
   model: string,
   originalBytes: Uint8Array,
@@ -64,6 +66,50 @@ export async function requestGeminiKitPreview(
   // read only after the image has been validated; nothing else changes.
   usageSink?: UsageSink,
 ): Promise<GeneratedImage> {
+  return postGeminiImage(
+    apiKey,
+    model,
+    kitMakeupPreviewPrompt(style, plan, variationNumber),
+    originalBytes,
+    originalMimeType,
+    usageSink,
+  );
+}
+
+/** A `kit_makeup_preview_v2` candidate, rendered from the canonical plan. */
+export function requestGeminiKitPlanPreview(
+  apiKey: string,
+  model: string,
+  originalBytes: Uint8Array,
+  originalMimeType: string,
+  plan: CanonicalPlan,
+  variationNumber: number,
+  repairCodes: readonly string[],
+  budgetMs: number,
+  usageSink?: UsageSink,
+): Promise<GeneratedImage> {
+  return postGeminiImage(
+    apiKey,
+    model,
+    kitMakeupPreviewV2Prompt(plan, variationNumber, repairCodes),
+    originalBytes,
+    originalMimeType,
+    usageSink,
+    budgetMs,
+  );
+}
+
+async function postGeminiImage(
+  apiKey: string,
+  model: string,
+  prompt: string,
+  originalBytes: Uint8Array,
+  originalMimeType: string,
+  usageSink?: UsageSink,
+  // A plan-driven attempt shares one invocation with its validation, so it
+  // may be given less than the v1 budget. v1 always passes nothing.
+  budgetMs: number = totalBudgetMs,
+): Promise<GeneratedImage> {
   const endpoint = `https://generativelanguage.googleapis.com/v1/models/${
     encodeURIComponent(model)
   }:generateContent`;
@@ -71,7 +117,7 @@ export async function requestGeminiKitPreview(
     contents: [{
       role: "user",
       parts: [
-        { text: kitMakeupPreviewPrompt(style, plan, variationNumber) },
+        { text: prompt },
         {
           inlineData: {
             mimeType: originalMimeType,
@@ -83,7 +129,7 @@ export async function requestGeminiKitPreview(
   });
   const budgetStartedAt = Date.now();
   for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
-    const remainingBudgetMs = totalBudgetMs - (Date.now() - budgetStartedAt);
+    const remainingBudgetMs = budgetMs - (Date.now() - budgetStartedAt);
     if (remainingBudgetMs <= 0) break;
     try {
       noteProviderAttempt(usageSink, attempt);

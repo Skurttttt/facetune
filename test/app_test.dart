@@ -5,6 +5,7 @@ import 'package:facetune/core/supabase/supabase_availability_provider.dart';
 import 'package:facetune/features/authentication/data/providers/auth_repository_provider.dart';
 import 'package:facetune/features/authentication/domain/entities/auth_user.dart';
 import 'package:facetune/features/history/data/providers/history_providers.dart';
+import 'package:facetune/features/makeup_kit/data/providers/makeup_kit_look_providers.dart';
 import 'package:facetune/features/profile/data/providers/profile_providers.dart';
 import 'package:facetune/features/saved_looks/data/providers/saved_looks_providers.dart';
 import 'package:facetune/features/saved_looks/data/repositories/unavailable_saved_looks_repository.dart';
@@ -23,6 +24,7 @@ void main() {
       ProviderScope(
         overrides: [
           supabaseAvailableProvider.overrideWithValue(true),
+          pdmkPendingPreviewResumerProvider.overrideWithValue(null),
           authRepositoryProvider.overrideWithValue(repository),
           profileRepositoryProvider.overrideWithValue(FakeProfileRepository()),
           settingsRepositoryProvider.overrideWithValue(

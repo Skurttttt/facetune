@@ -3,6 +3,12 @@ import {
   isOwnedOriginalPath,
 } from "./storage_ownership.ts";
 import {
+  assertKitPreviewIntegrity,
+  KIT_PREVIEW_INTEGRITY_FAILURE,
+  KIT_PREVIEW_INTEGRITY_MESSAGE,
+  KitPreviewIntegrityError,
+} from "./kit_preview_integrity.ts";
+import {
   asTutorialCategory,
   INVENTORY_TO_TUTORIAL,
   STANDARD_KEY_TO_TUTORIAL,
@@ -251,7 +257,10 @@ export async function resolveTutorialSource(
           "lip_shape,hair_color,eye_color",
       ).eq("id", analysisId).maybeSingle(),
       client.from(isKit ? "kit_generated_images" : "generated_images")
-        .select("id,storage_path").eq("id", previewId).maybeSingle(),
+        .select(
+          // A plan-driven kit preview carries the hash of its accepted bytes.
+          isKit ? "id,storage_path,plan_id,content_sha256" : "id,storage_path",
+        ).eq("id", previewId).maybeSingle(),
       client.from(isKit ? "kit_makeup_recommendations" : "recommendations")
         .select(
           isKit
@@ -312,6 +321,23 @@ export async function resolveTutorialSource(
       "The images for this tutorial could not be read.",
       true,
     );
+  }
+  // Only the bytes that were validated may ground a step. Checked before the
+  // caller claims a step attempt or spends quota.
+  if (isKit) {
+    try {
+      await assertKitPreviewIntegrity(
+        new Uint8Array(await previewDownload.data.arrayBuffer()),
+        preview,
+      );
+    } catch (error) {
+      if (!(error instanceof KitPreviewIntegrityError)) throw error;
+      throw new ResolutionFailure(
+        409,
+        KIT_PREVIEW_INTEGRITY_FAILURE,
+        KIT_PREVIEW_INTEGRITY_MESSAGE,
+      );
+    }
   }
 
   const products = isKit

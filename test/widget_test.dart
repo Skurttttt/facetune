@@ -17,6 +17,7 @@ import 'package:facetune/features/analysis/domain/repositories/face_analysis_rep
 import 'package:facetune/features/authentication/data/providers/auth_repository_provider.dart';
 import 'package:facetune/features/authentication/domain/entities/auth_user.dart';
 import 'package:facetune/features/history/data/providers/history_providers.dart';
+import 'package:facetune/features/makeup_kit/data/providers/makeup_kit_look_providers.dart';
 import 'package:facetune/features/profile/data/providers/profile_providers.dart';
 import 'package:facetune/features/scan/domain/entities/local_image_validation.dart';
 import 'package:facetune/features/scan/domain/entities/prepared_selfie.dart';
@@ -37,6 +38,7 @@ void main() {
       ProviderScope(
         overrides: [
           supabaseAvailableProvider.overrideWithValue(true),
+          pdmkPendingPreviewResumerProvider.overrideWithValue(null),
           authRepositoryProvider.overrideWithValue(repository),
           profileRepositoryProvider.overrideWithValue(FakeProfileRepository()),
           settingsRepositoryProvider.overrideWithValue(

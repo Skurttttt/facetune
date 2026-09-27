@@ -543,6 +543,69 @@ function snapshotOf(product: PlanInventoryProduct): ProductSnapshot {
   };
 }
 
+/**
+ * Re-checks a persisted plan before anything renders, validates, or grounds
+ * a look in it.
+ *
+ * The database already refuses a partial or mismatched plan and freezes it once
+ * written, so this is the reader's own proof: the value still has the v1 shape,
+ * its selected items still partition the categories exactly as derived, and
+ * its digest still matches. Any disagreement is a [PlanViolation], never a
+ * silent repair.
+ */
+export async function verifyStoredPlan(
+  value: unknown,
+  expectedDigest: unknown,
+): Promise<CanonicalPlan> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new PlanViolation("plan_not_object");
+  }
+  const plan = value as CanonicalPlan;
+  if (plan.plan_version !== KIT_MAKEUP_PLAN_VERSION) {
+    throw new PlanViolation("unsupported_plan_version");
+  }
+  if (
+    plan.source_mode !== PLAN_SOURCE_MODE ||
+    !STYLE_PROFILES[plan.style_code] ||
+    !INTENSITIES.includes(plan.overall_intensity) ||
+    !Array.isArray(plan.selected_items) || plan.selected_items.length < 1 ||
+    !Array.isArray(plan.allowed_visual_categories) ||
+    !Array.isArray(plan.forbidden_visual_categories)
+  ) throw new PlanViolation("plan_shape");
+  for (const item of plan.selected_items) {
+    const rule = ROLE_RULES[item?.category_code as InventoryCategory];
+    if (
+      !rule || !rule.roles.includes(item.intended_role) ||
+      INVENTORY_TO_TUTORIAL[item.category_code] !== item.tutorial_category ||
+      item.product_snapshot?.productId !== item.product_id ||
+      item.product_snapshot?.category !== item.category_code ||
+      !INTENSITIES.includes(item.application_intent?.intensity) ||
+      item.visible_intent !==
+        deriveVisibleIntent(
+          item.intended_role,
+          item.application_intent.intensity,
+        )
+    ) throw new PlanViolation("plan_item");
+  }
+  const allowed = TUTORIAL_CATEGORIES.filter((category) =>
+    plan.selected_items.some((item) => item.tutorial_category === category)
+  );
+  const forbidden = TUTORIAL_CATEGORIES.filter((category) =>
+    !allowed.includes(category)
+  );
+  if (
+    canonicalJson(allowed) !== canonicalJson(plan.allowed_visual_categories) ||
+    canonicalJson(forbidden) !== canonicalJson(plan.forbidden_visual_categories)
+  ) throw new PlanViolation("plan_partition");
+  if (typeof expectedDigest !== "string" || expectedDigest.length !== 64) {
+    throw new PlanViolation("plan_digest_missing");
+  }
+  if (await planDigest(plan) !== expectedDigest) {
+    throw new PlanViolation("plan_digest_mismatch");
+  }
+  return plan;
+}
+
 /** JSON with object keys sorted at every level; arrays keep their order. */
 export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) {

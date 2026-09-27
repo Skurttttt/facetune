@@ -20,6 +20,12 @@ import {
   tutorialDenialRetryable,
   tutorialDenialStatus,
 } from "../_shared/tutorial_authorization.ts";
+import {
+  assertKitPreviewIntegrity,
+  KIT_PREVIEW_INTEGRITY_FAILURE,
+  KIT_PREVIEW_INTEGRITY_MESSAGE,
+  KitPreviewIntegrityError,
+} from "../_shared/kit_preview_integrity.ts";
 import { requestGeminiManifest } from "./gemini_client.ts";
 import { TUTORIAL_MANIFEST_PROMPT_VERSION } from "./prompt.ts";
 import { TUTORIAL_MANIFEST_SCHEMA_VERSION } from "./schema.ts";
@@ -194,7 +200,12 @@ Deno.serve(async (request: Request) => {
       : "recommendation_id";
     const { data: preview, error: previewError } = await client
       .from(previewTable)
-      .select(`id,analysis_id,${recommendationColumn},storage_path`)
+      .select(
+        `id,analysis_id,${recommendationColumn},storage_path${
+          // A plan-driven kit preview carries the hash of its accepted bytes.
+          isKit ? ",plan_id,content_sha256" : ""
+        }`,
+      )
       .eq("id", previewId)
       .maybeSingle();
     if (previewError || !preview) {
@@ -381,6 +392,24 @@ Deno.serve(async (request: Request) => {
       );
     }
 
+    const previewBytes = new Uint8Array(
+      await previewDownload.data.arrayBuffer(),
+    );
+    // Only the bytes that were validated may be analyzed. Checked before any
+    // paid call and before any session is written.
+    if (isKit) {
+      try {
+        await assertKitPreviewIntegrity(previewBytes, previewRow);
+      } catch (error) {
+        if (!(error instanceof KitPreviewIntegrityError)) throw error;
+        throw new FunctionFailure(
+          409,
+          KIT_PREVIEW_INTEGRITY_FAILURE,
+          KIT_PREVIEW_INTEGRITY_MESSAGE,
+        );
+      }
+    }
+
     paidWorkStarted = true;
     geminiStartedAt = Date.now();
     const geminiText = await requestGeminiManifest(
@@ -391,7 +420,7 @@ Deno.serve(async (request: Request) => {
         mimeType: mimeTypeFor(originalPath),
       },
       {
-        bytes: new Uint8Array(await previewDownload.data.arrayBuffer()),
+        bytes: previewBytes,
         mimeType: mimeTypeFor(previewPath),
       },
       supportingContext,
