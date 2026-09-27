@@ -9,6 +9,7 @@ import '../../../analysis/presentation/controllers/face_analysis_controller.dart
 import '../../../makeup_styles/presentation/controllers/makeup_style_selection_controller.dart';
 import '../../../recommendation/presentation/controllers/makeup_recommendation_controller.dart';
 import '../../domain/entities/makeup_recommendation_mode.dart';
+import '../controllers/makeup_kit_look_controller.dart';
 import '../controllers/makeup_kit_products_controller.dart';
 import '../controllers/makeup_kit_products_state.dart';
 import '../controllers/makeup_recommendation_mode_controller.dart';
@@ -109,12 +110,7 @@ class RecommendationModeSelectionPage extends ConsumerWidget {
           ? 'Try Again'
           : 'Checking Kit…',
       onPressed: hasProducts
-          ? () {
-              ref
-                  .read(makeupRecommendationModeControllerProvider.notifier)
-                  .select(MakeupRecommendationMode.makeupKit);
-              context.push(AppConstants.makeupKitRecommendationEntryRoute);
-            }
+          ? () => _startKit(context, ref)
           : isReady
           ? () => context.push(AppConstants.makeupKitAddProductRoute)
           : kit.status == MakeupKitProductsStatus.failure
@@ -122,6 +118,26 @@ class RecommendationModeSelectionPage extends ConsumerWidget {
                 ref.read(makeupKitProductsControllerProvider.notifier).refresh()
           : null,
     );
+  }
+
+  /// Enters My Makeup Kit mode for the current analysis and style.
+  ///
+  /// The kit look controller is readied for this lineage first, so a result or
+  /// failure left from another analysis or style is dropped rather than shown
+  /// as a mismatch. A result for this same analysis and style is kept.
+  void _startKit(BuildContext context, WidgetRef ref) {
+    final analysis = ref.read(faceAnalysisControllerProvider).analysis;
+    final style = ref
+        .read(makeupStyleSelectionControllerProvider)
+        .selectedStyle;
+    if (analysis == null || style == null) return;
+    ref
+        .read(makeupRecommendationModeControllerProvider.notifier)
+        .select(MakeupRecommendationMode.makeupKit);
+    ref
+        .read(makeupKitLookControllerProvider.notifier)
+        .prepareFor(analysisId: analysis.id, styleCode: style.code);
+    context.push(AppConstants.makeupKitRecommendationEntryRoute);
   }
 
   void _startStandard(BuildContext context, WidgetRef ref) {

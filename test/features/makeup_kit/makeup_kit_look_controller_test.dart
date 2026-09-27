@@ -87,6 +87,136 @@ void main() {
     expect(controller.state.status, MakeupKitLookStatus.idle);
   });
 
+  group('prepareFor', () {
+    test('leaves an idle controller idle', () {
+      final repository = _FakeRepository();
+      final controller = MakeupKitLookController(repository);
+      addTearDown(controller.dispose);
+
+      controller.prepareFor(analysisId: analysisId, styleCode: 'soft_glam');
+
+      expect(controller.state.status, MakeupKitLookStatus.idle);
+      expect(repository.recommendationCalls, 0);
+    });
+
+    test('keeps a result for the same analysis and style', () async {
+      final repository = _FakeRepository();
+      final controller = MakeupKitLookController(repository);
+      addTearDown(controller.dispose);
+      await controller.generate(analysisId: analysisId, styleCode: 'soft_glam');
+      final preview = controller.state.preview;
+
+      controller.prepareFor(analysisId: analysisId, styleCode: 'soft_glam');
+
+      expect(controller.state.status, MakeupKitLookStatus.success);
+      expect(controller.state.preview, same(preview));
+      expect(repository.recommendationCalls, 1);
+      expect(repository.previewCalls, 1);
+    });
+
+    test('drops a result from another analysis', () async {
+      final controller = MakeupKitLookController(_FakeRepository());
+      addTearDown(controller.dispose);
+      await controller.generate(analysisId: analysisId, styleCode: 'soft_glam');
+
+      controller.prepareFor(
+        analysisId: '44444444-4444-4444-8444-444444444444',
+        styleCode: 'soft_glam',
+      );
+
+      expect(controller.state.status, MakeupKitLookStatus.idle);
+      expect(controller.state.recommendation, isNull);
+      expect(controller.state.preview, isNull);
+    });
+
+    test('drops a result from another style', () async {
+      final controller = MakeupKitLookController(_FakeRepository());
+      addTearDown(controller.dispose);
+      await controller.generate(analysisId: analysisId, styleCode: 'soft_glam');
+
+      controller.prepareFor(analysisId: analysisId, styleCode: 'natural');
+
+      expect(controller.state.status, MakeupKitLookStatus.idle);
+      expect(controller.state.recommendation, isNull);
+      expect(controller.state.preview, isNull);
+    });
+
+    test('drops a restored result from another style', () {
+      final controller = MakeupKitLookController(_FakeRepository());
+      addTearDown(controller.dispose);
+      controller.restore(recommendation: recommendation, preview: _preview(1));
+
+      controller.prepareFor(analysisId: analysisId, styleCode: 'natural');
+
+      expect(controller.state.status, MakeupKitLookStatus.idle);
+    });
+
+    test(
+      'drops a failure from another style so retry cannot reuse its plan',
+      () async {
+        final repository = _FakeRepository(failFirstPreview: true);
+        final controller = MakeupKitLookController(repository);
+        addTearDown(controller.dispose);
+        await controller.generate(
+          analysisId: analysisId,
+          styleCode: 'soft_glam',
+        );
+        expect(controller.state.status, MakeupKitLookStatus.failure);
+        expect(controller.state.recommendation, same(recommendation));
+
+        controller.prepareFor(analysisId: analysisId, styleCode: 'natural');
+        await controller.retry();
+        await controller.generateVariation();
+
+        expect(controller.state.status, MakeupKitLookStatus.idle);
+        expect(controller.state.recommendation, isNull);
+        expect(repository.recommendationCalls, 1);
+        expect(repository.previewCalls, 1);
+      },
+    );
+
+    test('keeps a failure for the same analysis and style retryable', () async {
+      final repository = _FakeRepository(failFirstPreview: true);
+      final controller = MakeupKitLookController(repository);
+      addTearDown(controller.dispose);
+      await controller.generate(analysisId: analysisId, styleCode: 'soft_glam');
+
+      controller.prepareFor(analysisId: analysisId, styleCode: 'soft_glam');
+      expect(controller.state.status, MakeupKitLookStatus.failure);
+      await controller.retry();
+
+      expect(controller.state.status, MakeupKitLookStatus.success);
+      expect(repository.recommendationCalls, 1);
+      expect(repository.previewCalls, 2);
+    });
+
+    test('never interrupts a generation in flight', () async {
+      final repository = _BlockingRepository();
+      final controller = MakeupKitLookController(repository);
+      addTearDown(controller.dispose);
+
+      final operation = controller.generate(
+        analysisId: analysisId,
+        styleCode: 'soft_glam',
+      );
+      await Future<void>.delayed(Duration.zero);
+      controller.prepareFor(analysisId: analysisId, styleCode: 'natural');
+      expect(
+        controller.state.status,
+        MakeupKitLookStatus.generatingRecommendation,
+      );
+      repository.releaseRecommendation(recommendation);
+      await Future<void>.delayed(Duration.zero);
+      controller.prepareFor(analysisId: analysisId, styleCode: 'natural');
+      expect(controller.state.status, MakeupKitLookStatus.generatingPreview);
+      repository.releasePreview(_preview(1));
+      await operation;
+
+      expect(controller.state.status, MakeupKitLookStatus.success);
+      expect(controller.state.preview?.id, 'preview-1');
+    });
+  });
+
   test('surfaces stale inventory without silently regenerating', () async {
     final controller = MakeupKitLookController(_StaleInventoryRepository());
     addTearDown(controller.dispose);
@@ -148,8 +278,12 @@ KitGeneratedPreview _preview(int number) => KitGeneratedPreview(
 );
 
 class _FakeRepository implements MakeupKitLookRepository {
-  _FakeRepository({this.failSecondPreview = false});
+  _FakeRepository({
+    this.failFirstPreview = false,
+    this.failSecondPreview = false,
+  });
 
+  final bool failFirstPreview;
   final bool failSecondPreview;
   int recommendationCalls = 0;
   int previewCalls = 0;
@@ -168,7 +302,8 @@ class _FakeRepository implements MakeupKitLookRepository {
     required KitMakeupRecommendation recommendation,
   }) async {
     previewCalls++;
-    if (failSecondPreview && previewCalls == 2) {
+    if ((failFirstPreview && previewCalls == 1) ||
+        (failSecondPreview && previewCalls == 2)) {
       throw const PreviewFailure(
         PreviewFailureType.gemini,
         'Preview failed.',

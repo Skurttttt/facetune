@@ -16,6 +16,8 @@ import 'package:facetune/features/makeup_kit/domain/entities/makeup_recommendati
 import 'package:facetune/features/makeup_kit/domain/repositories/makeup_kit_products_repository.dart';
 import 'package:facetune/features/makeup_kit/domain/repositories/makeup_kit_look_repository.dart';
 import 'package:facetune/features/makeup_kit/domain/value_objects/normalized_hex_color.dart';
+import 'package:facetune/features/makeup_kit/presentation/controllers/makeup_kit_look_controller.dart';
+import 'package:facetune/features/makeup_kit/presentation/controllers/makeup_kit_look_state.dart';
 import 'package:facetune/features/makeup_kit/presentation/controllers/makeup_recommendation_mode_controller.dart';
 import 'package:facetune/features/makeup_kit/presentation/pages/makeup_kit_recommendation_entry_page.dart';
 import 'package:facetune/features/makeup_kit/presentation/pages/recommendation_mode_selection_page.dart';
@@ -302,6 +304,176 @@ void main() {
     expect(find.text('Use My Makeup Kit'), findsOneWidget);
     expect(look.previewCalls, 0);
   });
+
+  group('kit result lineage across journeys', () {
+    Future<void> enterKit(WidgetTester tester) async {
+      await tester.ensureVisible(find.text('Use My Makeup Kit'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Use My Makeup Kit'));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> createPreview(WidgetTester tester) async {
+      await tester.tap(find.text('Create kit-based preview'));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> leaveKit(WidgetTester tester) async {
+      GoRouter.of(
+        tester.element(find.byType(MakeupKitRecommendationEntryPage)),
+      ).pop();
+      await tester.pumpAndSettle();
+    }
+
+    void selectStyle(ProviderContainer container, String code) => container
+        .read(makeupStyleSelectionControllerProvider.notifier)
+        .restore(
+          MakeupStyleCatalog.styles.firstWhere((style) => style.code == code),
+        );
+
+    final resultContent = find.byKey(const ValueKey('result-content-scroll'));
+    final unavailable = find.text('Kit preview unavailable');
+
+    testWidgets(
+      'a current result renders and survives leaving and re-entering',
+      (tester) async {
+        final harness = await _pump(tester, hasProduct: true);
+
+        await enterKit(tester);
+        await createPreview(tester);
+        expect(resultContent, findsOneWidget);
+        expect(unavailable, findsNothing);
+
+        await leaveKit(tester);
+        await enterKit(tester);
+
+        expect(resultContent, findsOneWidget);
+        expect(unavailable, findsNothing);
+        expect(harness.kitLook.recommendationCalls, 1);
+        expect(harness.kitLook.previewCalls, 1);
+      },
+    );
+
+    testWidgets('a new analysis starts a fresh kit journey', (tester) async {
+      final harness = await _pump(tester, hasProduct: true);
+      await enterKit(tester);
+      await createPreview(tester);
+      await leaveKit(tester);
+
+      const otherId = '9b1f3c2e-6d4a-4f8b-9c2d-1e3f5a7b9c0d';
+      final analysis = Map<String, Object?>.from(
+        validAnalysisResponse['analysis']! as Map,
+      );
+      analysis['id'] = otherId;
+      analysis['originalImagePath'] =
+          'user/analyses/$otherId/original/image.jpg';
+      harness.container
+          .read(faceAnalysisControllerProvider.notifier)
+          .restore(
+            FaceAnalysisDto.fromResponse(<String, Object?>{
+              'analysis': analysis,
+            }).analysis,
+          );
+      await tester.pumpAndSettle();
+      await enterKit(tester);
+
+      expect(unavailable, findsNothing);
+      expect(resultContent, findsNothing);
+      expect(find.text('Your kit is ready'), findsOneWidget);
+
+      await createPreview(tester);
+      expect(harness.kitLook.analysisIds.last, otherId);
+      expect(resultContent, findsOneWidget);
+      expect(unavailable, findsNothing);
+    });
+
+    testWidgets('a new style starts a fresh kit journey', (tester) async {
+      final harness = await _pump(tester, hasProduct: true);
+      await enterKit(tester);
+      await createPreview(tester);
+      await leaveKit(tester);
+
+      selectStyle(harness.container, 'natural');
+      await tester.pumpAndSettle();
+      await enterKit(tester);
+
+      expect(unavailable, findsNothing);
+      expect(resultContent, findsNothing);
+      expect(find.text('Your kit is ready'), findsOneWidget);
+      expect(harness.kitLook.recommendationCalls, 1);
+    });
+
+    testWidgets('switching through several looks renders each current look', (
+      tester,
+    ) async {
+      final harness = await _pump(tester, hasProduct: true);
+      const styles = <String>['soft_glam', 'natural', 'office'];
+
+      for (final code in styles) {
+        selectStyle(harness.container, code);
+        await tester.pumpAndSettle();
+        await enterKit(tester);
+        expect(unavailable, findsNothing);
+        expect(find.text('Your kit is ready'), findsOneWidget);
+
+        await createPreview(tester);
+        expect(unavailable, findsNothing);
+        expect(resultContent, findsOneWidget);
+        expect(
+          harness.container
+              .read(makeupKitLookControllerProvider)
+              .recommendation
+              ?.styleCode,
+          code,
+        );
+        await leaveKit(tester);
+      }
+
+      expect(harness.kitLook.styleCodes, styles);
+      expect(harness.kitLook.recommendationCalls, styles.length);
+      expect(harness.kitLook.previewCalls, styles.length);
+    });
+
+    testWidgets(
+      'a genuinely mismatched result is still refused and dropped on exit',
+      (tester) async {
+        final harness = await _pump(tester, hasProduct: true);
+        final container = harness.container;
+        final analysisId = container
+            .read(faceAnalysisControllerProvider)
+            .analysis!
+            .id;
+        final recommendation = await harness.kitLook.generateRecommendation(
+          analysisId: analysisId,
+          styleCode: 'soft_glam',
+        );
+        final preview = await harness.kitLook.generatePreview(
+          recommendation: recommendation,
+        );
+        // Seeded directly, bypassing mode entry, under a different style.
+        container
+            .read(makeupKitLookControllerProvider.notifier)
+            .restore(recommendation: recommendation, preview: preview);
+        selectStyle(container, 'natural');
+        GoRouter.of(
+          tester.element(find.byType(RecommendationModeSelectionPage)),
+        ).push(AppConstants.makeupKitRecommendationEntryRoute);
+        await tester.pumpAndSettle();
+
+        expect(unavailable, findsOneWidget);
+        expect(resultContent, findsNothing);
+
+        await tester.tap(find.text('Choose a mode'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(RecommendationModeSelectionPage), findsOneWidget);
+        expect(
+          container.read(makeupKitLookControllerProvider).status,
+          MakeupKitLookStatus.idle,
+        );
+      },
+    );
+  });
 }
 
 class _FakeRecommendationRepository implements MakeupRecommendationRepository {
@@ -372,6 +544,8 @@ class _FakeKitLookRepository implements MakeupKitLookRepository {
   final Completer<KitMakeupRecommendation>? pendingRecommendation;
   int recommendationCalls = 0;
   int previewCalls = 0;
+  final List<String> analysisIds = <String>[];
+  final List<String> styleCodes = <String>[];
 
   @override
   Future<KitMakeupRecommendation> generateRecommendation({
@@ -379,6 +553,8 @@ class _FakeKitLookRepository implements MakeupKitLookRepository {
     required String styleCode,
   }) async {
     recommendationCalls++;
+    analysisIds.add(analysisId);
+    styleCodes.add(styleCode);
     if (pendingRecommendation != null) {
       return pendingRecommendation!.future;
     }

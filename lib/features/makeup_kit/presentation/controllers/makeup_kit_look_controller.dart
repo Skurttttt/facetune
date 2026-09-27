@@ -101,6 +101,27 @@ class MakeupKitLookController extends StateNotifier<MakeupKitLookState> {
     );
   }
 
+  /// Readies this controller for a kit journey under [analysisId] and
+  /// [styleCode], called when the user enters My Makeup Kit mode.
+  ///
+  /// This controller outlives any one journey, so a result or failure from an
+  /// earlier analysis or style would otherwise still be here: the entry page
+  /// would correctly refuse to show it, and a retry would reuse its plan. Such
+  /// retained work is dropped back to idle. A result for this same analysis and
+  /// style is kept, so leaving and re-entering shows it again without another
+  /// generation, and a generation in flight is never interrupted.
+  void prepareFor({required String analysisId, required String styleCode}) {
+    if (state.isGenerating || state.status == MakeupKitLookStatus.idle) return;
+    final recommendation = state.recommendation ?? _recommendation;
+    final matches =
+        _analysisId == analysisId &&
+        _styleCode == styleCode &&
+        (recommendation == null ||
+            (recommendation.analysisId == analysisId &&
+                recommendation.styleCode == styleCode));
+    if (!matches) clear();
+  }
+
   void clear() {
     _operationEpoch += 1;
     _analysisId = null;

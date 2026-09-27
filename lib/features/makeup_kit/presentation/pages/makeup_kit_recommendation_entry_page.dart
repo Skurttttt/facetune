@@ -256,7 +256,12 @@ class MakeupKitRecommendationEntryPage extends ConsumerWidget {
             'This preview no longer matches the active analysis and style.',
         icon: Icons.link_off_rounded,
         actionLabel: 'Choose a mode',
-        onAction: context.pop,
+        // The mismatched result is dropped on the way out, as the other
+        // escapes here do, so it cannot greet the next kit entry again.
+        onAction: () {
+          ref.read(makeupKitLookControllerProvider.notifier).clear();
+          context.pop();
+        },
       ),
     ),
   };
