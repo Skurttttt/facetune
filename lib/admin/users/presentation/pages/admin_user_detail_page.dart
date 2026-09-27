@@ -15,13 +15,38 @@ import '../../domain/admin_user_models.dart';
 import '../admin_users_controller.dart';
 import 'admin_users_page.dart' show formatDate;
 
-class AdminUserDetailPage extends ConsumerWidget {
+class AdminUserDetailPage extends ConsumerStatefulWidget {
   const AdminUserDetailPage({super.key, required this.userId});
 
   final String userId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AdminUserDetailPage> createState() =>
+      _AdminUserDetailPageState();
+}
+
+class _AdminUserDetailPageState extends ConsumerState<AdminUserDetailPage> {
+  String get userId => widget.userId;
+
+  @override
+  void initState() {
+    super.initState();
+    // The workflow pages share this account's detail provider, and it stays
+    // alive across the route change back here. A cached copy can predate the
+    // mutation just made, and its version would make the next workflow a
+    // stale write (CONCURRENT_MODIFICATION, found in WA-14). Re-read on every
+    // visit; a fresh provider is already loading and is left alone.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final provider = adminUserDetailControllerProvider(userId);
+      if (ref.read(provider) is! AdminUserDetailLoading) {
+        ref.read(provider.notifier).load();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(adminUserDetailControllerProvider(userId));
     return Column(
       key: const Key('admin-user-detail'),

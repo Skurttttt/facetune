@@ -555,6 +555,69 @@ void main() {
     });
   });
 
+  group('User Detail after a workflow (WA-14)', () {
+    // Found live in WA-14: Adjust succeeded (version 1 → 2), "Back to user"
+    // showed the cached version-1 detail, and the Suspend that followed was
+    // refused with CONCURRENT_MODIFICATION. The pages share one detail
+    // provider that stays alive across the route change, so it must re-read.
+    testWidgets('reopening re-reads the account instead of reusing the cache', (
+      tester,
+    ) async {
+      final users = ScriptedUsersGateway(
+        details: [
+          (_) async => AdminUserDetail.decode(pilotDetailPayload()),
+          (_) async => AdminUserDetail.decode(
+            pilotDetailPayload(effective: 40, version: 4),
+          ),
+        ],
+      );
+      final page = ValueNotifier<Widget>(
+        const AdminAdjustAllowancePage(userId: userId),
+      );
+      addTearDown(page.dispose);
+      tester.view.physicalSize = const Size(1500, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            adminAuthorizationControllerProvider.overrideWith(
+              (ref) => FrozenAuthorization(const AdminAuthorized(identity)),
+            ),
+            adminSalonPilotGatewayProvider.overrideWithValue(
+              ScriptedSalonPilotGateway([]),
+            ),
+            adminUsersGatewayProvider.overrideWithValue(users),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: ValueListenableBuilder<Widget>(
+                  valueListenable: page,
+                  builder: (context, child, _) => child,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(users.detailCalls, hasLength(1));
+
+      // "Back to user" after the adjustment, while the provider is still live.
+      page.value = const AdminUserDetailPage(userId: userId);
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+
+      expect(users.detailCalls, hasLength(2));
+      expect(find.byKey(const Key('admin-user-detail-ready')), findsOneWidget);
+      expect(find.text('40'), findsWidgets);
+      expect(find.text('30'), findsNothing);
+    });
+  });
+
   test('the adjust route is a section path an admin may return to', () {
     final path = AdminRoutes.adjustAllowance(userId);
     expect(path, '/users/$userId/adjust-allowance');
