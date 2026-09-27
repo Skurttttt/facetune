@@ -6,6 +6,7 @@ import { requestGeminiKitRecommendation } from "./gemini_client.ts";
 import { KIT_MAKEUP_RECOMMENDATION_PROMPT_VERSION } from "./prompt.ts";
 import type { KitProduct } from "./types.ts";
 import { FunctionFailure } from "./types.ts";
+import { handlePlanRequest, planPipelineEnabled } from "./plan_request.ts";
 import {
   assertProductsUnchanged,
   parseAndValidateKitRecommendation,
@@ -53,7 +54,9 @@ function requiredEnvironment(name: string): string {
   return value;
 }
 
-function requestPayload(value: unknown): { analysisId: string; style: string } {
+function requestPayload(
+  value: unknown,
+): { analysisId: string; style: string; planRequestId: string | null } {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new FunctionFailure(
       400,
@@ -78,7 +81,24 @@ function requestPayload(value: unknown): { analysisId: string; style: string } {
       "Choose a supported makeup style.",
     );
   }
-  return { analysisId: input.analysisId, style: input.style };
+  // The client's durable idempotency key for a plan-driven look. Absent means
+  // an older client, which stays on the v2 path.
+  const planRequestId = input.planRequestId;
+  if (
+    planRequestId !== undefined && planRequestId !== null &&
+    (typeof planRequestId !== "string" || !uuidPattern.test(planRequestId))
+  ) {
+    throw new FunctionFailure(
+      400,
+      "invalid_plan_request_id",
+      "A valid plan request ID is required.",
+    );
+  }
+  return {
+    analysisId: input.analysisId,
+    style: input.style,
+    planRequestId: typeof planRequestId === "string" ? planRequestId : null,
+  };
 }
 
 function response(row: Record<string, unknown>) {
@@ -146,6 +166,20 @@ Deno.serve(async (request) => {
       );
     }
     const payload = requestPayload(body);
+    if (payload.planRequestId !== null && planPipelineEnabled()) {
+      return jsonResponse(
+        await handlePlanRequest(
+          userClient,
+          authData.user.id,
+          {
+            analysisId: payload.analysisId,
+            style: payload.style,
+            planRequestId: payload.planRequestId,
+          },
+          requiredEnvironment,
+        ),
+      );
+    }
     const { data: analysis, error: analysisError } = await userClient
       .from("analyses")
       .select(

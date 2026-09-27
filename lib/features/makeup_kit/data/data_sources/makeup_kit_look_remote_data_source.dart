@@ -5,9 +5,12 @@ import '../../../../core/data/supabase_remote_data_source.dart';
 abstract interface class MakeupKitLookRemoteDataSource {
   String? get currentUserId;
 
+  /// [planRequestId] is the durable idempotency key of a plan-driven request.
+  /// A replay with the same key returns the same plan.
   Future<Object?> generateRecommendation({
     required String analysisId,
     required String styleCode,
+    String? planRequestId,
   });
 
   Future<Object?> generatePreview({required String kitRecommendationId});
@@ -40,9 +43,11 @@ class SupabaseMakeupKitLookRemoteDataSource extends SupabaseRemoteDataSource
   Future<Object?> generateRecommendation({
     required String analysisId,
     required String styleCode,
+    String? planRequestId,
   }) => _invoke('generate-kit-makeup-recommendation', {
     'analysisId': analysisId,
     'style': styleCode,
+    'planRequestId': ?planRequestId,
   });
 
   @override

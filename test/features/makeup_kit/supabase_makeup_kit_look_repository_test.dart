@@ -149,6 +149,7 @@ class _FakeLookRemote implements MakeupKitLookRemoteDataSource {
   Future<Object?> generateRecommendation({
     required String analysisId,
     required String styleCode,
+    String? planRequestId,
   }) async {
     recommendationCalls++;
     if (recommendationError != null) throw recommendationError!;

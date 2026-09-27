@@ -30,32 +30,70 @@ function responseText(payload: unknown): string {
   );
 }
 
-export async function requestGeminiKitRecommendation(
+export function requestGeminiKitRecommendation(
   apiKey: string,
   model: string,
   attributes: Record<string, unknown>,
   style: string,
   products: KitProduct[],
 ): Promise<string> {
+  return postGeminiJson(
+    apiKey,
+    model,
+    JSON.stringify({
+      contents: [{
+        role: "user",
+        parts: [{
+          text: kitMakeupRecommendationPrompt(attributes, style, products),
+        }],
+      }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseJsonSchema: KIT_MAKEUP_RECOMMENDATION_SCHEMA,
+        maxOutputTokens: 4096,
+        temperature: 0.2,
+        topP: 0.8,
+        candidateCount: 1,
+      },
+    }),
+  );
+}
+
+/** The `kit_makeup_recommendation_v3` request: server-owned rules travel as
+ * the system instruction, user-derived data as the only user content. */
+export function requestGeminiKitPlanDraft(
+  apiKey: string,
+  model: string,
+  systemInstruction: string,
+  userText: string,
+  schema: unknown,
+): Promise<string> {
+  return postGeminiJson(
+    apiKey,
+    model,
+    JSON.stringify({
+      systemInstruction: { parts: [{ text: systemInstruction }] },
+      contents: [{ role: "user", parts: [{ text: userText }] }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseJsonSchema: schema,
+        maxOutputTokens: 4096,
+        temperature: 0.2,
+        topP: 0.8,
+        candidateCount: 1,
+      },
+    }),
+  );
+}
+
+async function postGeminiJson(
+  apiKey: string,
+  model: string,
+  body: string,
+): Promise<string> {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${
     encodeURIComponent(model)
   }:generateContent`;
-  const body = JSON.stringify({
-    contents: [{
-      role: "user",
-      parts: [{
-        text: kitMakeupRecommendationPrompt(attributes, style, products),
-      }],
-    }],
-    generationConfig: {
-      responseMimeType: "application/json",
-      responseJsonSchema: KIT_MAKEUP_RECOMMENDATION_SCHEMA,
-      maxOutputTokens: 4096,
-      temperature: 0.2,
-      topP: 0.8,
-      candidateCount: 1,
-    },
-  });
   for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
     try {
       const response = await fetch(endpoint, {
