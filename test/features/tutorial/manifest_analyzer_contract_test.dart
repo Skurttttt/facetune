@@ -249,11 +249,8 @@ void main() {
   });
 
   group('My Makeup Kit intersection', () {
-    test('inclusion is visible AND owned', () {
-      expect(
-        validation,
-        contains('included: isKit ? visible && productBacked : visible'),
-      );
+    test('kit inclusion is the snapshot backing; Standard stays visible', () {
+      expect(validation, contains('included: isKit ? productBacked : visible'));
     });
 
     test('a visible unowned category becomes kit_preview_mismatch', () {
@@ -271,17 +268,23 @@ void main() {
       );
     });
 
-    test('owning a product never forces a visually absent step', () {
-      // Behavioural rather than prose: `visible` is required in both branches,
-      // so a backed-but-absent category cannot be included by any path.
+    test('the image never decides whether a kit step exists', () {
+      // Behavioural rather than prose: the kit branch reads only the snapshot
+      // backing, so a visible-but-unselected category cannot be included and a
+      // selected-but-not-visible one cannot be dropped.
+      expect(validation, contains('included: isKit ? productBacked : visible'));
       expect(
         validation,
-        contains('included: isKit ? visible && productBacked : visible'),
+        isNot(contains('included: isKit ? visible')),
+        reason: 'visual presence must never gate a kit step',
       );
+    });
+
+    test('a kit manifest must be complete before it is reused', () {
+      expect(index, contains('isReusableManifest({'));
       expect(
         validation,
-        isNot(contains('included: isKit ? productBacked')),
-        reason: 'ownership alone must never satisfy inclusion',
+        contains('options.itemCount === TUTORIAL_CATEGORIES.length'),
       );
     });
 

@@ -526,15 +526,23 @@ void main() {
     });
 
     test(
-      'a mismatched kit manifest is returned without building steps',
+      'a persisted kit mismatch opens with the selected steps, no re-analysis',
       () async {
+        // What the analyzer persisted: foundation selected and visible, lips
+        // selected but judged absent, eyeliner visible but not selected.
+        final rows = manifestRows(const <String>['foundation', 'eyeliner']);
+        for (final row in rows.cast<Map<String, Object?>>()) {
+          final category = row['category'];
+          row['product_backed'] =
+              category == 'foundation' || category == 'lips';
+        }
         final remote = FakeTutorialRemote(
           session: sessionRow(
             isKit: true,
             manifestStatus: 'kit_preview_mismatch',
             status: 'kit_preview_mismatch',
           ),
-          manifestItems: manifestRows(const <String>['foundation', 'eyeliner']),
+          manifestItems: rows,
           isKit: true,
         );
         final repositories = build(remote);
@@ -548,11 +556,16 @@ void main() {
         );
 
         expect(session.hasKitPreviewMismatch, isTrue);
-        expect(session.hasReusableManifest, isFalse);
+        expect(session.hasReusableManifest, isTrue);
         expect(
-          remote.insertCalls,
+          remote.analyzeCalls,
           0,
-          reason: 'no steps for an unusable manifest',
+          reason: 'a historical mismatch is reused, never paid for again',
+        );
+        expect(
+          remote.insertedRows.map((row) => (row['category'], row['position'])),
+          <(Object?, Object?)>[('foundation', 1), ('lips', 2)],
+          reason: 'the snapshot selection, not the image, decides the steps',
         );
       },
     );

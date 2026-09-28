@@ -29,6 +29,7 @@ import {
   type TutorialCategory,
 } from "./types.ts";
 import {
+  isReusableManifest,
   parseManifestResponse,
   productBackedCategories,
   resolveManifest,
@@ -237,28 +238,52 @@ Deno.serve(async (request: Request) => {
         .select("category,position,presence,visual_confidence,product_backed")
         .eq("tutorial_session_id", existing.id as string)
         .order("position", { ascending: true });
-      console.log(
-        `[analyze-tutorial-manifest-v4] Reused session=${existing.id} status=${existing.manifest_status}`,
-      );
-      await recordAiOperationMetric(telemetryClient, telemetryEventId, userId, {
-        operationKind: "tutorial_manifest",
-        outcome: "duplicate",
-        sourceMode,
-        tutorialSessionId: existing.id as string,
-        canonicalPreviewId: previewId,
-      });
-      return jsonResponse({
-        manifest: {
-          tutorialSessionId: existing.id,
+      if (
+        isReusableManifest({
           sourceMode,
           manifestStatus: existing.manifest_status,
-          model: null,
-          promptVersion: TUTORIAL_MANIFEST_PROMPT_VERSION,
-          schemaVersion: TUTORIAL_MANIFEST_SCHEMA_VERSION,
-          reused: true,
-          items: items ?? [],
-        },
-      });
+          promptVersion: existing.manifest_prompt_version,
+          schemaVersion: existing.manifest_schema_version,
+          currentPromptVersion: TUTORIAL_MANIFEST_PROMPT_VERSION,
+          currentSchemaVersion: TUTORIAL_MANIFEST_SCHEMA_VERSION,
+          itemCount: (items ?? []).length,
+        })
+      ) {
+        console.log(
+          `[analyze-tutorial-manifest-v4] Reused session=${existing.id} status=${existing.manifest_status}`,
+        );
+        await recordAiOperationMetric(
+          telemetryClient,
+          telemetryEventId,
+          userId,
+          {
+            operationKind: "tutorial_manifest",
+            outcome: "duplicate",
+            sourceMode,
+            tutorialSessionId: existing.id as string,
+            canonicalPreviewId: previewId,
+          },
+        );
+        return jsonResponse({
+          manifest: {
+            tutorialSessionId: existing.id,
+            sourceMode,
+            manifestStatus: existing.manifest_status,
+            model: null,
+            promptVersion: TUTORIAL_MANIFEST_PROMPT_VERSION,
+            schemaVersion: TUTORIAL_MANIFEST_SCHEMA_VERSION,
+            reused: true,
+            items: items ?? [],
+          },
+        });
+      }
+      // A My Makeup Kit session without a complete manifest never finished
+      // persisting. It falls through to a fresh analysis, which rewrites it.
+      console.log(
+        `[analyze-tutorial-manifest-v4] Incomplete manifest session=${existing.id} items=${
+          (items ?? []).length
+        }; analyzing again`,
+      );
     }
 
     // SUB-12B: a NEW tutorial needs the account's governing plan to include

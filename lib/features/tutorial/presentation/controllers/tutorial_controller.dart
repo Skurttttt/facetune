@@ -109,19 +109,12 @@ class TutorialController extends StateNotifier<TutorialViewState> {
     }
   }
 
+  /// Adopts [session] as the open tutorial.
+  ///
+  /// A My Makeup Kit kit-preview mismatch is not a reason to refuse: the steps
+  /// come from the look's product snapshot, and the unbacked category the
+  /// preview showed is simply not among them.
   void _adopt(TutorialSession session, {TutorialUsageTelemetry? telemetry}) {
-    if (session.hasKitPreviewMismatch) {
-      state = state.copyWith(
-        status: TutorialStatus.kitPreviewMismatch,
-        session: session,
-        message:
-            'This look uses makeup that is not in your kit yet, so it cannot '
-            'be turned into a tutorial.',
-        retryable: false,
-        telemetry: telemetry,
-      );
-      return;
-    }
     state = state.copyWith(
       status: TutorialStatus.ready,
       session: session,

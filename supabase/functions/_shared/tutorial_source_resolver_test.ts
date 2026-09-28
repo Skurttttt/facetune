@@ -6,10 +6,10 @@ import {
 import {
   ResolutionFailure,
   resolveProducts,
+  type ResolverClient,
   resolveStandardPlan,
   resolveTutorialSource,
   sanitizedResolutionLog,
-  type ResolverClient,
 } from "./tutorial_source_resolver.ts";
 
 const userId = "11111111-1111-4111-8111-111111111111";
@@ -44,8 +44,12 @@ function client(fixture: Fixture): ResolverClient {
       ? standardSession()
       : fixture.session,
     tutorial_v4_manifest_items: fixture.manifest ?? presentManifest(),
-    tutorial_v4_steps: fixture.step === undefined ? standardStep() : fixture.step,
-    analyses: fixture.analysis === undefined ? standardAnalysis() : fixture.analysis,
+    tutorial_v4_steps: fixture.step === undefined
+      ? standardStep()
+      : fixture.step,
+    analyses: fixture.analysis === undefined
+      ? standardAnalysis()
+      : fixture.analysis,
     generated_images: fixture.preview === undefined
       ? { id: previewId, storage_path: previewPath("generated") }
       : fixture.preview,
@@ -76,8 +80,8 @@ function client(fixture: Fixture): ResolverClient {
         download: (path: string) =>
           Promise.resolve(
             (fixture.downloadFails ?? []).some((fragment) =>
-              path.includes(fragment)
-            )
+                path.includes(fragment)
+              )
               ? { data: null, error: { message: "missing" } }
               : { data: blob(), error: null },
           ),
@@ -342,11 +346,109 @@ Deno.test("an unaccepted manifest is rejected", async () => {
     "manifest_not_accepted",
   );
   await expectFailure(
-    {
+    { session: { ...kitSession(), manifest_status: "failed" } },
+    "foundation",
+    "manifest_not_accepted",
+  );
+});
+
+Deno.test("a kit mismatch is a diagnostic, not a block", async () => {
+  const context = await resolveTutorialSource(
+    client({
       session: { ...kitSession(), manifest_status: "kit_preview_mismatch" },
+      manifest: [
+        { category: "foundation", presence: "present", product_backed: true },
+        { category: "concealer", presence: "present", product_backed: false },
+        { category: "lips", presence: "present", product_backed: true },
+      ],
+    }),
+    userId,
+    { tutorialSessionId: sessionId, category: "foundation" },
+  );
+  assertEquals(context.sourceMode, "my_makeup_kit");
+  assertEquals(context.products[0].productName, "My Foundation");
+  // Concealer is visible but unselected, so it is not a step.
+  assertEquals(context.includedCount, 2);
+});
+
+Deno.test("kit: a selected category is a step whatever its verdict", async () => {
+  for (const presence of ["present", "absent", "uncertain"]) {
+    const context = await resolveTutorialSource(
+      client({
+        session: kitSession(),
+        manifest: [
+          { category: "foundation", presence, product_backed: true },
+          { category: "lips", presence: "absent", product_backed: true },
+        ],
+      }),
+      userId,
+      { tutorialSessionId: sessionId, category: "foundation" },
+    );
+    assertEquals(context.category, "foundation", presence);
+    assertEquals(context.products.length, 1, presence);
+    assertEquals(context.includedCount, 2, presence);
+  }
+});
+
+Deno.test("kit: an unselected category is never a step", async () => {
+  for (const presence of ["present", "absent", "uncertain"]) {
+    await expectFailure(
+      {
+        session: kitSession(),
+        manifest: [
+          { category: "blush", presence, product_backed: false },
+          { category: "lips", presence: "present", product_backed: true },
+        ],
+      },
+      "blush",
+      "category_not_included",
+    );
+  }
+});
+
+Deno.test("kit: the step count ignores a backed category the snapshot lacks", async () => {
+  const context = await resolveTutorialSource(
+    client({
+      session: kitSession(),
+      manifest: [
+        { category: "foundation", presence: "absent", product_backed: true },
+        { category: "blush", presence: "present", product_backed: true },
+        { category: "lips", presence: "present", product_backed: true },
+      ],
+    }),
+    userId,
+    { tutorialSessionId: sessionId, category: "lips" },
+  );
+  // The snapshot holds foundation and lips products, but no blush.
+  assertEquals(context.includedCount, 2);
+});
+
+Deno.test("standard: absent and uncertain are never steps", async () => {
+  for (const presence of ["absent", "uncertain"]) {
+    await expectFailure(
+      {
+        manifest: [
+          { category: "foundation", presence, product_backed: false },
+          { category: "lips", presence: "present", product_backed: false },
+        ],
+      },
+      "foundation",
+      "category_not_included",
+    );
+  }
+});
+
+Deno.test("standard: a stray backing flag cannot add a step", async () => {
+  // The database forbids it; the resolver would ignore it anyway.
+  await expectFailure(
+    {
+      manifest: [
+        { category: "foundation", presence: "uncertain", product_backed: true },
+        { category: "lips", presence: "present", product_backed: false },
+      ],
     },
     "foundation",
-    "kit_preview_mismatch",
+    "category_not_included",
   );
 });
 
@@ -390,14 +492,20 @@ Deno.test("errors never leak identifiers or paths", async () => {
 });
 
 Deno.test("product resolution reads only the immutable snapshot", () => {
-  assertEquals(resolveProducts(kitRecommendation().product_snapshot_json, "lips").length, 2);
+  assertEquals(
+    resolveProducts(kitRecommendation().product_snapshot_json, "lips").length,
+    2,
+  );
   assertEquals(
     resolveProducts(kitRecommendation().product_snapshot_json, "foundation")
       .length,
     1,
   );
   assertEquals(resolveProducts(null, "lips").length, 0);
-  assertEquals(resolveProducts([{ category: "setting_spray" }], "lips").length, 0);
+  assertEquals(
+    resolveProducts([{ category: "setting_spray" }], "lips").length,
+    0,
+  );
 });
 
 Deno.test("standard plan resolution merges both lip keys", () => {

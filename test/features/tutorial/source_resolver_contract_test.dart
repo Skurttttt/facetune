@@ -185,24 +185,34 @@ void main() {
   });
 
   group('manifest approval gates every request', () {
-    test('only an accepted manifest proceeds', () {
-      expect(resolver, contains("session.manifest_status !== \"accepted\""));
+    test('only a usable manifest proceeds', () {
+      // Standard: accepted only. My Makeup Kit: accepted, or the non-blocking
+      // kit_preview_mismatch diagnostic.
+      expect(
+        resolver,
+        contains(
+          'const manifestUsable = session.manifest_status === "accepted" ||\n'
+          '    (isKit && session.manifest_status === "kit_preview_mismatch");',
+        ),
+      );
+      expect(resolver, contains('if (!manifestUsable) {'));
       expect(resolver, contains('manifest_not_accepted'));
       expect(resolver, contains('kit_preview_mismatch'));
     });
 
-    test('the category must be included, and backed in kit mode', () {
+    test('kit steps follow the snapshot; Standard steps follow the image', () {
       expect(
         resolver,
         contains(
-          'item.presence === "present" && (!isKit || item.product_backed === true)',
+          'isKit ? item.product_backed === true : item.presence === "present"',
         ),
       );
       expect(resolver, contains('category_not_included'));
     });
 
     test('includedCount drives Step X of N', () {
-      expect(resolver, contains('includedCount: included.length'));
+      expect(resolver, contains('includedCount: isKit'));
+      expect(resolver, contains(': included.length,'));
     });
   });
 

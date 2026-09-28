@@ -603,10 +603,11 @@ void main() {
 
   group('My Makeup Kit', () {
     test(
-      'presence comes from the manifest, product data from the snapshot',
+      'the snapshot decides the categories and supplies the product data',
       () {
         final recommendation = _kitRecommendation();
-        // Contour is owned, but the preview does not show it.
+        // Contour is selected, but the preview does not visibly show it. The
+        // selection, not the image, decides that it is part of the look.
         final entries = RealizedLookFilter.kitEntries(
           recommendation: recommendation,
           included: _manifest(
@@ -626,12 +627,13 @@ void main() {
 
         expect(RealizedLookFilter.kitCategories(entries), <TutorialCategory>[
           TutorialCategory.foundation,
+          TutorialCategory.contourBronzer,
           TutorialCategory.lips,
         ]);
         expect(
           entries.map((entry) => entry.selection.productId),
-          <String>['p1', 'p3'],
-          reason: 'owning a contour product does not make it visible',
+          <String>['p1', 'p2', 'p3'],
+          reason: 'a selected contour product is taught even if not visible',
         );
         // Product identity still comes from the immutable snapshot.
         expect(
@@ -643,9 +645,10 @@ void main() {
       },
     );
 
-    test('a kit mismatch is not resolved by filtering it away', () {
-      // Blush is visibly present but no owned product backs it. The manifest
-      // reports the mismatch; the filter must not be what "fixes" it.
+    test('an unselected visible category is reported and never listed', () {
+      // Blush is visibly present but no selected product backs it. The manifest
+      // still reports it; the breakdown and the tutorial both leave it out,
+      // because the look's selection decides what they teach.
       final manifest = _manifest(
         const {
           TutorialCategory.foundation: _present,
@@ -658,13 +661,10 @@ void main() {
       expect(manifest.unbackedPresentCategories, <TutorialCategory>[
         TutorialCategory.blush,
       ]);
-      expect(
-        manifest.isUsable,
-        isFalse,
-        reason:
-            'the look is unusable, so no breakdown may be presented as if '
-            'it were valid',
-      );
+      expect(manifest.isUsable, isTrue);
+      expect(manifest.includedCategories, <TutorialCategory>[
+        TutorialCategory.foundation,
+      ]);
     });
   });
 }

@@ -80,6 +80,7 @@ ValidatedLookPlan _kitPlan({
   String foundationName = 'Studio Base',
   String lipstickName = 'Everyday Nude',
   bool includeEyeshadow = false,
+  bool includeBlush = false,
 }) => LookPlanConvergence.fromMyMakeupKit(
   KitMakeupRecommendation(
     id: 'kit-rec-1',
@@ -111,6 +112,14 @@ ValidatedLookPlan _kitPlan({
         finish: 'glossy',
         // Deliberately unnamed: the card must not invent a name.
       ),
+      if (includeBlush)
+        const KitProductSnapshot(
+          productId: 'p5',
+          category: 'blush',
+          colorHex: '#E8A08C',
+          finish: 'natural',
+          productName: 'Everyday Flush',
+        ),
       if (includeEyeshadow)
         const KitProductSnapshot(
           productId: 'p4',
@@ -1932,7 +1941,13 @@ void main() {
     /// show that the thing behind the shared shell is still two authorities.
     final modes = <String, (ValidatedLookPlan Function(), Type, Type)>{
       'Standard': (_standardPlan, StandardProductCard, MyMakeupKitProductCard),
-      'My Makeup Kit': (_kitPlan, MyMakeupKitProductCard, StandardProductCard),
+      // A kit step exists only for a category its snapshot selected, so the
+      // kit look here owns the blush these footer claims walk through.
+      'My Makeup Kit': (
+        () => _kitPlan(includeBlush: true),
+        MyMakeupKitProductCard,
+        StandardProductCard,
+      ),
     };
 
     // Deliberately ends on Blush rather than Lips: "last" must mean the last

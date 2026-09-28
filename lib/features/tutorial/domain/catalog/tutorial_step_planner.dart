@@ -35,10 +35,12 @@ class PlannedTutorialStep {
 abstract final class TutorialStepPlanner {
   /// Plans the steps for [manifest] under [lookPlan].
   ///
-  /// Throws a [TutorialFailure] when the manifest is not usable — unaccepted,
-  /// or blocked by a kit-preview mismatch. Planning around an inconsistent
-  /// manifest would be exactly the "misleading tutorial step" the architecture
-  /// forbids.
+  /// Throws a [TutorialFailure] when the manifest is not usable.
+  ///
+  /// In My Makeup Kit the steps are exactly the categories the look's product
+  /// snapshot backs, whatever the visual verdict. A category the preview shows
+  /// but no selected product backs (a kit-preview mismatch) is left out rather
+  /// than blocking the tutorial — it is never turned into a step.
   static List<PlannedTutorialStep> plan({
     required TutorialManifest manifest,
     required ValidatedLookPlan lookPlan,
@@ -50,25 +52,18 @@ abstract final class TutorialStepPlanner {
         retryable: false,
       );
     }
-    if (manifest.hasKitPreviewMismatch) {
-      throw const TutorialFailure(
-        'This look uses makeup that is not in your kit yet.',
-        kind: TutorialFailureKind.kitPreviewMismatch,
-        retryable: false,
-      );
-    }
-    if (manifest.status != TutorialManifestStatus.accepted) {
+    if (!manifest.isUsable) {
       throw const TutorialFailure(
         'This tutorial is not ready yet.',
         kind: TutorialFailureKind.manifestUnavailable,
       );
     }
 
-    // includedCategories is already filtered and in deterministic vocabulary
+    // The included set is already filtered and in deterministic vocabulary
     // order, so positions are simply its indices. Assigning them here — after
     // filtering — is what keeps "which steps" and "in what order" independent.
-    final included = manifest.includedCategories;
     final snapshot = lookPlan.productSnapshot;
+    final included = manifest.includedCategoriesFor(snapshot);
     final isKit = lookPlan.sourceMode == RecommendationSourceMode.myMakeupKit;
 
     return List<PlannedTutorialStep>.unmodifiable(<PlannedTutorialStep>[

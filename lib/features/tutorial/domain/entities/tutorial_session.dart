@@ -22,12 +22,13 @@ enum TutorialSessionStatus {
   stepReady('step_ready'),
   stepFailed('step_failed'),
 
-  /// The canonical preview and the validated owned-product selection disagree,
-  /// so no honest My Makeup Kit tutorial can be built from this preview.
+  /// My Makeup Kit only: the canonical preview visibly shows a category no
+  /// selected product backs.
   ///
-  /// A terminal state pending controlled recovery — typically regenerating the
-  /// canonical preview from the validated plan. It is never resolved by
-  /// inventing a product or by silently continuing in Standard Mode.
+  /// Persisted by the analyzer as a truthful record, and no longer a block: the
+  /// session's steps come from the look's product snapshot, so the unbacked
+  /// category is left out and every selected one is still taught. It is never
+  /// resolved by inventing a product or by continuing in Standard Mode.
   kitPreviewMismatch('kit_preview_mismatch'),
 
   completed('completed');
@@ -107,23 +108,23 @@ class TutorialSession {
   TutorialManifestStatus get manifestStatus =>
       manifest?.status ?? TutorialManifestStatus.pending;
 
-  /// Whether an accepted manifest can be reused instead of re-analyzed.
+  /// Whether a usable manifest can be reused instead of re-analyzed.
   ///
   /// Reopening a tutorial checks this rather than re-running the paid
   /// analysis. A manifest is only reusable for the preview it was analyzed
-  /// against, so the id must still match, and a kit-preview mismatch is not
-  /// reusable however cleanly it was produced.
+  /// against, so the id must still match. In My Makeup Kit a kit-preview
+  /// mismatch is reusable: it is a diagnostic, not a failed analysis.
   bool get hasReusableManifest =>
       manifest != null &&
       manifest!.isUsable &&
       manifest!.canonicalPreviewId == canonicalPreviewId;
 
-  /// Whether this session is blocked by a kit-preview inconsistency.
+  /// Whether the preview showed a category no selected product backs.
   ///
-  /// True when either the session was already marked
+  /// True when either the session was marked
   /// [TutorialSessionStatus.kitPreviewMismatch], or its manifest detected
-  /// unbacked categories. Both are checked because detection happens during
-  /// manifest analysis, while the session status is what persists the outcome.
+  /// unbacked categories. A diagnostic only: it never blocks the tutorial,
+  /// whose steps come from [includedCategories].
   bool get hasKitPreviewMismatch =>
       status == TutorialSessionStatus.kitPreviewMismatch ||
       (manifest?.hasKitPreviewMismatch ?? false);
@@ -137,9 +138,14 @@ class TutorialSession {
       manifest?.unbackedPresentCategories ?? const <TutorialCategory>[];
 
   /// The categories this tutorial contains, in deterministic logical order.
-  /// Empty until a manifest has been accepted.
+  /// Empty until a manifest exists.
+  ///
+  /// In My Makeup Kit these are the categories the look's product snapshot
+  /// backs, whatever the visual verdict; in Standard Mode, the visibly present
+  /// ones. See [TutorialManifest.includedCategoriesFor].
   List<TutorialCategory> get includedCategories =>
-      manifest?.includedCategories ?? const <TutorialCategory>[];
+      manifest?.includedCategoriesFor(lookPlan.productSnapshot) ??
+      const <TutorialCategory>[];
 
   /// The steps in deterministic presentation order.
   List<TutorialStep> get orderedSteps => List<TutorialStep>.unmodifiable(

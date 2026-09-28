@@ -1,8 +1,8 @@
 import {
   categoryPosition,
+  type CategoryPresence,
   FunctionFailure,
   INVENTORY_TO_TUTORIAL,
-  type CategoryPresence,
   type ManifestItem,
   type ManifestVerdict,
   type ResolvedManifest,
@@ -122,14 +122,16 @@ export function productBackedCategories(
 
 /// Turns visual verdicts into tutorial inclusion.
 ///
-/// Standard Mode:  included = visually present.
-/// My Makeup Kit:  included = visually present AND backed by an owned product.
+/// Standard Mode:  included = visually present. `uncertain` and `absent` are
+///                 never included.
+/// My Makeup Kit:  included = backed by the look's immutable product snapshot,
+///                 whatever the visual verdict. The snapshot says which products
+///                 were selected; the image only says where and how.
 ///
-/// `uncertain` is never included in either mode. A category the user owns a
-/// product for but which is not visible is NOT included — owning a product is
-/// not evidence that it was used. The reverse, visible but unowned, is the
-/// `kit_preview_mismatch` condition: the preview promises something the kit
-/// cannot reproduce, so no honest tutorial exists for it.
+/// In My Makeup Kit a category that is visible but backed by no selected
+/// product is never included. It is still reported, as
+/// `unbackedPresentCategories` and a `kit_preview_mismatch` status, but that
+/// status is a diagnostic: it no longer blocks the tutorial.
 export function resolveManifest(
   verdicts: ManifestVerdict[],
   sourceMode: SourceMode,
@@ -143,7 +145,7 @@ export function resolveManifest(
       ...verdict,
       position: categoryPosition(verdict.category),
       productBacked,
-      included: isKit ? visible && productBacked : visible,
+      included: isKit ? productBacked : visible,
     };
   });
 
@@ -168,4 +170,34 @@ export function resolveManifest(
       ? "kit_preview_mismatch"
       : "accepted",
   };
+}
+
+/// Whether a persisted manifest may be returned instead of analyzing again.
+///
+/// The status and both versions must match what this function would produce
+/// now. In My Makeup Kit mode the manifest must also be complete — one verdict
+/// for every supported category. A kit session whose item rows never landed
+/// (the session row is written first) is not a manifest at all; reusing it
+/// would leave the tutorial with no steps forever, so it is analyzed again.
+/// Standard Mode keeps its existing rule.
+export function isReusableManifest(options: {
+  sourceMode: SourceMode;
+  manifestStatus: unknown;
+  promptVersion: unknown;
+  schemaVersion: unknown;
+  currentPromptVersion: string;
+  currentSchemaVersion: string;
+  itemCount: number;
+}): boolean {
+  const settled = options.manifestStatus === "accepted" ||
+    options.manifestStatus === "kit_preview_mismatch";
+  if (
+    !settled ||
+    options.promptVersion !== options.currentPromptVersion ||
+    options.schemaVersion !== options.currentSchemaVersion
+  ) {
+    return false;
+  }
+  return options.sourceMode !== "my_makeup_kit" ||
+    options.itemCount === TUTORIAL_CATEGORIES.length;
 }

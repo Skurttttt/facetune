@@ -711,4 +711,92 @@ void main() {
       );
     });
   });
+
+  // OMKT: My Makeup Kit step existence follows the product snapshot. Runtime
+  // enforcement is proven by supabase/tests/omkt_kit_step_eligibility_test.sql;
+  // these pin the declared shape. Single-line matches only, so the result
+  // does not depend on the checkout's line endings.
+  group('OMKT snapshot-authoritative step eligibility', () {
+    final omkt = source(
+      'supabase/migrations/20261007000100_omkt_kit_snapshot_step_eligibility.sql',
+    );
+
+    test('backing is My Makeup Kit only', () {
+      expect(
+        omkt,
+        contains("generated always as (source_mode = 'my_makeup_kit') stored"),
+      );
+      expect(
+        omkt,
+        contains(
+          'generated always as (case when product_backed then true end)',
+        ),
+      );
+      expect(
+        omkt,
+        contains(
+          'references public.tutorial_v4_sessions (id, is_my_makeup_kit)',
+        ),
+      );
+    });
+
+    test('a step references an item that is present or backed', () {
+      expect(
+        omkt,
+        contains(
+          "generated always as (presence = 'present' or product_backed) stored",
+        ),
+      );
+      expect(
+        omkt,
+        contains(
+          'foreign key (tutorial_session_id, category, manifest_step_eligible)',
+        ),
+      );
+      expect(omkt, contains('check (manifest_step_eligible)'));
+    });
+
+    test('replaced constraints are dropped, not left dangling', () {
+      expect(
+        omkt,
+        contains(
+          'drop constraint tutorial_v4_manifest_items_absent_not_backed',
+        ),
+      );
+      expect(
+        omkt,
+        contains('drop constraint tutorial_v4_steps_included_category_fk'),
+      );
+      expect(
+        omkt,
+        contains('drop constraint tutorial_v4_steps_manifest_presence_pinned'),
+      );
+      expect(omkt, contains('drop column manifest_presence'));
+    });
+
+    test('touches no policy, grant, or other table', () {
+      for (final forbidden in <String>[
+        'create policy',
+        'drop policy',
+        'grant ',
+        'revoke ',
+        'disable row level security',
+        'storage.',
+      ]) {
+        expect(
+          omkt.toLowerCase(),
+          isNot(contains(forbidden)),
+          reason: forbidden,
+        );
+      }
+      final altered = RegExp(
+        r'alter table public\.(\w+)',
+      ).allMatches(omkt).map((match) => match.group(1)).toSet();
+      expect(altered, <String>{
+        'tutorial_v4_sessions',
+        'tutorial_v4_manifest_items',
+        'tutorial_v4_steps',
+      });
+    });
+  });
 }

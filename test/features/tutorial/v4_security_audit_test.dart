@@ -232,10 +232,12 @@ void main() {
     });
 
     test('an excluded category cannot be generated', () {
+      // Standard: only a visibly present category. My Makeup Kit: only a
+      // category the look's snapshot backs — never one the image alone shows.
       expect(
         resolver,
         contains(
-          'item.presence === "present" && (!isKit || item.product_backed === true)',
+          'isKit ? item.product_backed === true : item.presence === "present"',
         ),
       );
       expect(resolver, contains('category_not_included'));

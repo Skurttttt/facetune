@@ -1,3 +1,4 @@
+import 'look_product_snapshot.dart';
 import 'recommendation_source_mode.dart';
 import 'tutorial_category.dart';
 
@@ -35,15 +36,14 @@ enum TutorialManifestStatus {
   accepted('accepted'),
   failed('failed'),
 
-  /// The analysis completed, but the canonical preview visibly contains a
+  /// The analysis completed, and the canonical preview visibly contains a
   /// makeup category with no validated owned-product selection behind it.
   ///
-  /// Distinct from [failed]: nothing went wrong mechanically — the manifest is
-  /// perfectly readable, and that is exactly the problem. It says the preview
-  /// promises a look the user cannot reproduce from their own kit. Kept
-  /// separate so this can never be retried as if it were a transient error, and
-  /// so the preview is not treated as a valid canonical My Makeup Kit result
-  /// until the inconsistency is resolved.
+  /// My Makeup Kit only, and a diagnostic rather than a failure: the manifest
+  /// is complete and usable (see [TutorialManifest.isUsable]). The unbacked
+  /// category is simply never a step, because the look's product snapshot —
+  /// not the image — decides which steps exist. Kept distinct from [accepted]
+  /// so the persisted record stays truthful about what the analyzer saw.
   kitPreviewMismatch('kit_preview_mismatch');
 
   const TutorialManifestStatus(this.code);
@@ -124,9 +124,15 @@ class TutorialManifest {
   /// The categories that become tutorial steps, in deterministic logical
   /// order.
   ///
-  /// Only [TutorialCategoryPresence.present] qualifies. [uncertain] is
-  /// excluded here by design — it is surfaced through [uncertainCategories]
-  /// for deliberate handling rather than being quietly promoted.
+  /// Standard Mode: only [TutorialCategoryPresence.present] qualifies.
+  /// [uncertain] is excluded by design — it is surfaced through
+  /// [uncertainCategories] for deliberate handling rather than being quietly
+  /// promoted.
+  ///
+  /// My Makeup Kit: every category a selected product backs, whatever the
+  /// visual verdict. The look's immutable product snapshot decides which steps
+  /// exist; the image only informs where and how. A category no selected
+  /// product backs is never a step, even when it is visible.
   ///
   /// Inclusion and order are computed independently: this filters, then
   /// [TutorialCategory.orderedSubset] sorts. Removing categories therefore
@@ -134,9 +140,26 @@ class TutorialManifest {
   List<TutorialCategory> get includedCategories =>
       TutorialCategory.orderedSubset(
         items
-            .where((item) => item.presence == TutorialCategoryPresence.present)
+            .where(
+              (item) => sourceMode == RecommendationSourceMode.myMakeupKit
+                  ? item.productBacked
+                  : item.presence == TutorialCategoryPresence.present,
+            )
             .map((item) => item.category),
       );
+
+  /// [includedCategories], narrowed to what [snapshot] can actually present.
+  ///
+  /// In My Makeup Kit a persisted `product_backed` flag is only a record of the
+  /// snapshot at analysis time, so a category also has to be covered by the
+  /// look's snapshot now. The check can only remove a category, never add one.
+  /// Standard Mode has no snapshot and is returned unchanged.
+  List<TutorialCategory> includedCategoriesFor(LookProductSnapshot snapshot) =>
+      sourceMode == RecommendationSourceMode.myMakeupKit
+      ? List<TutorialCategory>.unmodifiable(
+          includedCategories.where(snapshot.covers),
+        )
+      : includedCategories;
 
   /// Categories the analyzer could not confidently resolve, in deterministic
   /// logical order.
@@ -154,9 +177,9 @@ class TutorialManifest {
   ///
   /// Always empty in Standard Mode, which has no ownership requirement. A
   /// non-empty result in My Makeup Kit mode is the `kit_preview_mismatch`
-  /// condition: the preview promises makeup the user cannot reproduce from
-  /// their own kit. It is never resolved by inventing a product or by falling
-  /// back to Standard Mode.
+  /// diagnostic: the preview shows makeup no selected product accounts for.
+  /// Those categories never become steps — no product is invented and there is
+  /// no fall back to Standard Mode — but they no longer block the tutorial.
   List<TutorialCategory> get unbackedPresentCategories =>
       sourceMode == RecommendationSourceMode.standard
       ? const <TutorialCategory>[]
@@ -170,22 +193,22 @@ class TutorialManifest {
               .map((item) => item.category),
         );
 
-  /// Whether this manifest describes a look the user cannot reproduce from
-  /// their own kit.
+  /// Whether the preview visibly shows makeup no selected product accounts for.
   ///
-  /// True only in My Makeup Kit mode, and only when the canonical preview
-  /// visibly contains a category no validated owned product backs. The correct
-  /// response is never to invent a product, never to drop to Standard Mode, and
-  /// never to build the step anyway — it is to surface
-  /// [TutorialManifestStatus.kitPreviewMismatch] for controlled recovery.
+  /// True only in My Makeup Kit mode. A diagnostic, not a block: the unbacked
+  /// categories are left out of the tutorial and every selected category still
+  /// gets its step.
   bool get hasKitPreviewMismatch => unbackedPresentCategories.isNotEmpty;
 
-  /// Whether an accepted manifest may be used to build tutorial steps.
+  /// Whether this manifest may be used to build tutorial steps.
   ///
-  /// [TutorialManifestStatus.kitPreviewMismatch] is deliberately excluded even
-  /// though the analysis itself succeeded.
+  /// Standard Mode: only [TutorialManifestStatus.accepted].
+  /// My Makeup Kit: also [TutorialManifestStatus.kitPreviewMismatch], which in
+  /// this mode records the diagnostic above rather than a failed analysis.
   bool get isUsable =>
-      status == TutorialManifestStatus.accepted && !hasKitPreviewMismatch;
+      status == TutorialManifestStatus.accepted ||
+      (sourceMode == RecommendationSourceMode.myMakeupKit &&
+          status == TutorialManifestStatus.kitPreviewMismatch);
 
   /// The verdict for [category], or `null` when the manifest does not cover it.
   TutorialManifestItem? itemFor(TutorialCategory category) {

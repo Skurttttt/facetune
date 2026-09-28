@@ -130,7 +130,97 @@ void main() {
     });
   });
 
-  group('an unbacked visible category is a controlled mismatch', () {
+  group('the snapshot decides which kit steps exist', () {
+    // OMKT target: snapshot foundation, blush, eyeshadow, lipstick; the image
+    // judged foundation and eyeshadow uncertain and showed an unowned concealer.
+    final plan = _kitPlan(<KitProductSnapshot>[
+      _snapshot('p1', 'foundation'),
+      _snapshot('p2', 'blush'),
+      _snapshot('p3', 'eyeshadow'),
+      _snapshot('p4', 'lipstick'),
+    ]);
+    final manifest = _manifest(
+      sourceMode: RecommendationSourceMode.myMakeupKit,
+      status: TutorialManifestStatus.kitPreviewMismatch,
+      verdicts: {
+        TutorialCategory.foundation: (
+          presence: TutorialCategoryPresence.uncertain,
+          backed: true,
+        ),
+        TutorialCategory.concealer: (
+          presence: TutorialCategoryPresence.present,
+          backed: false,
+        ),
+        TutorialCategory.blush: (
+          presence: TutorialCategoryPresence.present,
+          backed: true,
+        ),
+        TutorialCategory.eyeshadow: (
+          presence: TutorialCategoryPresence.uncertain,
+          backed: true,
+        ),
+        TutorialCategory.eyeliner: (
+          presence: TutorialCategoryPresence.absent,
+          backed: false,
+        ),
+        TutorialCategory.lips: (
+          presence: TutorialCategoryPresence.present,
+          backed: true,
+        ),
+      },
+    );
+
+    test('every selected category is a step, whatever the verdict', () {
+      expect(manifest.isUsable, isTrue);
+      expect(
+        _session(plan: plan, manifest: manifest).includedCategories,
+        const <TutorialCategory>[
+          TutorialCategory.foundation,
+          TutorialCategory.blush,
+          TutorialCategory.eyeshadow,
+          TutorialCategory.lips,
+        ],
+      );
+    });
+
+    test('a selected but visually absent category is still a step', () {
+      final absent = _manifest(
+        sourceMode: RecommendationSourceMode.myMakeupKit,
+        verdicts: {
+          TutorialCategory.lips: (
+            presence: TutorialCategoryPresence.absent,
+            backed: true,
+          ),
+        },
+      );
+      expect(
+        _session(plan: plan, manifest: absent).includedCategories,
+        const <TutorialCategory>[TutorialCategory.lips],
+      );
+    });
+
+    test('a backed flag the snapshot no longer supports adds nothing', () {
+      final stale = _manifest(
+        sourceMode: RecommendationSourceMode.myMakeupKit,
+        verdicts: {
+          TutorialCategory.highlighter: (
+            presence: TutorialCategoryPresence.present,
+            backed: true,
+          ),
+          TutorialCategory.lips: (
+            presence: TutorialCategoryPresence.present,
+            backed: true,
+          ),
+        },
+      );
+      expect(
+        _session(plan: plan, manifest: stale).includedCategories,
+        const <TutorialCategory>[TutorialCategory.lips],
+      );
+    });
+  });
+
+  group('an unbacked visible category is a non-blocking diagnostic', () {
     TutorialManifest mismatched() => _manifest(
       sourceMode: RecommendationSourceMode.myMakeupKit,
       verdicts: {
@@ -155,29 +245,54 @@ void main() {
       ]);
     });
 
-    test('makes the manifest unusable despite a clean analysis', () {
+    test('keeps the manifest usable and leaves the category out', () {
       final manifest = mismatched();
 
       expect(
-        manifest.status,
-        TutorialManifestStatus.accepted,
-        reason: 'the analysis itself succeeded',
+        manifest.isUsable,
+        isTrue,
+        reason: 'the snapshot, not the image, decides whether steps exist',
       );
       expect(
-        manifest.isUsable,
-        isFalse,
-        reason: 'a look the user cannot reproduce must not build steps',
+        manifest.includedCategories,
+        const <TutorialCategory>[TutorialCategory.foundation],
+        reason: 'the unowned eyeliner the preview shows is never a step',
       );
     });
 
-    test('blocks manifest reuse at the session level', () {
+    test(
+      'a persisted kit_preview_mismatch status stays usable in kit mode',
+      () {
+        final persisted = _manifest(
+          sourceMode: RecommendationSourceMode.myMakeupKit,
+          status: TutorialManifestStatus.kitPreviewMismatch,
+          verdicts: {
+            TutorialCategory.foundation: (
+              presence: TutorialCategoryPresence.present,
+              backed: true,
+            ),
+            TutorialCategory.eyeliner: (
+              presence: TutorialCategoryPresence.present,
+              backed: false,
+            ),
+          },
+        );
+        expect(persisted.isUsable, isTrue);
+      },
+    );
+
+    test('is reported at the session level without blocking reuse', () {
       final session = _session(
         plan: _kitPlan(<KitProductSnapshot>[_snapshot('p1', 'foundation')]),
         manifest: mismatched(),
+        status: TutorialSessionStatus.kitPreviewMismatch,
       );
 
       expect(session.hasKitPreviewMismatch, isTrue);
-      expect(session.hasReusableManifest, isFalse);
+      expect(session.hasReusableManifest, isTrue);
+      expect(session.includedCategories, const <TutorialCategory>[
+        TutorialCategory.foundation,
+      ]);
       expect(session.unbackedPresentCategories, const <TutorialCategory>[
         TutorialCategory.eyeliner,
       ]);
@@ -261,6 +376,73 @@ void main() {
       expect(manifest.includedCategories, const <TutorialCategory>[
         TutorialCategory.eyeliner,
       ]);
+    });
+
+    test('present is a step; absent and uncertain are not', () {
+      final manifest = _manifest(
+        sourceMode: RecommendationSourceMode.standard,
+        verdicts: {
+          TutorialCategory.foundation: (
+            presence: TutorialCategoryPresence.uncertain,
+            // Never written for Standard; ignored even if it were.
+            backed: true,
+          ),
+          TutorialCategory.blush: (
+            presence: TutorialCategoryPresence.present,
+            backed: false,
+          ),
+          TutorialCategory.lips: (
+            presence: TutorialCategoryPresence.absent,
+            backed: true,
+          ),
+        },
+      );
+      final session = _session(
+        plan: LookPlanConvergence.fromMyMakeupKit(
+          KitMakeupRecommendation(
+            id: 'unused',
+            analysisId: 'analysis-1',
+            styleCode: 'soft_glam',
+            selections: const <KitMakeupSelection>[],
+            productSnapshots: const <KitProductSnapshot>[],
+            overallIntensity: 'soft',
+            summary: 'unused',
+            modelId: 'm',
+            promptVersion: 'v',
+            createdAt: _now,
+          ),
+        ),
+        manifest: manifest,
+      );
+
+      expect(manifest.includedCategories, const <TutorialCategory>[
+        TutorialCategory.blush,
+      ]);
+      expect(
+        manifest.includedCategoriesFor(session.lookPlan.productSnapshot),
+        const <TutorialCategory>[TutorialCategory.blush],
+        reason: 'Standard Mode ignores any snapshot entirely',
+      );
+    });
+
+    test('only an accepted manifest is usable', () {
+      for (final status in TutorialManifestStatus.values) {
+        final manifest = _manifest(
+          sourceMode: RecommendationSourceMode.standard,
+          status: status,
+          verdicts: {
+            TutorialCategory.blush: (
+              presence: TutorialCategoryPresence.present,
+              backed: false,
+            ),
+          },
+        );
+        expect(
+          manifest.isUsable,
+          status == TutorialManifestStatus.accepted,
+          reason: status.code,
+        );
+      }
     });
   });
 

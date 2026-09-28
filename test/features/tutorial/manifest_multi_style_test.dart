@@ -304,32 +304,28 @@ void main() {
   });
 
   group('My Makeup Kit intersects; it does not substitute', () {
-    test('visible and owned is included; visible and unowned blocks', () {
+    test('visible and unselected is reported, never a step, never a block', () {
       final manifest = _manifest(
         _natural,
         sourceMode: RecommendationSourceMode.myMakeupKit,
         backed: const {TutorialCategory.foundation, TutorialCategory.lips},
       );
 
-      // Eyebrows is visible but unowned: the preview promises something the
-      // kit cannot reproduce, so no honest tutorial exists.
+      // Eyebrows is visible but no selected product backs it: it is named as a
+      // diagnostic and left out, and the selected categories still stand.
       expect(manifest.unbackedPresentCategories, <TutorialCategory>[
         TutorialCategory.eyebrows,
       ]);
       expect(manifest.hasKitPreviewMismatch, isTrue);
-      expect(manifest.isUsable, isFalse);
-      expect(
-        () => TutorialStepPlanner.plan(
-          manifest: manifest,
-          lookPlan: _plan('natural'),
-        ),
-        throwsA(anything),
-        reason: 'a mismatched look must not silently drop the unowned step',
-      );
+      expect(manifest.isUsable, isTrue);
+      expect(manifest.includedCategories, <TutorialCategory>[
+        TutorialCategory.foundation,
+        TutorialCategory.lips,
+      ]);
     });
 
-    test('owning a product never manufactures a step', () {
-      // Owning eyeshadow while the preview shows none must not add a step.
+    test('a selected product is a step even where the preview shows none', () {
+      // Eyeshadow is selected but judged absent; blush is not selected.
       final manifest = _manifest(
         _natural,
         sourceMode: RecommendationSourceMode.myMakeupKit,
@@ -341,31 +337,37 @@ void main() {
         },
       );
       expect(manifest.hasKitPreviewMismatch, isFalse);
-      expect(
-        manifest.includedCategories.contains(TutorialCategory.eyeshadow),
-        isFalse,
-      );
-      expect(manifest.includedCategories, hasLength(3));
+      expect(manifest.includedCategories, <TutorialCategory>[
+        TutorialCategory.foundation,
+        TutorialCategory.eyebrows,
+        TutorialCategory.eyeshadow,
+        TutorialCategory.lips,
+      ]);
     });
 
-    test('the same verdicts give fewer steps in kit mode, never more', () {
+    test('kit steps are exactly the selected set; verdicts add nothing', () {
       final standard = _manifest(_softGlam).includedCategories;
-      final kit = _manifest(
+      expect(standard, hasLength(6), reason: 'Standard follows the verdicts');
+
+      final complete = _manifest(
         _softGlam,
         sourceMode: RecommendationSourceMode.myMakeupKit,
         backed: TutorialCategory.values.toSet(),
       ).includedCategories;
-      expect(kit, standard, reason: 'a complete kit reproduces the same look');
+      expect(
+        complete,
+        TutorialCategory.values,
+        reason: 'every selected category is taught, visible or not',
+      );
 
       final partial = _manifest(
         _softGlam,
         sourceMode: RecommendationSourceMode.myMakeupKit,
         backed: const {TutorialCategory.foundation},
       );
-      expect(
-        partial.includedCategories.length,
-        lessThanOrEqualTo(standard.length),
-      );
+      expect(partial.includedCategories, <TutorialCategory>[
+        TutorialCategory.foundation,
+      ]);
     });
 
     test('a kit step carries the owned product it was matched to', () {
@@ -460,10 +462,7 @@ void main() {
           '): ResolvedManifest {',
         ),
       );
-      expect(
-        validation,
-        contains('included: isKit ? visible && productBacked'),
-      );
+      expect(validation, contains('included: isKit ? productBacked : visible'));
       expect(validation, isNot(contains('style')));
     });
 

@@ -5,8 +5,8 @@ import {
 import {
   asTutorialCategory,
   INVENTORY_TO_TUTORIAL,
-  STANDARD_KEY_TO_TUTORIAL,
   type SourceMode,
+  STANDARD_KEY_TO_TUTORIAL,
   type TutorialCategory,
 } from "./tutorial_vocabulary.ts";
 
@@ -187,9 +187,15 @@ export async function resolveTutorialSource(
   }
   const isKit = sourceMode === "my_makeup_kit";
 
-  if (session.manifest_status !== "accepted") {
-    // Covers pending, analyzing, failed, and kit_preview_mismatch. A mismatched
-    // look must never produce a guideline for a product the user does not own.
+  // In My Makeup Kit mode `kit_preview_mismatch` is a diagnostic, not a block:
+  // it records that the image showed a category no selected product backs.
+  // Step existence comes from the snapshot, so such a manifest is usable. In
+  // Standard Mode only an accepted manifest proceeds, and the database forbids
+  // a Standard mismatch outright.
+  const manifestUsable = session.manifest_status === "accepted" ||
+    (isKit && session.manifest_status === "kit_preview_mismatch");
+  if (!manifestUsable) {
+    // Covers pending, analyzing, and failed.
     throw new ResolutionFailure(
       409,
       session.manifest_status === "kit_preview_mismatch"
@@ -199,8 +205,12 @@ export async function resolveTutorialSource(
     );
   }
 
-  // The category must be one the manifest actually included. In kit mode that
-  // also means an owned product backs it.
+  // The category must be one the manifest includes.
+  //
+  // Standard Mode: visually present.
+  // My Makeup Kit: backed by the look's immutable product snapshot, whatever the
+  // visual verdict. The image never decides whether a kit step exists, and a
+  // category no selected product backs is never a kit step even when visible.
   const { data: manifestRows } = await client
     .from("tutorial_v4_manifest_items")
     .select("category,presence,product_backed")
@@ -209,7 +219,7 @@ export async function resolveTutorialSource(
   if (manifest.length === 0) throw notFound();
 
   const included = manifest.filter((item) =>
-    item.presence === "present" && (!isKit || item.product_backed === true)
+    isKit ? item.product_backed === true : item.presence === "present"
   );
   const approved = included.find((item) => item.category === category);
   if (!approved) {
@@ -334,7 +344,16 @@ export async function resolveTutorialSource(
     stepId: step.id as string,
     category,
     position: typeof step.position === "number" ? step.position : 1,
-    includedCount: included.length,
+    // In kit mode a backed category only counts while the snapshot still holds
+    // a product for it, the same rule the app plans steps with.
+    includedCount: isKit
+      ? included.filter((item) =>
+        resolveProducts(
+          recommendation.product_snapshot_json,
+          item.category as TutorialCategory,
+        ).length > 0
+      ).length
+      : included.length,
     generationAttempt: typeof step.generation_attempt === "number"
       ? step.generation_attempt
       : 0,

@@ -301,30 +301,27 @@ void main() {
       );
     });
 
-    test('an unbacked visible category refuses to plan at all', () {
+    test('an unselected visible category is left out, not a block', () {
+      final planned = TutorialStepPlanner.plan(
+        manifest: manifest(
+          sourceMode: RecommendationSourceMode.myMakeupKit,
+          present: const <TutorialCategory>[
+            TutorialCategory.foundation,
+            TutorialCategory.eyeliner,
+          ],
+          backed: const <TutorialCategory>{TutorialCategory.foundation},
+        ),
+        lookPlan: kitPlan(const <(String, String)>[('p1', 'foundation')]),
+      );
+
       expect(
-        () => TutorialStepPlanner.plan(
-          manifest: manifest(
-            sourceMode: RecommendationSourceMode.myMakeupKit,
-            present: const <TutorialCategory>[
-              TutorialCategory.foundation,
-              TutorialCategory.eyeliner,
-            ],
-            backed: const <TutorialCategory>{TutorialCategory.foundation},
-          ),
-          lookPlan: kitPlan(const <(String, String)>[('p1', 'foundation')]),
-        ),
-        throwsA(
-          isA<TutorialFailure>().having(
-            (failure) => failure.kind,
-            'kind',
-            TutorialFailureKind.kitPreviewMismatch,
-          ),
-        ),
+        planned.map((step) => step.category).toList(),
+        const <TutorialCategory>[TutorialCategory.foundation],
+        reason: 'the unowned eyeliner the preview shows is never a step',
       );
     });
 
-    test('an owned but invisible category is not made into a step', () {
+    test('a selected but invisible category is still made into a step', () {
       final planned = TutorialStepPlanner.plan(
         manifest: manifest(
           sourceMode: RecommendationSourceMode.myMakeupKit,
@@ -338,6 +335,33 @@ void main() {
           ('p1', 'lipstick'),
           ('p2', 'eyeliner'),
         ]),
+      );
+
+      expect(
+        planned.map((step) => (step.category, step.position)).toList(),
+        const <(TutorialCategory, int)>[
+          (TutorialCategory.eyeliner, 1),
+          (TutorialCategory.lips, 2),
+        ],
+      );
+      expect(
+        planned.first.productSnapshotItems.single.productId,
+        'p2',
+        reason: 'the step carries the exact selected product',
+      );
+    });
+
+    test('a backed flag without a snapshot product plans nothing', () {
+      final planned = TutorialStepPlanner.plan(
+        manifest: manifest(
+          sourceMode: RecommendationSourceMode.myMakeupKit,
+          present: const <TutorialCategory>[TutorialCategory.lips],
+          backed: const <TutorialCategory>{
+            TutorialCategory.lips,
+            TutorialCategory.blush,
+          },
+        ),
+        lookPlan: kitPlan(const <(String, String)>[('p1', 'lipstick')]),
       );
 
       expect(

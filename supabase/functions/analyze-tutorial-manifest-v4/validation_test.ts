@@ -4,6 +4,7 @@ import {
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
 import {
+  isReusableManifest,
   parseManifestResponse,
   productBackedCategories,
   resolveManifest,
@@ -149,7 +150,7 @@ Deno.test("malformed JSON is a typed failure", () => {
   assertEquals(error.code, "malformed_ai_json");
 });
 
-Deno.test("kit mode includes only visible AND owned categories", () => {
+Deno.test("kit mode includes exactly the snapshot-backed categories", () => {
   const resolved = resolveManifest(
     parseManifestResponse(
       response({ foundation: "present", blush: "present", lips: "present" }),
@@ -162,14 +163,96 @@ Deno.test("kit mode includes only visible AND owned categories", () => {
   assertEquals(resolved.manifestStatus, "kit_preview_mismatch");
 });
 
-Deno.test("an owned product does not force a visually absent step", () => {
+Deno.test("a snapshot-backed category is included whatever its verdict", () => {
   const resolved = resolveManifest(
-    parseManifestResponse(response({ lips: "present" })),
+    parseManifestResponse(
+      response({ lips: "present", eyeliner: "uncertain" }),
+    ),
     "my_makeup_kit",
     backed("lips", "eyeliner", "blush"),
   );
-  assertEquals(resolved.includedCategories, ["lips"]);
+  // blush is absent, eyeliner uncertain, lips present: all three are selected.
+  assertEquals(resolved.includedCategories, ["blush", "eyeliner", "lips"]);
   assertEquals(resolved.unbackedPresentCategories, []);
+  assertEquals(resolved.manifestStatus, "accepted");
+});
+
+Deno.test("the OMKT target example resolves from the snapshot", () => {
+  const resolved = resolveManifest(
+    parseManifestResponse(
+      response({
+        foundation: "uncertain",
+        concealer: "present",
+        blush: "present",
+        eyeshadow: "uncertain",
+        lips: "present",
+      }),
+    ),
+    "my_makeup_kit",
+    // Snapshot: foundation, blush, eyeshadow, lipstick.
+    productBackedCategories([
+      { category: "foundation" },
+      { category: "blush" },
+      { category: "eyeshadow" },
+      { category: "lipstick" },
+    ]),
+  );
+  assertEquals(resolved.includedCategories, [
+    "foundation",
+    "blush",
+    "eyeshadow",
+    "lips",
+  ]);
+  // Concealer is visible but no selected product backs it: reported, never a
+  // step, and no longer a reason to block the tutorial.
+  assertEquals(resolved.unbackedPresentCategories, ["concealer"]);
+  assertEquals(resolved.manifestStatus, "kit_preview_mismatch");
+  const concealer = resolved.items.find((item) =>
+    item.category === "concealer"
+  );
+  assertEquals(concealer?.included, false);
+  assertEquals(concealer?.productBacked, false);
+});
+
+Deno.test("kit mode: the six-row step-existence truth table", () => {
+  const resolved = resolveManifest(
+    parseManifestResponse(
+      response({
+        foundation: "present",
+        concealer: "absent",
+        blush: "uncertain",
+        highlighter: "present",
+        eyeshadow: "absent",
+        eyeliner: "uncertain",
+      }),
+    ),
+    "my_makeup_kit",
+    backed("foundation", "concealer", "blush"),
+  );
+  const included = (category: TutorialCategory) =>
+    resolved.items.find((item) => item.category === category)?.included;
+  assertEquals(included("foundation"), true, "selected + present");
+  assertEquals(included("concealer"), true, "selected + absent");
+  assertEquals(included("blush"), true, "selected + uncertain");
+  assertEquals(included("highlighter"), false, "not selected + present");
+  assertEquals(included("eyeshadow"), false, "not selected + absent");
+  assertEquals(included("eyeliner"), false, "not selected + uncertain");
+});
+
+Deno.test("standard mode: present only, and backing is ignored", () => {
+  const resolved = resolveManifest(
+    parseManifestResponse(
+      response({ foundation: "present", concealer: "uncertain" }),
+    ),
+    "standard",
+    // Even if a caller passed a backed set, Standard Mode never uses it.
+    backed("foundation", "concealer", "blush"),
+  );
+  assertEquals(resolved.includedCategories, ["foundation"]);
+  assertEquals(
+    resolved.items.every((item) => item.productBacked === false),
+    true,
+  );
   assertEquals(resolved.manifestStatus, "accepted");
 });
 
@@ -224,4 +307,76 @@ Deno.test("an unmappable stored category is rejected", () => {
 Deno.test("an empty snapshot backs nothing", () => {
   assertEquals(productBackedCategories([]).size, 0);
   assertEquals(productBackedCategories(null).size, 0);
+});
+
+const current = {
+  currentPromptVersion: "tutorial_manifest_v4_1",
+  currentSchemaVersion: "tutorial_manifest_schema_v1",
+  promptVersion: "tutorial_manifest_v4_1",
+  schemaVersion: "tutorial_manifest_schema_v1",
+};
+
+Deno.test("a complete kit manifest is reused, diagnostic mismatch included", () => {
+  for (const manifestStatus of ["accepted", "kit_preview_mismatch"]) {
+    assertEquals(
+      isReusableManifest({
+        ...current,
+        sourceMode: "my_makeup_kit",
+        manifestStatus,
+        itemCount: 9,
+      }),
+      true,
+    );
+  }
+});
+
+Deno.test("an incomplete kit manifest is analyzed again", () => {
+  for (const itemCount of [0, 4, 8]) {
+    assertEquals(
+      isReusableManifest({
+        ...current,
+        sourceMode: "my_makeup_kit",
+        manifestStatus: "accepted",
+        itemCount,
+      }),
+      false,
+    );
+  }
+});
+
+Deno.test("standard reuse keeps its existing rule", () => {
+  // Unchanged: status and versions decide; the item count never did.
+  assertEquals(
+    isReusableManifest({
+      ...current,
+      sourceMode: "standard",
+      manifestStatus: "accepted",
+      itemCount: 0,
+    }),
+    true,
+  );
+  assertEquals(
+    isReusableManifest({
+      ...current,
+      sourceMode: "standard",
+      manifestStatus: "failed",
+      itemCount: 9,
+    }),
+    false,
+  );
+});
+
+Deno.test("a stale version is never reused in either mode", () => {
+  for (const sourceMode of ["standard", "my_makeup_kit"] as const) {
+    assertEquals(
+      isReusableManifest({
+        ...current,
+        sourceMode,
+        manifestStatus: "accepted",
+        promptVersion: "tutorial_manifest_v4_0",
+        itemCount: 9,
+      }),
+      false,
+    );
+  }
 });

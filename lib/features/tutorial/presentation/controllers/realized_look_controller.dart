@@ -141,18 +141,10 @@ class RealizedLookController extends StateNotifier<RealizedLookState> {
         return;
       }
       _ensured = preview;
-      // A kit-preview mismatch is a validation outcome, not a rendering
-      // problem. It is surfaced rather than resolved by quietly dropping the
-      // unbacked category, which would present an unreproducible look as valid.
-      if (session.hasKitPreviewMismatch) {
-        state = RealizedLookState(
-          status: RealizedLookStatus.kitPreviewMismatch,
-          preview: preview,
-          session: session,
-          retryable: false,
-        );
-        return;
-      }
+      // A My Makeup Kit kit-preview mismatch no longer stops the breakdown: it
+      // lists exactly the products the look selected — the same set the
+      // tutorial teaches — and the unbacked category the preview showed is not
+      // one of them.
       if (!session.hasReusableManifest) {
         state = RealizedLookState(
           status: RealizedLookStatus.failed,
