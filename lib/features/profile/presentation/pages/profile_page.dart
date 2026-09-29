@@ -66,14 +66,9 @@ class ProfilePage extends ConsumerWidget {
             ),
             ProfileStatus.ready => ListView(
               children: [
-                TopLevelPageHeader(
-                  title: 'Profile',
-                  trailing: IconButton.filledTonal(
-                    tooltip: 'Open settings',
-                    onPressed: () => context.push(AppConstants.settingsRoute),
-                    icon: const Icon(Icons.settings_outlined),
-                  ),
-                ),
+                // No header action: Settings is reached from the Account
+                // section below, its single entry point on this page.
+                const TopLevelPageHeader(title: 'Profile'),
                 const SizedBox(height: TopLevelHeaderMetrics.contentGap),
                 AppCard(
                   child: Column(
@@ -133,7 +128,7 @@ class ProfilePage extends ConsumerWidget {
                         label: Text(
                           state.activeOperation == ProfileOperation.displayName
                               ? 'Saving…'
-                              : 'Edit display name',
+                              : 'Edit name',
                         ),
                       ),
                     ],
@@ -167,32 +162,23 @@ class ProfilePage extends ConsumerWidget {
                   child: Column(
                     children: [
                       ListTile(
-                        leading: const Icon(
-                          Icons.favorite_border_rounded,
-                          color: AppColors.rose,
-                        ),
+                        leading: const Icon(Icons.favorite_border_rounded),
                         title: const Text('Saved looks'),
-                        subtitle: const Text('Your intentional collection'),
+                        subtitle: const Text('Your saved makeup looks'),
                         trailing: const Icon(Icons.chevron_right_rounded),
                         onTap: () => context.go(AppConstants.savedRoute),
                       ),
                       const Divider(height: 1),
                       ListTile(
-                        leading: const Icon(
-                          Icons.history_rounded,
-                          color: AppColors.rose,
-                        ),
-                        title: const Text('FaceTune history'),
+                        leading: const Icon(Icons.history_rounded),
+                        title: const Text('History'),
                         subtitle: const Text('Past analyses and previews'),
                         trailing: const Icon(Icons.chevron_right_rounded),
                         onTap: () => context.go(AppConstants.historyRoute),
                       ),
                       const Divider(height: 1),
                       ListTile(
-                        leading: const Icon(
-                          Icons.inventory_2_outlined,
-                          color: AppColors.rose,
-                        ),
+                        leading: const Icon(Icons.inventory_2_outlined),
                         title: const Text('My Makeup Kit'),
                         subtitle: const Text('Makeup products you own'),
                         trailing: const Icon(Icons.chevron_right_rounded),
@@ -201,30 +187,39 @@ class ProfilePage extends ConsumerWidget {
                     ],
                   ),
                 ),
-                const SizedBox(height: AppSpacing.md),
-                // Always visible. SubscriptionSummaryCard reports an
-                // authoritative allowance and hides when there is none, so it
-                // cannot be the only way into the plan comparison screen.
-                ListTile(
-                  key: const ValueKey('profile-plans-and-subscription'),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                  leading: const Icon(
-                    Icons.workspace_premium_outlined,
-                    color: AppColors.rose,
+                const SizedBox(height: AppSpacing.lg),
+                const SectionHeader('Account'),
+                const SizedBox(height: AppSpacing.xs),
+                AppCard(
+                  padding: EdgeInsets.zero,
+                  child: Column(
+                    children: [
+                      // Always visible. SubscriptionSummaryCard reports an
+                      // authoritative allowance and hides when there is none,
+                      // so it cannot be the only way into the plan comparison
+                      // screen.
+                      ListTile(
+                        key: const ValueKey('profile-plans-and-subscription'),
+                        leading: const Icon(Icons.workspace_premium_outlined),
+                        title: const Text('Plans & Subscription'),
+                        subtitle: const Text('See available plans'),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () =>
+                            context.push(AppConstants.subscriptionRoute),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        key: const ValueKey('profile-settings-and-privacy'),
+                        leading: const Icon(Icons.settings_outlined),
+                        title: const Text('Settings & Privacy'),
+                        subtitle: const Text(
+                          'Appearance, privacy, and sign out',
+                        ),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => context.push(AppConstants.settingsRoute),
+                      ),
+                    ],
                   ),
-                  title: const Text('Plans & Subscription'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => context.push(AppConstants.subscriptionRoute),
-                ),
-                ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                  leading: const Icon(
-                    Icons.settings_outlined,
-                    color: AppColors.rose,
-                  ),
-                  title: const Text('Settings and privacy'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => context.push(AppConstants.settingsRoute),
                 ),
                 const SizedBox(height: AppSpacing.xl),
               ],
@@ -240,45 +235,10 @@ class ProfilePage extends ConsumerWidget {
     WidgetRef ref,
     String currentName,
   ) async {
-    final formKey = GlobalKey<FormState>();
-    final controller = TextEditingController(text: currentName);
     final value = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit display name'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            controller: controller,
-            autofocus: true,
-            textCapitalization: TextCapitalization.words,
-            textInputAction: TextInputAction.done,
-            validator: AuthValidators.displayName,
-            onFieldSubmitted: (_) {
-              if (formKey.currentState!.validate()) {
-                Navigator.pop(context, controller.text);
-              }
-            },
-            decoration: const InputDecoration(labelText: 'Display name'),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                Navigator.pop(context, controller.text);
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+      builder: (context) => _EditNameDialog(initialName: currentName),
     );
-    controller.dispose();
     if (value != null) {
       await ref
           .read(profileControllerProvider.notifier)
@@ -295,6 +255,62 @@ class ProfilePage extends ConsumerWidget {
     if (words == null || words.isEmpty) return 'FT';
     return words.take(2).map((word) => word[0].toUpperCase()).join();
   }
+}
+
+/// The display-name editor.
+///
+/// Stateful so the text controller lives exactly as long as the dialog. The
+/// dialog's field is still rebuilt during its closing animation, after
+/// `showDialog` has already returned, so a controller disposed by the caller
+/// would be used after disposal.
+class _EditNameDialog extends StatefulWidget {
+  const _EditNameDialog({required this.initialName});
+
+  final String initialName;
+
+  @override
+  State<_EditNameDialog> createState() => _EditNameDialogState();
+}
+
+class _EditNameDialogState extends State<_EditNameDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final _controller = TextEditingController(text: widget.initialName);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_formKey.currentState!.validate()) {
+      Navigator.pop(context, _controller.text);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Edit name'),
+    content: Form(
+      key: _formKey,
+      child: TextFormField(
+        controller: _controller,
+        autofocus: true,
+        textCapitalization: TextCapitalization.words,
+        textInputAction: TextInputAction.done,
+        validator: AuthValidators.displayName,
+        onFieldSubmitted: (_) => _submit(),
+        decoration: const InputDecoration(labelText: 'Display name'),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(onPressed: _submit, child: const Text('Save')),
+    ],
+  );
 }
 
 class _ProfileAvatar extends StatelessWidget {

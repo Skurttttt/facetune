@@ -39,27 +39,27 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.scrollUntilVisible(
-      find.text('Notification preference'),
+      find.text('Notifications'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Coming soon'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Analytics consent'),
       200,
       scrollable: find.byType(Scrollable).first,
     );
     expect(
-      find.text(
-        'Saved for future use. FaceTune does not send notifications yet.',
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.text('Stores your consent choice. No analytics SDK is active.'),
+      find.text('Your choice is saved. No analytics tools are active yet.'),
       findsOneWidget,
     );
     await tester.scrollUntilVisible(
-      find.text('About FaceTune'),
+      find.text('App version'),
       300,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('Version 9.8.7+42'), findsOneWidget);
-    expect(find.text('Publication pending'), findsOneWidget);
+    expect(find.text('9.8.7 (build 42)'), findsOneWidget);
+    expect(find.text('Not published yet'), findsOneWidget);
 
     await tester.ensureVisible(find.text('Privacy policy'));
     await tester.tap(find.text('Privacy policy'));

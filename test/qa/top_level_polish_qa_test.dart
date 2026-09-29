@@ -33,7 +33,6 @@ import 'package:facetune/features/saved_looks/presentation/pages/saved_looks_pag
 import 'package:facetune/features/saved_looks/presentation/widgets/saved_look_card.dart';
 import 'package:facetune/shared/widgets/app_ui.dart';
 import 'package:facetune/theme/app_theme.dart';
-import 'package:facetune/theme/app_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -348,34 +347,33 @@ void main() {
   });
 
   group('PROFILE', () {
-    testWidgets('settings sits in the title row; card and library intact', (
+    testWidgets('one Settings entry, in Account; card and library intact', (
       tester,
     ) async {
       await _pump(tester, _Tab.profile, device: _poco);
 
-      final title = tester.getRect(_Tab.profile.headingFinder);
-      final settings = tester.getRect(find.byTooltip('Open settings'));
-
-      // Aligned by layout, on the title's row, inside the page gutter.
-      expect(settings.center.dy, closeTo(title.center.dy, title.height));
-      expect(settings.left, greaterThan(title.right - 1));
+      // PSUX-P1: Settings lives in the Account section only, so the title row
+      // carries no action and cannot duplicate it.
+      expect(_Tab.profile.headingFinder, findsOneWidget);
       expect(
-        settings.right,
-        lessThanOrEqualTo(
-          _poco.size.width / _poco.dpr - AppSpacing.gutter + 12,
+        find.descendant(
+          of: find.byType(TopLevelPageHeader),
+          matching: find.byType(IconButton),
         ),
+        findsNothing,
       );
+      expect(find.byTooltip('Open settings'), findsNothing);
 
-      // The profile card and the library rows are frozen, and still here.
+      // The profile card and the library rows are still here.
       expect(find.text('Mia'), findsWidgets);
       expect(find.text('Registered account'), findsOneWidget);
-      expect(find.text('Edit display name'), findsOneWidget);
+      expect(find.text('Edit name'), findsOneWidget);
       expect(find.text('Your library'), findsOneWidget);
       // The last row sits below the fold on this device, so it is only built
       // once scrolled to. Asserting it without scrolling would test where the
       // list happens to end today, not that the row is still there.
       await tester.scrollUntilVisible(
-        find.text('Settings and privacy'),
+        find.text('Settings & Privacy'),
         80,
         scrollable: find.descendant(
           of: find.byType(ListView),
@@ -383,14 +381,22 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      expect(find.text('Account'), findsOneWidget);
+      // Scoped to rows: "History" is also a bottom-nav label.
       for (final row in [
         'Saved looks',
-        'FaceTune history',
+        'History',
         'My Makeup Kit',
-        'Settings and privacy',
+        'Plans & Subscription',
+        'Settings & Privacy',
       ]) {
-        expect(find.text(row), findsOneWidget, reason: '$row went missing');
+        expect(
+          find.widgetWithText(ListTile, row),
+          findsOneWidget,
+          reason: '$row went missing',
+        );
       }
+      expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
     });
   });
 

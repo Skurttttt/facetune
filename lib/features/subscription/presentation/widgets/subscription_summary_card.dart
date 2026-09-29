@@ -157,7 +157,7 @@ class SubscriptionSummaryCard extends ConsumerWidget {
               alignment: Alignment.centerLeft,
               child: TertiaryButton(
                 key: const ValueKey('subscription-summary-compare-plans'),
-                label: 'Compare plans',
+                label: 'View plans',
                 icon: Icons.list_alt_outlined,
                 expand: false,
                 onPressed: () => context.push(AppConstants.subscriptionRoute),

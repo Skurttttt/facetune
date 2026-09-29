@@ -133,38 +133,20 @@ class SettingsPage extends ConsumerWidget {
                   padding: EdgeInsets.zero,
                   child: Column(
                     children: [
-                      SwitchListTile(
-                        secondary: const Icon(Icons.notifications_outlined),
-                        title: const Text('Notification preference'),
-                        subtitle: const Text(
-                          'Saved for future use. FaceTune does not send notifications yet.',
-                        ),
-                        value: state.settings.notificationsEnabled,
-                        onChanged: state.activeOperation == null
-                            ? (value) => ref
-                                  .read(settingsControllerProvider.notifier)
-                                  .updateNotifications(value)
-                            : null,
-                      ),
-                      const Divider(height: 1),
-                      SwitchListTile(
-                        secondary: const Icon(Icons.analytics_outlined),
-                        title: const Text('Analytics consent'),
-                        subtitle: const Text(
-                          'Stores your consent choice. No analytics SDK is active.',
-                        ),
-                        value: state.settings.analyticsConsent,
-                        onChanged: state.activeOperation == null
-                            ? (value) => ref
-                                  .read(settingsControllerProvider.notifier)
-                                  .updateAnalyticsConsent(value)
-                            : null,
+                      // FaceTune sends no notifications yet, so a switch here
+                      // would look like it controls something. The stored
+                      // preference is left exactly as it is.
+                      const ListTile(
+                        key: ValueKey('settings-notifications'),
+                        leading: Icon(Icons.notifications_outlined),
+                        title: Text('Notifications'),
+                        subtitle: Text('Coming soon'),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xl),
-                const SectionHeader('Privacy and about'),
+                const SectionHeader('Privacy'),
                 const SizedBox(height: AppSpacing.sm),
                 AppCard(
                   padding: EdgeInsets.zero,
@@ -173,6 +155,7 @@ class SettingsPage extends ConsumerWidget {
                       ListTile(
                         leading: const Icon(Icons.image_outlined),
                         title: const Text('Image privacy'),
+                        subtitle: const Text('How your photos are stored'),
                         trailing: const Icon(Icons.chevron_right_rounded),
                         onTap: () => _showInformation(
                           context,
@@ -182,10 +165,24 @@ class SettingsPage extends ConsumerWidget {
                         ),
                       ),
                       const Divider(height: 1),
+                      SwitchListTile(
+                        secondary: const Icon(Icons.analytics_outlined),
+                        title: const Text('Analytics consent'),
+                        subtitle: const Text(
+                          'Your choice is saved. No analytics tools are active yet.',
+                        ),
+                        value: state.settings.analyticsConsent,
+                        onChanged: state.activeOperation == null
+                            ? (value) => ref
+                                  .read(settingsControllerProvider.notifier)
+                                  .updateAnalyticsConsent(value)
+                            : null,
+                      ),
+                      const Divider(height: 1),
                       ListTile(
                         leading: const Icon(Icons.policy_outlined),
                         title: const Text('Privacy policy'),
-                        subtitle: const Text('Publication pending'),
+                        subtitle: const Text('Not published yet'),
                         trailing: const Icon(Icons.chevron_right_rounded),
                         onTap: () => _showInformation(
                           context,
@@ -194,17 +191,20 @@ class SettingsPage extends ConsumerWidget {
                               'A production privacy-policy link has not been published yet. This placeholder does not represent a legal policy.',
                         ),
                       ),
-                      const Divider(height: 1),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                const SectionHeader('About'),
+                const SizedBox(height: AppSpacing.sm),
+                AppCard(
+                  padding: EdgeInsets.zero,
+                  child: Column(
+                    children: [
                       ListTile(
                         leading: const Icon(Icons.info_outline_rounded),
                         title: const Text('About FaceTune'),
-                        subtitle: Text(
-                          version.when(
-                            data: (value) => 'Version $value',
-                            loading: () => 'Loading version…',
-                            error: (_, _) => 'Version unavailable',
-                          ),
-                        ),
+                        subtitle: const Text('What FaceTune does'),
                         trailing: const Icon(Icons.chevron_right_rounded),
                         onTap: () => _showInformation(
                           context,
@@ -213,10 +213,26 @@ class SettingsPage extends ConsumerWidget {
                               'FaceTune creates personalized, brand-neutral makeup inspiration and identity-conscious AI previews. AI results can vary.',
                         ),
                       ),
+                      const Divider(height: 1),
+                      // Informational only, so no chevron and no tap target.
+                      ListTile(
+                        key: const ValueKey('settings-app-version'),
+                        leading: const Icon(Icons.tag_rounded),
+                        title: const Text('App version'),
+                        subtitle: Text(
+                          version.when(
+                            data: _versionLabel,
+                            loading: () => 'Loading version…',
+                            error: (_, _) => 'Version unavailable',
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xl),
+                const SectionHeader('Account'),
+                const SizedBox(height: AppSpacing.sm),
                 SecondaryButton(
                   label: authState.activeOperation == AuthOperation.signOut
                       ? 'Signing out…'
@@ -283,4 +299,13 @@ class SettingsPage extends ConsumerWidget {
       ],
     ),
   );
+}
+
+/// Presents the installed version, as `appVersionProvider` reports it
+/// (`<version>+<build>`), in words: "1.1.0+7" reads "1.1.0 (build 7)".
+String _versionLabel(String value) {
+  final separator = value.indexOf('+');
+  if (separator <= 0 || separator == value.length - 1) return value;
+  return '${value.substring(0, separator)} '
+      '(build ${value.substring(separator + 1)})';
 }

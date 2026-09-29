@@ -56,7 +56,8 @@ void main() {
     expect(find.text('mia@example.com'), findsOneWidget);
     expect(find.text('Registered account'), findsOneWidget);
     expect(find.text('Saved looks'), findsOneWidget);
-    expect(find.text('FaceTune history'), findsOneWidget);
+    expect(find.widgetWithText(ListTile, 'History'), findsOneWidget);
+    expect(find.text('FaceTune history'), findsNothing);
     expect(find.text('Your guest account is temporary'), findsNothing);
   });
 
