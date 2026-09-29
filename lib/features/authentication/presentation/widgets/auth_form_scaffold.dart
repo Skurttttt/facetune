@@ -4,6 +4,14 @@ import '../../../../shared/widgets/app_ui.dart';
 import '../../../../theme/app_tokens.dart';
 import 'brand_mark.dart';
 
+/// How many lines a field's error may take before it is cut short.
+///
+/// Material's default is one, which at large text sizes truncates the longer
+/// validator messages ("Include at least one letter and one number.") on a
+/// narrow phone. Four fits the longest one at 2x text on a 320-wide screen;
+/// short messages still take one line.
+const authFieldErrorMaxLines = 4;
+
 /// The common frame for every auth form.
 ///
 /// One frame for sign-in, registration, and both password screens, so the four

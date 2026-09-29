@@ -27,8 +27,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Meet the look\nmade for you.'), findsOneWidget);
-    expect(find.text('Sign in with email'), findsOneWidget);
+    expect(find.text('Welcome back'), findsOneWidget);
+    expect(find.text('Continue with Google'), findsOneWidget);
     await repository.dispose();
   });
 }

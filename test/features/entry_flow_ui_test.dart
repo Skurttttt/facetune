@@ -48,14 +48,18 @@ Future<FakeAuthRepository> _pumpApp(WidgetTester tester) async {
 
 void main() {
   group('entry screen', () {
-    testWidgets('keeps its copy and its two committing actions', (
+    testWidgets('is the sign-in form, with Google and registration', (
       tester,
     ) async {
+      // AUTHUX-P1: the entry screen is the sign-in task itself, not a landing
+      // page in front of it, and it no longer offers a guest session.
       await _pumpApp(tester);
-      expect(find.text('Meet the look\nmade for you.'), findsOneWidget);
-      expect(find.text('Sign in with email'), findsOneWidget);
+      expect(find.text('Welcome back'), findsOneWidget);
+      expect(find.byType(TextFormField), findsNWidgets(2));
+      expect(find.text('Sign in'), findsOneWidget);
       expect(find.text('Continue with Google'), findsOneWidget);
-      expect(find.text('Explore as a guest'), findsOneWidget);
+      expect(find.text('New here? Create an account'), findsOneWidget);
+      expect(find.text('Explore as a guest'), findsNothing);
     });
 
     testWidgets('no longer shows a stock photograph of a face', (tester) async {

@@ -103,7 +103,7 @@ const _conditions = <_Condition>[
 ];
 
 final _screens = <_ScreenCase>[
-  _ScreenCase('auth / entry', AuthenticationPage.new, 'Meet the look'),
+  _ScreenCase('auth / entry', AuthenticationPage.new, 'Welcome back'),
   _ScreenCase('home / start', HomePage.new, 'Start Scan'),
   _ScreenCase('selfie', ScanPage.new, 'New scan'),
   // Landmarked on the app bar rather than a guidance string: with no camera
