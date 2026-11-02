@@ -90,6 +90,9 @@ void main() {
           AppConstants.recommendationModeRoute,
           AppConstants.recommendationRoute,
           AppConstants.makeupKitRecommendationEntryRoute,
+          AppConstants.customPaletteRoute,
+          AppConstants.customPaletteCategoryRoute,
+          AppConstants.customPaletteReviewRoute,
           AppConstants.previewRoute,
           AppConstants.tutorialRoute,
         };

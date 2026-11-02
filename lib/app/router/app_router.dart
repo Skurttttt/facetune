@@ -12,6 +12,9 @@ import '../../features/authentication/presentation/pages/registration_page.dart'
 import '../../features/authentication/presentation/pages/reset_password_page.dart';
 import '../../features/authentication/presentation/controllers/auth_controller.dart';
 import '../../features/authentication/presentation/controllers/auth_state.dart';
+import '../../features/custom_palette/presentation/pages/custom_palette_category_page.dart';
+import '../../features/custom_palette/presentation/pages/custom_palette_page.dart';
+import '../../features/custom_palette/presentation/pages/custom_palette_review_page.dart';
 import '../../features/history/presentation/pages/history_page.dart';
 import '../../features/home/presentation/pages/home_page.dart';
 import '../../features/makeup_kit/presentation/pages/add_makeup_kit_product_page.dart';
@@ -244,6 +247,29 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           state,
           const MakeupKitRecommendationEntryPage(),
         ),
+      ),
+      GoRoute(
+        path: AppConstants.customPaletteRoute,
+        name: 'customPalette',
+        pageBuilder: (context, state) =>
+            buildJourneyPage(context, state, const CustomPalettePage()),
+      ),
+      GoRoute(
+        path: AppConstants.customPaletteCategoryRoute,
+        name: 'customPaletteCategory',
+        pageBuilder: (context, state) => buildJourneyPage(
+          context,
+          state,
+          CustomPaletteCategoryPage(
+            categoryCode: state.pathParameters['categoryCode']!,
+          ),
+        ),
+      ),
+      GoRoute(
+        path: AppConstants.customPaletteReviewRoute,
+        name: 'customPaletteReview',
+        pageBuilder: (context, state) =>
+            buildJourneyPage(context, state, const CustomPaletteReviewPage()),
       ),
       GoRoute(
         path: AppConstants.subscriptionRoute,

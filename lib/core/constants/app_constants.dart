@@ -31,6 +31,12 @@ class AppConstants {
   static const String makeupKitProductRoute = '/makeup-kit/product/:productId';
   static const String makeupKitRecommendationEntryRoute =
       '/makeup-kit/recommendation-entry';
+  static const String customPaletteRoute = '/custom-palette';
+  static const String customPaletteCategoryRoute =
+      '/custom-palette/category/:categoryCode';
+  static const String customPaletteReviewRoute = '/custom-palette/review';
+  static String customPaletteCategoryLocation(String categoryCode) =>
+      '/custom-palette/category/$categoryCode';
   static const String profileRoute = '/profile';
   static const String settingsRoute = '/settings';
   static const String subscriptionRoute = '/subscription';
