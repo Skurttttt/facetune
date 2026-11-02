@@ -272,6 +272,53 @@ export function parseCustomPaletteRequest(
   };
 }
 
+const FROZEN_KEYS = [
+  "adjusted_color_value",
+  "base_color_value",
+  "category_code",
+  "color_label",
+  "finish_code",
+];
+
+/**
+ * Re-validates a palette read back from storage.
+ *
+ * Stricter than a request: it must already be in the stored shape and canonical
+ * order, because anything else is not what this contract wrote.
+ */
+export function parseFrozenPalette(value: unknown): PaletteSelection[] {
+  if (!Array.isArray(value)) {
+    throw new PaletteContractError("invalid_palette_contract");
+  }
+  if (value.length === 0) throw new PaletteContractError("palette_empty");
+  const selections = value.map((entry) => {
+    const input = plainObject(entry);
+    if (
+      !input ||
+      Object.keys(input).sort().join() !== FROZEN_KEYS.join()
+    ) {
+      throw new PaletteContractError("invalid_palette_contract");
+    }
+    return parseSelection({
+      categoryCode: input.category_code,
+      baseColorValue: input.base_color_value,
+      adjustedColorValue: input.adjusted_color_value,
+      colorLabel: input.color_label,
+      finishCode: input.finish_code,
+    });
+  });
+  const ranks = selections.map((s) =>
+    CUSTOM_PALETTE_CATEGORIES.indexOf(s.category_code)
+  );
+  if (ranks.some((rank, index) => index > 0 && rank === ranks[index - 1])) {
+    throw new PaletteContractError("duplicate_category");
+  }
+  if (ranks.some((rank, index) => index > 0 && rank < ranks[index - 1])) {
+    throw new PaletteContractError("invalid_palette_contract");
+  }
+  return selections;
+}
+
 /** SHA-256 of the canonical palette, as lowercase hex. */
 export async function paletteDigest(
   selections: readonly PaletteSelection[],
