@@ -20,6 +20,11 @@
  *   LOCAL_SUPABASE_URL, LOCAL_ANON_KEY, LOCAL_SERVICE_ROLE_KEY
  *   LOCAL_DB_CONTAINER          The throwaway database container.
  *   CCP10_REPO                  Optional: checkout for the protected source check.
+ *   CCP10_WORKSPACE             Protected folder holding the harness copy, inputs
+ *                               and outputs. Its real ACL is verified with icacls.
+ *                               Required live; optional for a simulated run.
+ *   CCP10_DRY_INJECT            Dry only: palette_mutation | validator_bypass |
+ *                               manifest_call | guideline_call, to prove the stops.
  *   CCP10_DRY_SCENARIO          mixed | terminal_streak | provider_errors
  *   CCP10_DRY_CEILING           Dry only: a lower ceiling, to prove the hard stop.
  *   CCP10_LIVE_AUTHORIZATION    Live only: the exact token for this stage.
@@ -30,6 +35,10 @@
  *   deno run --no-lock --allow-env --allow-read --allow-sys \
  *     --allow-write=<run dir> --allow-run=docker,git \
  *     --allow-net=127.0.0.1,localhost ../tests/controlled/ccp10_eval.ts
+ *
+ * A restricted --allow-read must include markerPathsFor(...) of every sensitive
+ * path, because the location check refuses whatever it cannot prove. Add icacls to
+ * --allow-run when CCP10_WORKSPACE is set.
  *
  * Never written anywhere: selfie bytes in results, signed URLs, storage paths,
  * prompt text, keys, or tokens. Accepted previews are written to the run directory
@@ -44,8 +53,10 @@ import { customPaletteValidatorPrompt } from "../../functions/generate-custom-pa
 import {
   CUSTOM_COLOR_PALETTE_CONTRACT_VERSION,
   CUSTOM_COLOR_PALETTE_SOURCE_MODE,
+  paletteDigest,
   type PaletteSelection,
   parseCustomPaletteRequest,
+  parseFrozenPalette,
 } from "../../functions/_shared/custom_palette_contract.ts";
 import {
   DryProvider,
@@ -56,18 +67,24 @@ import {
   assertAllowedHost,
   assertLoopbackDatabase,
   assertOutsideRepository,
+  assertProtectedAcl,
+  assertProtectedWorkspace,
   assertThrowawayContainer,
+  assertWithinWorkspace,
   CallBudget,
   CeilingReached,
   classifyProviderRequest,
   findLeak,
   GuardRefusal,
+  paletteViolation,
   type ProviderKind,
   readReviewSheet,
   REVIEW_COLUMNS,
   reviewStopReason,
   samePalette,
+  stageViolation,
   StopLoss,
+  validatorBypassReason,
   wilson,
 } from "./ccp10_guards.ts";
 import {
@@ -142,6 +159,21 @@ const anon = Deno.env.get("LOCAL_ANON_KEY") ?? "";
 const service = Deno.env.get("LOCAL_SERVICE_ROLE_KEY") ?? "";
 const container = Deno.env.get("LOCAL_DB_CONTAINER") ?? "";
 const repoCheck = Deno.env.get("CCP10_REPO") ?? "";
+const workspace = Deno.env.get("CCP10_WORKSPACE") ?? "";
+const inject = Deno.env.get("CCP10_DRY_INJECT") ?? "";
+if (
+  ![
+    "",
+    "palette_mutation",
+    "validator_bypass",
+    "manifest_call",
+    "guideline_call",
+  ]
+    .includes(inject)
+) {
+  refuse("unknown CCP10_DRY_INJECT");
+}
+if (mode === "live" && inject) refuse("Fault injection is dry-run only.");
 const harnessRoot = resolve(dirname(fromFileUrl(import.meta.url)), "../../..");
 
 let liveKey = "";
@@ -204,6 +236,19 @@ try {
       }
       selfiePaths.set(slot, selfies[index]);
     });
+    if (!workspace) {
+      throw new GuardRefusal("Live mode needs a protected CCP10_WORKSPACE.");
+    }
+    assertProtectedAcl("CCP10_KEY_FILE", keyFile);
+    for (const [slot, path] of selfiePaths) {
+      assertWithinWorkspace(`Selfie ${slot}`, path, workspace);
+      assertProtectedAcl(`Selfie ${slot}`, path);
+    }
+  }
+  if (workspace) {
+    assertProtectedWorkspace(workspace);
+    assertWithinWorkspace("The harness", harnessRoot, workspace);
+    assertWithinWorkspace("CCP10_OUT", outDir, workspace);
   }
 } catch (error) {
   refuse(error instanceof Error ? error.message : "configuration");
@@ -272,6 +317,10 @@ interface CaseProviderRecord {
     Array<{ category: string; colorHex: string; finish: string }>
   >;
   variationNumbers: number[];
+  /** Held in memory only, to re-judge an accepted preview. Never written out. */
+  validatorTexts: string[];
+  frozenHash: string | null;
+  expectedPalette: string[] | null;
 }
 
 function newRecord(): CaseProviderRecord {
@@ -281,6 +330,9 @@ function newRecord(): CaseProviderRecord {
     observations: [],
     promptPalettes: [],
     variationNumbers: [],
+    validatorTexts: [],
+    frozenHash: null,
+    expectedPalette: null,
   };
 }
 let current = newRecord();
@@ -329,25 +381,69 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   assertAllowedHost(target.hostname);
   if (target.hostname !== GEMINI_HOST) return realFetch(input, init);
 
+  // Once anything has stopped the run, no further provider call leaves this process.
+  if (stopLoss.reason) throw new GuardRefusal("The run has stopped.");
+  const halt = (reason: string): never => {
+    stopLoss.stop(reason);
+    throw new GuardRefusal(reason);
+  };
+
   const body = typeof init?.body === "string" ? init.body : "";
   const request = JSON.parse(body) as {
     contents: Array<{ parts: Array<{ text?: string }> }>;
   };
   const firstText = request.contents[0].parts[0].text ?? "";
-  const kind: ProviderKind = classifyProviderRequest(
-    target.pathname,
-    firstText,
-  );
-  budget.charge(kind);
-  current.calls += 1;
+  let kind: ProviderKind;
+  try {
+    kind = classifyProviderRequest(target.pathname, firstText);
+  } catch (error) {
+    return halt(error instanceof Error ? error.message : "unknown request");
+  }
+  const forbidden = stageViolation(stage, kind);
+  if (forbidden) {
+    record({
+      id: "violation",
+      block: "-",
+      kind: "violation",
+      reason: forbidden,
+    });
+    return halt(forbidden);
+  }
   if (kind === "image") {
     const marker = "Fixed palette: ";
-    const section = firstText.slice(firstText.lastIndexOf(marker));
-    current.paletteHashes.push(await sha256(section));
-    current.promptPalettes.push(JSON.parse(section.slice(marker.length)));
+    let section = firstText.slice(firstText.lastIndexOf(marker));
+    if (inject === "palette_mutation" && current.paletteHashes.length > 0) {
+      section = section.replace(
+        /"colorHex":"#[0-9A-F]{6}"/,
+        '"colorHex":"#000001"',
+      );
+    }
+    const promptHash = await sha256(section);
+    const palette = JSON.parse(section.slice(marker.length)) as Array<
+      { category: string; colorHex: string; finish: string }
+    >;
+    const violation = paletteViolation({
+      frozenHash: current.frozenHash ?? current.paletteHashes[0] ?? null,
+      promptHash,
+      expected: current.expectedPalette,
+      prompt: palette.map((p) => `${p.category}|${p.colorHex}|${p.finish}`),
+    });
+    if (violation) {
+      record({
+        id: "violation",
+        block: "-",
+        kind: "violation",
+        reason: violation,
+      });
+      return halt(violation);
+    }
+    current.paletteHashes.push(promptHash);
+    current.promptPalettes.push(palette);
     const match = firstText.match(/This is variation (\d+)\./);
     if (match) current.variationNumbers.push(Number(match[1]));
   }
+  budget.charge(kind);
+  current.calls += 1;
 
   const response = mode === "dry"
     ? provider.answer(kind, body)
@@ -360,6 +456,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const text = copy.candidates?.[0]?.content?.parts
       ?.map((part) => part.text ?? "").join("") ?? "";
     current.observations.push(safeObservations(text));
+    if (inject !== "validator_bypass") current.validatorTexts.push(text);
   }
   return response;
 }) as typeof fetch;
@@ -675,6 +772,89 @@ async function attemptsFor(operationId: string) {
   }>;
 }
 
+/**
+ * The per-request evidence, read from the throwaway database while it is running.
+ * Identifiers, digests, codes and timings only.
+ */
+async function evidenceFor(
+  operationId: string,
+  recommendationId: string,
+  wallMs: number,
+): Promise<{
+  evidence: Record<string, unknown>;
+  selections: PaletteSelection[];
+  acceptedAttemptStatus: string | null;
+  storedOutcome: string | null;
+  storedValidatorVersion: string | null;
+}> {
+  const row = await ownerQuery(`
+    select json_build_object(
+      'digest', r.palette_digest,
+      'snapshot', r.palette_snapshot_json,
+      'accepted_attempt', g.accepted_attempt_number,
+      'outcome', g.validation_outcome,
+      'validator_version', g.validator_version,
+      'ledger_status', u.status,
+      'reserved', u.reserved_at is not null,
+      'committed', u.committed_at is not null,
+      'released', u.released_at is not null,
+      'attempts', (
+        select coalesce(json_agg(json_build_object(
+          'number', a.attempt_number,
+          'status', a.status,
+          'seconds', round(extract(epoch from a.finished_at - a.started_at)::numeric, 3)
+        ) order by a.attempt_number), '[]'::json)
+        from public.custom_palette_preview_attempts a
+        where a.operation_id = '${operationId}'
+      )
+    )
+    from public.custom_palette_recommendations r
+    left join public.custom_palette_generated_images g
+      on g.operation_id = '${operationId}'
+    left join public.usage_ledger u on u.operation_id = '${operationId}'
+    where r.id = '${recommendationId}'`) as {
+    digest: string;
+    snapshot: unknown;
+    accepted_attempt: number | null;
+    outcome: string | null;
+    validator_version: string | null;
+    ledger_status: string | null;
+    reserved: boolean | null;
+    committed: boolean | null;
+    released: boolean | null;
+    attempts: Array<{ number: number; status: string; seconds: number | null }>;
+  };
+  const selections = parseFrozenPalette(row.snapshot);
+  const recomputed = await paletteDigest(selections);
+  const consistent = recomputed === row.digest;
+  if (!consistent) stopLoss.stop("a stored palette digest does not match");
+  const accepted = row.attempts.find((a) => a.number === row.accepted_attempt);
+  return {
+    selections,
+    acceptedAttemptStatus: accepted?.status ?? null,
+    storedOutcome: row.outcome,
+    storedValidatorVersion: row.validator_version,
+    evidence: {
+      operation_id: operationId,
+      palette_id: recommendationId,
+      palette_digest: row.digest,
+      digest_recomputed_consistent: consistent,
+      accepted_attempt_number: row.accepted_attempt,
+      validator_outcome: row.outcome ?? row.attempts.at(-1)?.status ?? null,
+      validator_version: row.validator_version,
+      latency_ms: wallMs,
+      attempt_seconds: row.attempts.map((a) => a.seconds),
+      retry_count: Math.max(0, row.attempts.length - 1),
+      usage_reservation: row.reserved ? "reserved" : "none",
+      usage_result: row.committed
+        ? "committed"
+        : row.released
+        ? "released"
+        : row.ledger_status ?? "none",
+    },
+  };
+}
+
 type Row = Record<string, unknown> & {
   id: string;
   block: string;
@@ -779,9 +959,30 @@ async function previewChecks(
   expectedHashes: string[],
 ): Promise<{ row: Row; previewId: string | null }> {
   const operationId = crypto.randomUUID();
+  current.frozenHash = expectedHashes[0] ?? null;
+  current.expectedPalette = choices.map((c) =>
+    `${c.category}|${c.adjusted}|${c.finish}`
+  );
+  const startedAt = Date.now();
   const outcome = await runPreview(account, recommendationId, operationId);
+  const wallMs = Date.now() - startedAt;
   const accepted = outcome.status === 200 && outcome.previewId !== null;
   const attempts = await attemptsFor(operationId);
+  const proof = await evidenceFor(operationId, recommendationId, wallMs);
+  const lastText = current.validatorTexts.at(-1);
+  const bypass = validatorBypassReason({
+    accepted,
+    lastValidatorOutcome: lastText === undefined
+      ? null
+      : judgeValidatorResponse(lastText, proof.selections).outcome,
+    storedOutcome: proof.storedOutcome,
+    storedValidatorVersion: proof.storedValidatorVersion,
+    acceptedAttemptStatus: proof.acceptedAttemptStatus,
+  });
+  if (bypass) {
+    record({ id: "violation", block: "-", kind: "violation", reason: bypass });
+    stopLoss.stop(bypass);
+  }
   const ledger = await ledgerFor(account, operationId);
 
   const accounting: string[] = [];
@@ -830,7 +1031,8 @@ async function previewChecks(
     stopLoss.stop(`accounting anomaly in ${evalCase.id}`);
   }
 
-  if (accepted) {
+  // A preview that failed the validator check is never offered for review.
+  if (accepted && !bypass) {
     await exportForReview(evalCase.id, account, outcome.previewId!, choices);
   }
   return {
@@ -859,6 +1061,7 @@ async function previewChecks(
       variation_numbers: current.variationNumbers,
       invocations: outcome.invocations,
       provider_calls: current.calls,
+      evidence: proof.evidence,
     },
   };
 }
@@ -1250,7 +1453,34 @@ for (const evalCase of queue) {
     break;
   }
   current = newRecord();
-  provider.startCase(mixedBehavior(evalCase.id, index, protectedIds));
+  provider.startCase(
+    inject === "palette_mutation"
+      ? "retry"
+      : mixedBehavior(evalCase.id, index, protectedIds),
+  );
+  if (
+    index === 0 && (inject === "manifest_call" || inject === "guideline_call")
+  ) {
+    const manifest = inject === "manifest_call";
+    await fetch(
+      `https://${GEMINI_HOST}/v1beta/models/${
+        manifest ? "gemini-3.6-flash" : "gemini-3.1-flash-image"
+      }:generateContent`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: manifest
+                ? "You are comparing two photographs"
+                : "Injected guideline request",
+            }],
+          }],
+        }),
+      },
+    ).catch(() => undefined);
+    if (stopLoss.reason) break;
+  }
   index += 1;
   try {
     switch (evalCase.kind) {
@@ -1390,6 +1620,25 @@ const humanGate = mode === "dry"
   ? "NOT_EVIDENCE_SIMULATED"
   : "PENDING_HUMAN_REVIEW";
 
+const EVIDENCE_FIELDS = [
+  "operation_id",
+  "palette_id",
+  "palette_digest",
+  "digest_recomputed_consistent",
+  "accepted_attempt_number",
+  "validator_outcome",
+  "latency_ms",
+  "retry_count",
+  "usage_reservation",
+  "usage_result",
+];
+const evidenceComplete = previews.length > 0 && previews.every((r) => {
+  const evidence = r.evidence as Record<string, unknown> | undefined;
+  return evidence !== undefined &&
+    EVIDENCE_FIELDS.every((field) => field in evidence) &&
+    evidence.digest_recomputed_consistent === true;
+});
+
 const summary = {
   simulated: mode === "dry",
   note: mode === "dry"
@@ -1471,6 +1720,8 @@ const summary = {
     ),
     H9_protected_source_unchanged: gitProtectedCheck(),
   },
+  evidence_complete: evidenceComplete,
+  violations: rows.filter((r) => r.kind === "violation").map((r) => r.reason),
   leak_scan: {
     logs: logLeak ?? "clean",
     results: resultLeaks.length > 0 ? resultLeaks : "clean",

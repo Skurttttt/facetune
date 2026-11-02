@@ -47,12 +47,24 @@ export function assertThrowawayContainer(name: string): void {
 // Everything private stays outside any repository
 // ---------------------------------------------------------------------------
 
+function isAbsent(error: unknown): boolean {
+  return error instanceof Deno.errors.NotFound ||
+    error instanceof Deno.errors.NotADirectory;
+}
+
+const CANNOT_VERIFY = "Cannot verify that a path meets the location policy.";
+
+/**
+ * Only a definite "not there" counts as absent. A permission error is not proof
+ * of anything, so it refuses the run rather than reading as "no repository here".
+ */
 function exists(path: string): boolean {
   try {
     Deno.statSync(path);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (isAbsent(error)) return false;
+    throw new GuardRefusal(CANNOT_VERIFY);
   }
 }
 
@@ -60,8 +72,28 @@ function realOrResolved(path: string): string {
   const absolute = resolve(path);
   try {
     return Deno.realPathSync(absolute);
-  } catch {
-    return absolute;
+  } catch (error) {
+    if (isAbsent(error)) return absolute;
+    throw new GuardRefusal(CANNOT_VERIFY);
+  }
+}
+
+const REPOSITORY_MARKERS = [".git", "pubspec.yaml", "supabase/config.toml"];
+
+/**
+ * The exact paths a restricted run must be allowed to read so the repository
+ * check can prove its answer, without being able to read anything else.
+ */
+export function markerPathsFor(path: string): string[] {
+  const markers: string[] = [];
+  let current = resolve(path);
+  while (true) {
+    for (const marker of REPOSITORY_MARKERS) {
+      markers.push(`${current}/${marker}`);
+    }
+    const parent = dirname(current);
+    if (parent === current) return markers;
+    current = parent;
   }
 }
 
@@ -69,10 +101,7 @@ function realOrResolved(path: string): string {
 export function repositoryContaining(path: string): string | null {
   let current = realOrResolved(path);
   while (true) {
-    if (
-      exists(`${current}/.git`) || exists(`${current}/pubspec.yaml`) ||
-      exists(`${current}/supabase/config.toml`)
-    ) {
+    if (REPOSITORY_MARKERS.some((marker) => exists(`${current}/${marker}`))) {
       return current;
     }
     const parent = dirname(current);
@@ -101,6 +130,103 @@ export function assertOutsideRepository(
   }
   if (repositoryContaining(path) !== null || isWithin(path, harnessRoot)) {
     throw new GuardRefusal(`${label} must be outside the repository.`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The protected evaluation workspace
+// ---------------------------------------------------------------------------
+
+/**
+ * Principals in `icacls` output other than the allowed ones. Anything that cannot
+ * be read as a principal, or a report of a failed file, is itself a violation.
+ */
+export function aclViolations(
+  output: string,
+  path: string,
+  allowed: readonly string[],
+): string[] {
+  const allow = new Set(allowed.map((name) => name.toLowerCase()));
+  const lines = output.split(/\r?\n/).map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const summary = lines.pop() ?? "";
+  if (
+    !/^Successfully processed 1 files; Failed processing 0 files$/.test(summary)
+  ) {
+    return ["the permissions could not be read"];
+  }
+  if (lines.length === 0) return ["no permissions were reported"];
+  const violations: string[] = [];
+  lines.forEach((line, index) => {
+    const entry =
+      index === 0 && line.toLowerCase().startsWith(path.toLowerCase())
+        ? line.slice(path.length).trim()
+        : line;
+    const end = entry.indexOf(":(");
+    if (end <= 0) {
+      violations.push("an unreadable permission entry");
+    } else if (!allow.has(entry.slice(0, end).toLowerCase())) {
+      violations.push(entry.slice(0, end));
+    }
+  });
+  return violations;
+}
+
+function nearestExisting(path: string): string {
+  let current = resolve(path);
+  while (!exists(current)) {
+    const parent = dirname(current);
+    if (parent === current) throw new GuardRefusal(CANNOT_VERIFY);
+    current = parent;
+  }
+  return current;
+}
+
+/** Proves from the real ACL that only this user and the system can reach [path]. */
+export function assertProtectedAcl(label: string, path: string): void {
+  const user = Deno.env.get("USERNAME");
+  const machine = Deno.env.get("COMPUTERNAME");
+  if (!user || !machine) throw new GuardRefusal(CANNOT_VERIFY);
+  const target = nearestExisting(path).replaceAll("/", "\\");
+  let output: Deno.CommandOutput;
+  try {
+    output = new Deno.Command("icacls", {
+      args: [target],
+      stdout: "piped",
+      stderr: "null",
+    }).outputSync();
+  } catch {
+    throw new GuardRefusal(CANNOT_VERIFY);
+  }
+  if (!output.success) throw new GuardRefusal(CANNOT_VERIFY);
+  const violations = aclViolations(
+    new TextDecoder().decode(output.stdout),
+    target,
+    ["NT AUTHORITY\\SYSTEM", "BUILTIN\\Administrators", `${machine}\\${user}`],
+  );
+  if (violations.length > 0) {
+    throw new GuardRefusal(`${label} is not protected.`);
+  }
+}
+
+/** Refuses a workspace in a repository, or one that others can reach. */
+export function assertProtectedWorkspace(workspace: string): void {
+  if (!workspace || !isAbsolute(workspace)) {
+    throw new GuardRefusal("CCP10_WORKSPACE must be an absolute path.");
+  }
+  if (repositoryContaining(workspace) !== null) {
+    throw new GuardRefusal("CCP10_WORKSPACE must be outside the repository.");
+  }
+  assertProtectedAcl("CCP10_WORKSPACE", workspace);
+}
+
+export function assertWithinWorkspace(
+  label: string,
+  path: string,
+  workspace: string,
+): void {
+  if (!path || !isAbsolute(path) || !isWithin(path, workspace)) {
+    throw new GuardRefusal(`${label} must be inside the protected workspace.`);
   }
 }
 
@@ -203,6 +329,72 @@ export function classifyProviderRequest(
     return "manifest";
   }
   throw new GuardRefusal("Unrecognized provider request.");
+}
+
+const STAGE_1_KINDS: ReadonlySet<ProviderKind> = new Set([
+  "analysis",
+  "recommendation",
+  "image",
+  "validator",
+]);
+
+/**
+ * Stage 1 is an allow-list by what a request IS, so a manifest pointed at any model
+ * is refused too. Returns the reason, or null when the request is allowed.
+ */
+export function stageViolation(
+  stage: number,
+  kind: ProviderKind,
+): string | null {
+  return stage === 1 && !STAGE_1_KINDS.has(kind)
+    ? `Stage 1 forbids a ${kind} call`
+    : null;
+}
+
+/** Returns why this image request is not the frozen palette, or null if it is. */
+export function paletteViolation(options: {
+  frozenHash: string | null;
+  promptHash: string;
+  expected: readonly string[] | null;
+  prompt: readonly string[];
+}): string | null {
+  if (
+    options.frozenHash !== null && options.frozenHash !== options.promptHash
+  ) {
+    return "the frozen palette changed across a retry";
+  }
+  if (
+    options.expected !== null &&
+    JSON.stringify([...options.prompt].sort()) !==
+      JSON.stringify([...options.expected].sort())
+  ) {
+    return "the prompt palette is not the frozen palette";
+  }
+  return null;
+}
+
+/**
+ * An accepted preview must have a completed validator call that, re-judged here by
+ * the real judge, accepts it, and the stored records must agree. Null when it does.
+ */
+export function validatorBypassReason(options: {
+  accepted: boolean;
+  lastValidatorOutcome: string | null;
+  storedOutcome: string | null;
+  storedValidatorVersion: string | null;
+  acceptedAttemptStatus: string | null;
+}): string | null {
+  if (!options.accepted) return null;
+  if (options.lastValidatorOutcome !== "accepted") {
+    return "a preview was accepted without an accepting validator response";
+  }
+  if (
+    options.storedOutcome !== "accepted" || !options.storedValidatorVersion ||
+    options.acceptedAttemptStatus !== "accepted"
+  ) {
+    return "a stored preview does not record an accepting validator";
+  }
+  return null;
 }
 
 /** The only hosts this process may reach. */

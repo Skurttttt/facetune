@@ -16,20 +16,26 @@ import {
   parseCustomPaletteRequest,
 } from "../../functions/_shared/custom_palette_contract.ts";
 import {
+  aclViolations,
   assertAllowedHost,
   assertLoopbackDatabase,
   assertOutsideRepository,
   assertThrowawayContainer,
+  assertWithinWorkspace,
   CallBudget,
   CeilingReached,
   classifyProviderRequest,
   findLeak,
   GuardRefusal,
+  markerPathsFor,
+  paletteViolation,
   readReviewSheet,
   REVIEW_COLUMNS,
   reviewStopReason,
   samePalette,
+  stageViolation,
   StopLoss,
+  validatorBypassReason,
   wilson,
 } from "./ccp10_guards.ts";
 import {
@@ -494,6 +500,147 @@ Deno.test("palette comparison ignores key order and nothing else", () => {
   );
 });
 
+Deno.test("Stage 1 refuses manifest and guideline by what they are", () => {
+  for (
+    const kind of ["analysis", "recommendation", "image", "validator"] as const
+  ) {
+    assertEquals(stageViolation(1, kind), null);
+    assertEquals(stageViolation(2, kind), null);
+  }
+  assert(stageViolation(1, "manifest")?.includes("forbids"));
+  assert(stageViolation(1, "guideline")?.includes("forbids"));
+  assertEquals(stageViolation(2, "manifest"), null);
+  // A manifest pointed at the image model still classifies as a Tutorial call.
+  const pointedAtImage = classifyProviderRequest(
+    "/v1beta/models/gemini-3.1-flash-image:generateContent",
+    "You are comparing two photographs",
+  );
+  assert(stageViolation(1, pointedAtImage)?.includes("forbids"));
+});
+
+Deno.test("a changed palette is a violation, on the hash or the content", () => {
+  const prompt = ["blush|#D93A52|matte"];
+  const base = { frozenHash: "a", promptHash: "a", expected: prompt, prompt };
+  assertEquals(paletteViolation(base), null);
+  assertEquals(paletteViolation({ ...base, frozenHash: null }), null);
+  assert(paletteViolation({ ...base, promptHash: "b" })?.includes("retry"));
+  assert(
+    paletteViolation({ ...base, prompt: ["blush|#000000|matte"] })?.includes(
+      "not the frozen",
+    ),
+  );
+  assert(
+    paletteViolation({ ...base, prompt: ["blush|#D93A52|satin"] })?.includes(
+      "not the frozen",
+    ),
+  );
+});
+
+Deno.test("an accepted preview needs an accepting validator and matching records", () => {
+  const good = {
+    accepted: true,
+    lastValidatorOutcome: "accepted",
+    storedOutcome: "accepted",
+    storedValidatorVersion: "custom_palette_validator_v1",
+    acceptedAttemptStatus: "accepted",
+  };
+  assertEquals(validatorBypassReason(good), null);
+  assertEquals(
+    validatorBypassReason({
+      ...good,
+      accepted: false,
+      lastValidatorOutcome: null,
+    }),
+    null,
+  );
+  for (
+    const bad of [
+      { lastValidatorOutcome: null },
+      { lastValidatorOutcome: "retryable_palette_mismatch" },
+      { lastValidatorOutcome: "validator_failure" },
+      { storedOutcome: null },
+      { storedValidatorVersion: null },
+      { acceptedAttemptStatus: "provider_failure" },
+    ]
+  ) {
+    assert(validatorBypassReason({ ...good, ...bad }), JSON.stringify(bad));
+  }
+});
+
+Deno.test("ACL parsing allows only the named principals and fails closed", () => {
+  const path = "C:\\Users\\K\\.facetune-eval\\ws";
+  const allowed = ["NT AUTHORITY\\SYSTEM", "BUILTIN\\Administrators", "PC\\K"];
+  const ok = "Successfully processed 1 files; Failed processing 0 files";
+  const report = (...rules: string[]) =>
+    `${path} ${rules.join("\r\n              ")}\r\n\r\n${ok}\r\n`;
+  assertEquals(
+    aclViolations(
+      report(
+        "NT AUTHORITY\\SYSTEM:(I)(OI)(CI)(F)",
+        "BUILTIN\\Administrators:(I)(OI)(CI)(F)",
+        "PC\\K:(I)(OI)(CI)(F)",
+      ),
+      path,
+      allowed,
+    ),
+    [],
+  );
+  assertEquals(
+    aclViolations(
+      report("PC\\K:(F)", "PC\\CodexSandboxUsers:(OI)(CI)(RX)"),
+      path,
+      allowed,
+    ),
+    ["PC\\CodexSandboxUsers"],
+  );
+  assertEquals(
+    aclViolations(report("PC\\K:(F)", "Everyone:(R)"), path, allowed),
+    ["Everyone"],
+  );
+  assertEquals(
+    aclViolations(report("PC\\K:(F)", "S-1-5-21-1-2-3-4:(M)"), path, allowed),
+    ["S-1-5-21-1-2-3-4"],
+  );
+  assertEquals(aclViolations(report("garbage"), path, allowed).length, 1);
+  assertEquals(aclViolations("", path, allowed).length, 1);
+  assertEquals(
+    aclViolations(
+      "Successfully processed 0 files; Failed processing 1 files",
+      path,
+      allowed,
+    ).length,
+    1,
+  );
+  assertEquals(aclViolations(ok, path, allowed).length, 1);
+});
+
+Deno.test("marker paths cover every ancestor, and workspace containment holds", () => {
+  const dir = Deno.makeTempDirSync({ prefix: "ccp10-marker-" });
+  try {
+    const markers = markerPathsFor(join(dir, "a", "b"));
+    assert(
+      markers.some((m) => m.endsWith("/.git") && m.includes("ccp10-marker-")),
+    );
+    assert(markers.some((m) => m.endsWith("/pubspec.yaml")));
+    assert(markers.some((m) => m.endsWith("/supabase/config.toml")));
+    assertWithinWorkspace("x", join(dir, "out"), dir);
+    assertThrows(
+      () => assertWithinWorkspace("x", dirname(dir), dir),
+      GuardRefusal,
+    );
+    assertThrows(
+      () => assertWithinWorkspace("x", `${dir}-sibling`, dir),
+      GuardRefusal,
+    );
+    assertThrows(
+      () => assertWithinWorkspace("x", "relative", dir),
+      GuardRefusal,
+    );
+  } finally {
+    Deno.removeSync(dir, { recursive: true });
+  }
+});
+
 Deno.test("Wilson intervals are honest about small samples", () => {
   assertEquals(wilson(0, 0).rate, null);
   const eighty = wilson(49, 61);
@@ -517,16 +664,19 @@ const SAFE_ENV = {
 async function runner(
   env: Record<string, string>,
   allowNet = "127.0.0.1",
+  readFlag = "--allow-read",
+  extraFlags: string[] = [],
 ): Promise<{ code: number; stderr: string }> {
   const output = await new Deno.Command(Deno.execPath(), {
     args: [
       "run",
       "--no-lock",
       "--allow-env",
-      "--allow-read",
+      readFlag,
       "--allow-write",
       "--allow-sys",
       `--allow-net=${allowNet}`,
+      ...extraFlags,
       join(HERE, "ccp10_eval.ts"),
     ],
     clearEnv: true,
@@ -689,6 +839,109 @@ Deno.test("Stage 2 refuses to follow a Stage 1 that did not finish clean", async
   }
 });
 
+Deno.test("a path that cannot be verified refuses the run", async () => {
+  const out = Deno.makeTempDirSync({ prefix: "ccp10-closed-" });
+  try {
+    // Read access to the harness only: the repository markers cannot be checked.
+    const { code, stderr } = await runner(
+      { ...SAFE_ENV, CCP10_OUT: join(out, "run") },
+      "127.0.0.1",
+      `--allow-read=${ROOT}`,
+    );
+    assertEquals(code, 2, stderr);
+    assert(stderr.includes("Cannot verify"), stderr);
+  } finally {
+    Deno.removeSync(out, { recursive: true });
+  }
+});
+
+Deno.test("a workspace whose ACL cannot be read refuses the run", async () => {
+  const out = Deno.makeTempDirSync({ prefix: "ccp10-closed-" });
+  try {
+    // No permission to run icacls, so nothing proves the folder is protected.
+    const { code, stderr } = await runner({
+      ...SAFE_ENV,
+      CCP10_OUT: join(out, "run"),
+      CCP10_WORKSPACE: out,
+    });
+    assertEquals(code, 2, stderr);
+    assert(stderr.includes("Cannot verify"), stderr);
+  } finally {
+    Deno.removeSync(out, { recursive: true });
+  }
+});
+
+Deno.test("a workspace others can reach, such as Temp, refuses the run", async () => {
+  const temp = Deno.env.get("TEMP");
+  if (!temp || !Deno.build.os.startsWith("windows")) return;
+  const out = Deno.makeTempDirSync({ dir: temp, prefix: "ccp10-temp-" });
+  try {
+    const { code, stderr } = await runner(
+      {
+        ...SAFE_ENV,
+        CCP10_OUT: join(out, "run"),
+        CCP10_WORKSPACE: out,
+        // What icacls and the ACL check need, so the real ACL is what refuses.
+        PATH: Deno.env.get("PATH") ?? "",
+        PATHEXT: Deno.env.get("PATHEXT") ?? "",
+        USERNAME: Deno.env.get("USERNAME") ?? "",
+        COMPUTERNAME: Deno.env.get("COMPUTERNAME") ?? "",
+      },
+      "127.0.0.1",
+      "--allow-read",
+      ["--allow-run=icacls"],
+    );
+    assertEquals(code, 2, stderr);
+    assert(stderr.includes("CCP10_WORKSPACE is not protected"), stderr);
+  } finally {
+    Deno.removeSync(out, { recursive: true });
+  }
+});
+
+Deno.test("a repository path as workspace refuses the run", async () => {
+  const out = Deno.makeTempDirSync({ prefix: "ccp10-closed-" });
+  try {
+    Deno.mkdirSync(join(out, ".git"));
+    const { code, stderr } = await runner({
+      ...SAFE_ENV,
+      CCP10_OUT: join(out, "run"),
+      CCP10_WORKSPACE: out,
+    });
+    assertEquals(code, 2, stderr);
+    assert(stderr.includes("outside the repository"), stderr);
+  } finally {
+    Deno.removeSync(out, { recursive: true });
+  }
+});
+
+Deno.test("live mode refuses without a workspace, and refuses fault injection", async () => {
+  const out = Deno.makeTempDirSync({ prefix: "ccp10-refusal-" });
+  const key = join(out, "key.txt");
+  Deno.writeTextFileSync(key, "GEMINI_API_KEY=placeholder-never-sent\n");
+  const base = {
+    ...SAFE_ENV,
+    CCP10_OUT: join(out, "run"),
+    CCP10_MODE: "live",
+    CCP10_LIVE_AUTHORIZATION: LIVE_AUTHORIZATION[1],
+    CCP10_KEY_FILE: key,
+    CCP10_SELFIES: [1, 2, 3].map((n) => join(out, `s${n}.jpg`)).join(","),
+  };
+  const net = "127.0.0.1,generativelanguage.googleapis.com";
+  try {
+    const none = await runner(base, net);
+    assertEquals(none.code, 2);
+    assert(none.stderr.includes("protected CCP10_WORKSPACE"), none.stderr);
+    const injected = await runner(
+      { ...base, CCP10_DRY_INJECT: "validator_bypass" },
+      net,
+    );
+    assertEquals(injected.code, 2);
+    assert(injected.stderr.includes("dry-run only"), injected.stderr);
+  } finally {
+    Deno.removeSync(out, { recursive: true });
+  }
+});
+
 Deno.test("source: only live mode can forward a Gemini request", () => {
   const source = Deno.readTextFileSync(join(HERE, "ccp10_eval.ts"));
   assert(source.includes(`const response = mode === "dry"
@@ -706,6 +959,13 @@ Deno.test("source: only live mode can forward a Gemini request", () => {
     source.indexOf("budget.charge(kind)") <
       source.indexOf("provider.answer(kind, body)"),
   );
+  // Every stop check runs before the charge, and the kill switch before them all.
+  const charge = source.indexOf("budget.charge(kind)");
+  assert(
+    source.indexOf("if (stopLoss.reason) throw new GuardRefusal") < charge,
+  );
+  assert(source.indexOf("stageViolation(stage, kind)") < charge);
+  assert(source.indexOf("paletteViolation({") < charge);
   // No prompt tuning, and no stored credentials.
   assert(!source.includes("password:") || !source.includes('"password"'));
 });
