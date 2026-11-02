@@ -17,6 +17,7 @@ import '../controllers/makeup_kit_products_controller.dart';
 import '../controllers/makeup_kit_products_state.dart';
 import '../utils/makeup_kit_curated_shades.dart';
 import '../utils/makeup_kit_display.dart';
+import '../widgets/makeup_kit_category_selector.dart';
 import '../widgets/makeup_kit_color_picker.dart';
 import '../widgets/makeup_kit_finish_selector.dart';
 import '../widgets/makeup_kit_foundation_attributes_selector.dart';
@@ -108,6 +109,8 @@ class _AddMakeupKitProductPageState
     });
 
     final isFoundation = _category == MakeupKitCategory.foundation;
+    final textTheme = Theme.of(context).textTheme;
+    final editedProduct = widget.product;
 
     return Scaffold(
       appBar: FaceTuneTopBar(
@@ -119,91 +122,106 @@ class _AddMakeupKitProductPageState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const AppNotice(
-                  icon: Icons.palette_outlined,
-                  message:
-                      'Choose the closest visual shade first. You can fine-tune '
-                      'it only if you need to.',
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                DropdownButtonFormField<MakeupKitCategory>(
-                  initialValue: _category,
-                  // The two `border: OutlineInputBorder()` overrides that used
-                  // to be on this page and the field below were the app's only
-                  // second input style: Material's default 4pt radius and
-                  // outline, against the shared 18pt filled field every auth
-                  // form uses. Two screens, two input systems. Dropping the
-                  // overrides lets both inherit `inputDecorationTheme`, which
-                  // also gives them the error and disabled states the local
-                  // decoration never defined.
-                  decoration: const InputDecoration(labelText: 'Category'),
-                  items: [
-                    for (final category in MakeupKitCategory.values)
-                      DropdownMenuItem(
-                        value: category,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(category.icon, size: AppIconSizes.sm),
-                            const SizedBox(width: AppSpacing.xs),
-                            Text(category.label),
-                          ],
-                        ),
-                      ),
-                  ],
-                  onChanged: (category) {
-                    if (category != null) _onCategoryChanged(category);
-                  },
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                TextField(
-                  controller: _nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Product name (optional)',
+                // A heading and one line of guidance, in place of the notice
+                // box that used to open the form. Editing names the product
+                // rather than repeating the app bar's "Edit Product".
+                Semantics(
+                  header: true,
+                  child: Text(
+                    editedProduct == null
+                        ? 'Add to your kit'
+                        : editedProduct.productName ??
+                              editedProduct.colorLabel ??
+                              editedProduct.category.label,
+                    style: textTheme.titleLarge,
                   ),
-                  textCapitalization: TextCapitalization.words,
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  'Choose the closest shade first. You can fine-tune it if '
+                  'you need to.',
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: AppColors.muted(context),
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.lg),
-                MakeupKitColorPicker(
-                  category: _category,
-                  selectedColor: _color,
-                  selectedLabel: _colorLabel,
-                  onColorSelected: (color, label) {
-                    setState(() {
-                      _color = color;
-                      _colorLabel = label;
-                    });
-                  },
+                _FormSection(
+                  title: 'Product',
+                  children: [
+                    // Same value and the same transition as the dropdown it
+                    // replaces; only the choosing surface changed.
+                    MakeupKitCategorySelector(
+                      selected: _category,
+                      onSelected: _onCategoryChanged,
+                    ),
+                    TextField(
+                      controller: _nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Product name (optional)',
+                      ),
+                      textCapitalization: TextCapitalization.words,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: AppSpacing.lg),
-                MakeupKitFinishSelector(
-                  options: MakeupKitFinishCatalog.allowedFinishes(
-                    _category,
-                  ).toList(growable: false),
-                  selected: _finish,
-                  onSelected: (finish) => setState(() => _finish = finish),
+                const SizedBox(height: AppSpacing.md),
+                // The picker and the two selectors below carry their own
+                // headings, so their sections do not add another.
+                _FormSection(
+                  children: [
+                    MakeupKitColorPicker(
+                      category: _category,
+                      selectedColor: _color,
+                      selectedLabel: _colorLabel,
+                      onColorSelected: (color, label) {
+                        setState(() {
+                          _color = color;
+                          _colorLabel = label;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.md),
+                _FormSection(
+                  children: [
+                    MakeupKitFinishSelector(
+                      options: MakeupKitFinishCatalog.allowedFinishes(
+                        _category,
+                      ).toList(growable: false),
+                      selected: _finish,
+                      onSelected: (finish) => setState(() => _finish = finish),
+                    ),
+                  ],
                 ),
                 if (isFoundation) ...[
-                  const SizedBox(height: AppSpacing.lg),
-                  MakeupKitFoundationAttributesSelector(
-                    selectedDepth: _depth,
-                    selectedUndertone: _undertone,
-                    onDepthSelected: (depth) => setState(() => _depth = depth),
-                    onUndertoneSelected: (undertone) =>
-                        setState(() => _undertone = undertone),
+                  const SizedBox(height: AppSpacing.md),
+                  _FormSection(
+                    title: 'Foundation details',
+                    children: [
+                      MakeupKitFoundationAttributesSelector(
+                        selectedDepth: _depth,
+                        selectedUndertone: _undertone,
+                        onDepthSelected: (depth) =>
+                            setState(() => _depth = depth),
+                        onUndertoneSelected: (undertone) =>
+                            setState(() => _undertone = undertone),
+                      ),
+                    ],
                   ),
                 ],
-                const SizedBox(height: AppSpacing.xl),
+                const SizedBox(height: AppSpacing.lg),
                 PrimaryButton(
                   label: isSaving
                       ? 'Saving…'
                       : _isEditing
-                      ? 'Save Changes'
-                      : 'Add to My Makeup Kit',
+                      ? 'Save changes'
+                      : 'Add product',
                   icon: Icons.check_rounded,
                   onPressed: isSaving ? null : _submit,
                 ),
-                const SizedBox(height: AppSpacing.xl),
+                // Clear of the system navigation (the page is in a SafeArea);
+                // no longer a tall empty tail under the button.
+                const SizedBox(height: AppSpacing.lg),
               ],
             ),
           ),
@@ -248,4 +266,55 @@ class _AddMakeupKitProductPageState
     if (!mounted) return;
     if (succeeded && context.mounted) context.pop();
   }
+}
+
+/// One group of the form, on its own card, so the form reads as a few
+/// distinct steps rather than one long run of controls.
+///
+/// [title] is optional: the shade picker and the finish selector already
+/// carry their own headings.
+class _FormSection extends StatelessWidget {
+  const _FormSection({required this.children, this.title});
+
+  final String? title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    // Full width, whatever is inside. The page's column aligns to the start,
+    // so a card otherwise shrinks to its content: a section of two finish
+    // chips came out half as wide as the sections around it.
+    width: double.infinity,
+    child: _card(context),
+  );
+
+  Widget _card(BuildContext context) => Card(
+    // The themed card AppCard draws, but not a semantic container: a
+    // container merges every control inside it into one node, so a screen
+    // reader heard "Product, Category, Foundation, Product name" as a single
+    // item and could not reach the fields or shade tiles one by one.
+    semanticContainer: false,
+    clipBehavior: Clip.antiAlias,
+    child: Padding(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: _content(context),
+    ),
+  );
+
+  Widget _content(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      if (title != null) ...[
+        Semantics(
+          header: true,
+          child: Text(title!, style: Theme.of(context).textTheme.titleSmall),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+      ],
+      for (var i = 0; i < children.length; i++) ...[
+        if (i > 0) const SizedBox(height: AppSpacing.md),
+        children[i],
+      ],
+    ],
+  );
 }

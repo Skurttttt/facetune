@@ -3,10 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../shared/widgets/app_ui.dart';
+import '../../../../theme/app_semantics.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../../authentication/presentation/controllers/auth_controller.dart';
 import '../../domain/entities/makeup_kit_category.dart';
 import '../../domain/entities/makeup_kit_product.dart';
+import '../../domain/value_objects/normalized_hex_color.dart';
 import '../controllers/makeup_kit_products_controller.dart';
 import '../controllers/makeup_kit_products_state.dart';
 import '../utils/makeup_kit_display.dart';
@@ -28,20 +30,20 @@ class MakeupKitProductPage extends ConsumerWidget {
       next,
     ) {
       if (next.feedback == null || next.feedback == previous?.feedback) return;
-      final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(next.feedback!),
-          backgroundColor: next.feedbackIsError ? AppColors.error : null,
-          action: next.sessionExpired
-              ? SnackBarAction(
-                  label: 'Sign in again',
-                  onPressed: () => ref
-                      .read(authControllerProvider.notifier)
-                      .recoverExpiredSession(),
-                )
-              : null,
-        ),
+      // The shared snackbar, as the add/edit form already uses for the same
+      // controller feedback: a failed delete and a failed save now look
+      // alike, and the danger tone is readable in both themes (the raw
+      // `AppColors.error` ground used here before was not theme-aware).
+      showAppSnackBar(
+        context,
+        message: next.feedback!,
+        tone: next.feedbackIsError ? AppTone.danger : AppTone.success,
+        actionLabel: next.sessionExpired ? 'Sign in again' : null,
+        onAction: next.sessionExpired
+            ? () => ref
+                  .read(authControllerProvider.notifier)
+                  .recoverExpiredSession()
+            : null,
       );
       ref.read(makeupKitProductsControllerProvider.notifier).clearFeedback();
     });
@@ -90,39 +92,68 @@ class MakeupKitProductPage extends ConsumerWidget {
   ) {
     final isMutating = state.mutatingIds.contains(product.id);
     final isFoundation = product.category == MakeupKitCategory.foundation;
+    final textTheme = Theme.of(context).textTheme;
+    // The same title source as before. When it falls back to the category,
+    // the category line under it would only repeat it.
+    final title =
+        product.productName ?? product.colorLabel ?? product.category.label;
+    final showsCategoryUnderTitle = title != product.category.label;
+
     return ListView(
       children: [
+        // Identity: what this product is, before the attributes.
+        Row(
+          children: [
+            // Decorative here; the Color row below names it.
+            ExcludeSemantics(
+              child: MakeupKitColorSwatch(
+                color: product.color,
+                size: AppIconSizes.hero,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Semantics(
+                    header: true,
+                    child: Text(title, style: textTheme.titleLarge),
+                  ),
+                  if (showsCategoryUnderTitle)
+                    Text(
+                      product.category.label,
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: AppColors.muted(context),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.lg),
         AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  MakeupKitColorSwatch(color: product.color),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Text(
-                      product.productName ??
-                          product.colorLabel ??
-                          product.category.label,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              _Detail(label: 'Category', value: product.category.label),
-              _Detail(
+              _DetailItem(label: 'Category', value: product.category.label),
+              _DetailItem(
                 label: 'Color',
-                value: product.colorLabel == null
-                    ? product.color.value
-                    : '${product.colorLabel} (${product.color.value})',
+                value: product.colorLabel ?? product.color.value,
+                secondaryValue: product.colorLabel == null
+                    ? null
+                    : product.color.value,
+                swatch: product.color,
               ),
-              _Detail(label: 'Finish', value: product.finish.label),
+              _DetailItem(label: 'Finish', value: product.finish.label),
               if (isFoundation && product.foundationDepth != null)
-                _Detail(label: 'Depth', value: product.foundationDepth!.label),
+                _DetailItem(
+                  label: 'Depth',
+                  value: product.foundationDepth!.label,
+                ),
               if (isFoundation && product.foundationUndertone != null)
-                _Detail(
+                _DetailItem(
                   label: 'Undertone',
                   value: product.foundationUndertone!.label,
                 ),
@@ -131,7 +162,7 @@ class MakeupKitProductPage extends ConsumerWidget {
         ),
         const SizedBox(height: AppSpacing.lg),
         PrimaryButton(
-          label: 'Edit Product',
+          label: 'Edit product',
           icon: Icons.edit_outlined,
           onPressed: isMutating
               ? null
@@ -141,15 +172,22 @@ class MakeupKitProductPage extends ConsumerWidget {
                   ),
                 ),
         ),
-        const SizedBox(height: AppSpacing.sm),
-        OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(foregroundColor: AppColors.error),
-          onPressed: isMutating
-              ? null
-              : () => _confirmDelete(context, ref, product),
-          icon: const Icon(Icons.delete_outline),
-          label: Text(isMutating ? 'Deleting...' : 'Delete Product'),
+        const SizedBox(height: AppSpacing.xs),
+        // Destructive and rare, so a text action rather than a second
+        // full-weight button. The confirmation dialog is unchanged.
+        Center(
+          child: TextButton.icon(
+            style: TextButton.styleFrom(
+              foregroundColor: AppTone.danger.resolve(context).accent,
+            ),
+            onPressed: isMutating
+                ? null
+                : () => _confirmDelete(context, ref, product),
+            icon: const Icon(Icons.delete_outline),
+            label: Text(isMutating ? 'Deleting…' : 'Delete product'),
+          ),
         ),
+        const SizedBox(height: AppSpacing.lg),
       ],
     );
   }
@@ -178,20 +216,66 @@ class MakeupKitProductPage extends ConsumerWidget {
   }
 }
 
-/// A product attribute, in the shared two-column reading layout.
+/// One product attribute: a small label above its value.
 ///
-/// Was a local widget with a hardcoded 100pt label column — one of four
-/// separate implementations of the same row in the app, and the one that
-/// squeezed its value into a few characters per line at large text sizes.
-/// [DetailRow] keeps the column at normal sizes and falls back to inline text
-/// once it stops fitting.
-class _Detail extends StatelessWidget {
-  const _Detail({required this.label, required this.value});
+/// Stacked rather than [DetailRow]'s columns so a value never competes with a
+/// label column for width, at any text size, and so the Color value can carry
+/// its swatch. Read as one phrase by assistive technology ("Color, Warm
+/// Beige, #C99578").
+class _DetailItem extends StatelessWidget {
+  const _DetailItem({
+    required this.label,
+    required this.value,
+    this.secondaryValue,
+    this.swatch,
+  });
 
   final String label;
   final String value;
+  final String? secondaryValue;
+  final NormalizedHexColor? swatch;
 
   @override
-  Widget build(BuildContext context) =>
-      DetailRow(label: label, value: value, layout: DetailRowLayout.columns);
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final muted = AppColors.muted(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+      child: MergeSemantics(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: textTheme.labelMedium?.copyWith(color: muted)),
+            const SizedBox(height: AppSpacing.xxs),
+            Row(
+              children: [
+                if (swatch != null) ...[
+                  ExcludeSemantics(
+                    child: MakeupKitColorSwatch(
+                      color: swatch!,
+                      size: AppIconSizes.md,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(value, style: textTheme.bodyLarge),
+                      if (secondaryValue != null)
+                        Text(
+                          secondaryValue!,
+                          style: textTheme.bodySmall?.copyWith(color: muted),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

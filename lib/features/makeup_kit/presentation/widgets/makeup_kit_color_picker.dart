@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../../theme/app_tokens.dart';
@@ -39,6 +41,10 @@ class MakeupKitColorPicker extends StatefulWidget {
 }
 
 class _MakeupKitColorPickerState extends State<MakeupKitColorPicker> {
+  /// The narrowest a shade tile may be at 1x text: room for a swatch and a
+  /// two-line name such as "Warm Brunette". Scaled with the text size.
+  static const _minShadeTileWidth = 76.0;
+
   late HSVColor _hsv = HSVColor.fromColor(widget.selectedColor.toColor());
   late final _hexController = TextEditingController(
     text: widget.selectedColor.value,
@@ -65,38 +71,56 @@ class _MakeupKitColorPickerState extends State<MakeupKitColorPicker> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Color / Shade', style: Theme.of(context).textTheme.titleSmall),
+        Semantics(
+          header: true,
+          child: Text('Shade', style: Theme.of(context).textTheme.titleSmall),
+        ),
         const SizedBox(height: AppSpacing.sm),
-        Wrap(
-          spacing: AppSpacing.sm,
-          runSpacing: AppSpacing.sm,
-          children: [
-            for (final shade in shades)
-              _ShadeChoice(
-                shade: shade,
-                selected: shade.label == widget.selectedLabel,
-                onTap: () => _selectShade(shade),
-              ),
-          ],
+        // Columns follow the room available and the text size, so names get
+        // up to two lines instead of a fixed 56pt box that cut most of them
+        // off ("Deep Es…").
+        LayoutBuilder(
+          builder: (context, constraints) {
+            const spacing = AppSpacing.sm;
+            final minTile = MediaQuery.textScalerOf(
+              context,
+            ).scale(_minShadeTileWidth);
+            final columns = math.max(
+              2,
+              ((constraints.maxWidth + spacing) / (minTile + spacing)).floor(),
+            );
+            final tileWidth =
+                (constraints.maxWidth - spacing * (columns - 1)) / columns;
+            return Wrap(
+              spacing: spacing,
+              runSpacing: spacing,
+              children: [
+                for (final shade in shades)
+                  SizedBox(
+                    width: tileWidth,
+                    child: _ShadeChoice(
+                      shade: shade,
+                      selected: shade.label == widget.selectedLabel,
+                      onTap: () => _selectShade(shade),
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
         const SizedBox(height: AppSpacing.md),
-        Row(
-          children: [
-            MakeupKitColorSwatch(color: widget.selectedColor, size: 40),
-            const SizedBox(width: AppSpacing.sm),
-            Text(
-              'Selected: ${widget.selectedLabel ?? widget.selectedColor.value}',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ],
+        _SelectedShadeSummary(
+          color: widget.selectedColor,
+          label: widget.selectedLabel,
         ),
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: AppSpacing.xs),
         ExpansionTile(
           tilePadding: EdgeInsets.zero,
           childrenPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.tune_rounded),
           title: const Text('Fine-tune shade'),
           subtitle: Text(
-            'Optional precise controls',
+            'Adjust the exact color if needed.',
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: AppColors.muted(context)),
@@ -219,53 +243,105 @@ class _ShadeChoice extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    selected: selected,
-    label: '${shade.label} shade',
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppRadii.sm),
-      child: Padding(
-        padding: const EdgeInsets.all(4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: shade.color.toColor(),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: selected
-                      ? AppColors.rose
-                      : Theme.of(context).colorScheme.outlineVariant,
-                  width: selected ? 2.5 : 1,
+  Widget build(BuildContext context) {
+    final labelStyle = Theme.of(context).textTheme.labelMedium;
+    return Semantics(
+      button: true,
+      selected: selected,
+      inMutuallyExclusiveGroup: true,
+      label: '${shade.label} shade',
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadii.sm),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: shade.color.toColor(),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: selected
+                        ? AppColors.rose
+                        : Theme.of(context).colorScheme.outlineVariant,
+                    width: selected ? 2.5 : 1,
+                  ),
                 ),
+                child: selected
+                    ? Icon(
+                        Icons.check_rounded,
+                        size: AppIconSizes.sm,
+                        color: AppColors.onAccent(shade.color.toColor()),
+                      )
+                    : null,
               ),
-              child: selected
-                  ? Icon(
-                      Icons.check_rounded,
-                      size: AppIconSizes.sm,
-                      color: AppColors.onAccent(shade.color.toColor()),
-                    )
-                  : null,
-            ),
-            const SizedBox(height: 4),
-            SizedBox(
-              width: 56,
-              child: Text(
+              const SizedBox(height: AppSpacing.xxs),
+              // Up to two lines; the selected name is also bolder, so the
+              // choice never rests on the ring colour alone.
+              Text(
                 shade.label,
                 textAlign: TextAlign.center,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelSmall,
+                style: selected
+                    ? labelStyle?.copyWith(fontWeight: FontWeight.w700)
+                    : labelStyle,
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
+}
+
+/// "Selected shade" with the current colour: its name when it is a named
+/// shade, and its HEX value.
+class _SelectedShadeSummary extends StatelessWidget {
+  const _SelectedShadeSummary({required this.color, required this.label});
+
+  final NormalizedHexColor color;
+  final String? label;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final muted = AppColors.muted(context);
+    return MergeSemantics(
+      child: Row(
+        children: [
+          ExcludeSemantics(
+            child: MakeupKitColorSwatch(color: color, size: AppIconSizes.lg),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Selected shade',
+                  style: textTheme.labelMedium?.copyWith(color: muted),
+                ),
+                Text(
+                  label ?? color.value,
+                  key: const ValueKey('makeup-kit-selected-shade'),
+                  style: textTheme.bodyLarge,
+                ),
+                if (label != null)
+                  Text(
+                    color.value,
+                    style: textTheme.bodySmall?.copyWith(color: muted),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

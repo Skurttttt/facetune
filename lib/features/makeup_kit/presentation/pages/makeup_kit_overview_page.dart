@@ -20,16 +20,10 @@ class MakeupKitOverviewPage extends ConsumerWidget {
     final state = ref.watch(makeupKitProductsControllerProvider);
     final isGuest = ref.watch(authControllerProvider).user?.isAnonymous == true;
 
+    // No floating action button: it sat over the last rows of a long kit. The
+    // same action now lives in the page, under the summary.
     return Scaffold(
       appBar: const FaceTuneTopBar(title: 'My Makeup Kit'),
-      floatingActionButton: state.status == MakeupKitProductsStatus.ready
-          ? FloatingActionButton.extended(
-              onPressed: () =>
-                  context.push(AppConstants.makeupKitAddProductRoute),
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Add Product'),
-            )
-          : null,
       body: SafeArea(
         child: PageFrame(
           child: RefreshIndicator(
@@ -90,21 +84,35 @@ class MakeupKitOverviewPage extends ConsumerWidget {
 
     final isEmpty = state.items.isEmpty;
     final categories = MakeupKitCategory.values;
+    final productCount = state.items.length;
     final populatedCategoryCount = categories
         .where((category) => state.byCategory(category).isNotEmpty)
         .length;
+    final textTheme = Theme.of(context).textTheme;
 
+    // The app bar already says "My Makeup Kit"; the page no longer repeats it
+    // as a headline. It opens on what is in the kit instead.
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
-        Text(
-          'My Makeup Kit',
-          style: Theme.of(context).textTheme.headlineMedium,
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        const Text('Products you already own, organized by category.'),
+        if (!isEmpty) ...[
+          Text(
+            '$productCount product${productCount == 1 ? '' : 's'} · '
+            '$populatedCategoryCount '
+            'categor${populatedCategoryCount == 1 ? 'y' : 'ies'}',
+            style: textTheme.titleMedium,
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            'Products you own and can use for My Makeup Kit looks. '
+            'Incomplete kits are welcome.',
+            style: textTheme.bodyMedium?.copyWith(
+              color: AppColors.muted(context),
+            ),
+          ),
+        ],
         if (isGuest) ...[
-          const SizedBox(height: AppSpacing.md),
+          if (!isEmpty) const SizedBox(height: AppSpacing.md),
           // A temporary account whose data can vanish is a caution, not a hint.
           const AppNotice(
             tone: AppTone.warning,
@@ -113,52 +121,42 @@ class MakeupKitOverviewPage extends ConsumerWidget {
                 'lost after signing out or clearing app data.',
           ),
         ],
-        const SizedBox(height: AppSpacing.lg),
-        if (isEmpty)
+        if (isEmpty) ...[
+          if (isGuest) const SizedBox(height: AppSpacing.lg),
           // A new kit is empty by definition. Nothing has gone wrong, so this
           // stays neutral and does not announce itself.
           StatusState.empty(
-            title: 'Your kit is empty',
+            title: 'No products yet',
             message:
-                'Add the makeup products you own to build personalized looks from them.',
+                'Add the makeup you already own so FaceTune can use it for '
+                'your My Makeup Kit looks.',
             icon: Icons.inventory_2_outlined,
-            actionLabel: 'Add Product',
+            actionLabel: 'Add your first product',
             onAction: () => context.push(AppConstants.makeupKitAddProductRoute),
-          )
-        else ...[
-          AppNotice(
-            tone: AppTone.success,
-            icon: Icons.auto_awesome_rounded,
-            message:
-                '${state.items.length} product${state.items.length == 1 ? '' : 's'} across '
-                '$populatedCategoryCount '
-                'categor${populatedCategoryCount == 1 ? 'y' : 'ies'}. '
-                'Incomplete kits are welcome.',
           ),
+        ] else ...[
           const SizedBox(height: AppSpacing.md),
-          AppCard(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.xs,
-            ),
-            child: Column(
-              children: [
-                for (final category in categories) ...[
-                  if (category != categories.first) const Divider(height: 1),
-                  MakeupKitCategorySection(
-                    category: category,
-                    products: state.byCategory(category),
-                    onProductTap: (product) => context.pushNamed(
-                      'makeupKitProduct',
-                      pathParameters: {'productId': product.id},
-                    ),
-                  ),
-                ],
-              ],
-            ),
+          PrimaryButton(
+            label: 'Add product',
+            icon: Icons.add_rounded,
+            onPressed: () =>
+                context.push(AppConstants.makeupKitAddProductRoute),
           ),
+          for (final category in categories) ...[
+            const SizedBox(height: AppSpacing.lg),
+            MakeupKitCategorySection(
+              category: category,
+              products: state.byCategory(category),
+              onProductTap: (product) => context.pushNamed(
+                'makeupKitProduct',
+                pathParameters: {'productId': product.id},
+              ),
+            ),
+          ],
         ],
-        const SizedBox(height: AppSpacing.xxl),
+        // Clears the last row from the system navigation area; nothing floats
+        // over the list any more, so no extra allowance is needed.
+        const SizedBox(height: AppSpacing.xl),
       ],
     );
   }

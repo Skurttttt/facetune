@@ -39,7 +39,12 @@ class MakeupKitProductTile extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppRadii.md),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+        // Rows now sit on their category's own card, so the tile carries the
+        // card's inner gutter; the whole row stays one tap target.
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm,
+        ),
         child: Row(
           children: [
             MakeupKitColorSwatch(color: product.color),

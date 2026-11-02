@@ -40,6 +40,18 @@ MakeupKitProduct _product(
 Future<void> _pump(
   WidgetTester tester,
   MakeupKitProductsRepository repository,
+) {
+  // Phone width, and tall: since MKUX-P1 each category is its own spaced
+  // section, and the lazy list would not build the later ones in 800x600.
+  tester.view.physicalSize = const Size(393, 2400);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+  return _pumpApp(tester, repository);
+}
+
+Future<void> _pumpApp(
+  WidgetTester tester,
+  MakeupKitProductsRepository repository,
 ) => tester.pumpWidget(
   ProviderScope(
     overrides: [
@@ -99,14 +111,14 @@ void main() {
     await _pump(tester, repository);
     await tester.pumpAndSettle();
 
-    expect(find.text('Your kit is empty'), findsOneWidget);
-    expect(find.text('Add Product'), findsWidgets);
+    expect(find.text('No products yet'), findsOneWidget);
+    expect(find.text('Add your first product'), findsWidgets);
 
-    await tester.tap(find.text('Add Product').first);
+    await tester.tap(find.text('Add your first product').first);
     await tester.pumpAndSettle();
 
-    expect(find.text('Add to My Makeup Kit'), findsOneWidget);
-    expect(find.text('Your kit is empty'), findsNothing);
+    expect(find.text('Add product'), findsOneWidget);
+    expect(find.text('No products yet'), findsNothing);
   });
 
   testWidgets('shows populated categories with product details', (
@@ -131,12 +143,9 @@ void main() {
     expect(find.text('My Nude Lipstick'), findsOneWidget);
     expect(find.text('Matte'), findsOneWidget);
     expect(find.text('Satin'), findsOneWidget);
-    expect(
-      find.text('2 products across 2 categories. Incomplete kits are welcome.'),
-      findsOneWidget,
-    );
+    expect(find.text('2 products · 2 categories'), findsOneWidget);
     expect(find.text('No products in this category yet.'), findsWidgets);
-    expect(find.text('Your kit is empty'), findsNothing);
+    expect(find.text('No products yet'), findsNothing);
   });
 
   testWidgets('shows a retryable error state and retries on tap', (

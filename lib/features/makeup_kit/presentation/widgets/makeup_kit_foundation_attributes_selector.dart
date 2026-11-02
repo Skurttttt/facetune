@@ -4,6 +4,7 @@ import '../../../../theme/app_tokens.dart';
 import '../../domain/entities/foundation_depth.dart';
 import '../../domain/entities/foundation_undertone.dart';
 import '../utils/makeup_kit_display.dart';
+import 'makeup_kit_choice_chip_group.dart';
 
 /// Foundation-only Depth and Undertone selectors.
 ///
@@ -30,32 +31,23 @@ class MakeupKitFoundationAttributesSelector extends StatelessWidget {
     children: [
       Text('Depth', style: Theme.of(context).textTheme.titleSmall),
       const SizedBox(height: AppSpacing.xs),
-      Wrap(
-        spacing: AppSpacing.xs,
-        runSpacing: AppSpacing.xs,
-        children: [
-          for (final depth in FoundationDepth.values)
-            ChoiceChip(
-              label: Text(depth.label),
-              selected: depth == selectedDepth,
-              onSelected: (_) => onDepthSelected(depth),
-            ),
-        ],
+      MakeupKitChoiceChipGroup<FoundationDepth>(
+        options: FoundationDepth.values,
+        selected: selectedDepth,
+        labelOf: (depth) => depth.label,
+        onSelected: onDepthSelected,
+        showCheckmark: false,
       ),
-      const SizedBox(height: AppSpacing.md),
+      // Between the two groups; the chips' tap padding adds a few more points.
+      const SizedBox(height: AppSpacing.sm),
       Text('Undertone', style: Theme.of(context).textTheme.titleSmall),
       const SizedBox(height: AppSpacing.xs),
-      Wrap(
-        spacing: AppSpacing.xs,
-        runSpacing: AppSpacing.xs,
-        children: [
-          for (final undertone in FoundationUndertone.values)
-            ChoiceChip(
-              label: Text(undertone.label),
-              selected: undertone == selectedUndertone,
-              onSelected: (_) => onUndertoneSelected(undertone),
-            ),
-        ],
+      MakeupKitChoiceChipGroup<FoundationUndertone>(
+        options: FoundationUndertone.values,
+        selected: selectedUndertone,
+        labelOf: (undertone) => undertone.label,
+        onSelected: onUndertoneSelected,
+        showCheckmark: false,
       ),
     ],
   );

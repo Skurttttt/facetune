@@ -72,7 +72,13 @@ Future<void> _pump(WidgetTester tester, _FakeRepository repository) async {
 }
 
 Future<void> _selectCategory(WidgetTester tester, String label) async {
-  await tester.tap(find.byType(DropdownButtonFormField<MakeupKitCategory>));
+  final field = find.byKey(const ValueKey('makeup-kit-category-field'));
+  await tester.ensureVisible(field);
+  await tester.pumpAndSettle();
+  await tester.tap(field);
+  await tester.pumpAndSettle();
+  // The sheet scrolls on short screens; bring the row into view first.
+  await tester.ensureVisible(find.text(label).last);
   await tester.pumpAndSettle();
   await tester.tap(find.text(label).last);
   await tester.pumpAndSettle();
@@ -83,8 +89,10 @@ void main() {
     await _pump(tester, _FakeRepository());
 
     expect(find.text('Daily Base'), findsOneWidget);
-    expect(find.text('Foundation'), findsOneWidget);
-    expect(find.text('Warm Beige (#C99578)'), findsOneWidget);
+    // Under the title, and as the Category value.
+    expect(find.text('Foundation'), findsNWidgets(2));
+    expect(find.text('Warm Beige'), findsOneWidget);
+    expect(find.text('#C99578'), findsOneWidget);
     expect(find.text('Natural'), findsOneWidget);
     expect(find.text('Medium'), findsOneWidget);
     expect(find.text('Warm'), findsOneWidget);
@@ -96,17 +104,18 @@ void main() {
     final repository = _FakeRepository();
     await _pump(tester, repository);
 
-    await tester.tap(find.text('Edit Product'));
+    await tester.tap(find.text('Edit product'));
     await tester.pumpAndSettle();
     await _selectCategory(tester, 'Lipstick');
-    await tester.ensureVisible(find.text('Save Changes'));
-    await tester.tap(find.text('Save Changes'));
+    await tester.ensureVisible(find.text('Save changes'));
+    await tester.tap(find.text('Save changes'));
     await tester.pumpAndSettle();
 
     expect(repository.lastDraft?.category, MakeupKitCategory.lipstick);
     expect(repository.lastDraft?.foundationDepth, isNull);
     expect(repository.lastDraft?.foundationUndertone, isNull);
-    expect(find.text('Lipstick'), findsOneWidget);
+    // Under the title, and as the Category value.
+    expect(find.text('Lipstick'), findsNWidgets(2));
   });
 
   testWidgets('delete requires confirmation and refreshes local inventory', (
@@ -115,13 +124,25 @@ void main() {
     final repository = _FakeRepository();
     await _pump(tester, repository);
 
-    await tester.tap(find.text('Delete Product'));
+    await tester.scrollUntilVisible(
+      find.text('Delete product'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete product'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(repository.deleteCalls, 0);
 
-    await tester.tap(find.text('Delete Product'));
+    await tester.scrollUntilVisible(
+      find.text('Delete product'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete product'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Delete').last);
     await tester.pumpAndSettle();
@@ -136,14 +157,26 @@ void main() {
     );
     await _pump(tester, repository);
 
-    await tester.tap(find.text('Delete Product'));
+    await tester.scrollUntilVisible(
+      find.text('Delete product'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete product'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Delete').last);
     await tester.pumpAndSettle();
 
     expect(find.text('Could not delete product.'), findsOneWidget);
+    // The action is still there to retry, and the product is still shown.
+    expect(find.text('Delete product'), findsOneWidget);
+    tester
+        .state<ScrollableState>(find.byType(Scrollable).first)
+        .position
+        .jumpTo(0);
+    await tester.pumpAndSettle();
     expect(find.text('Daily Base'), findsOneWidget);
-    expect(find.text('Delete Product'), findsOneWidget);
   });
 }
 

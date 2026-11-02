@@ -40,6 +40,11 @@ Future<void> _openFineTune(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// The value line of the "Selected shade" summary.
+String _selectedShade(WidgetTester tester) => tester
+    .widget<Text>(find.byKey(const ValueKey('makeup-kit-selected-shade')))
+    .data!;
+
 void main() {
   testWidgets('starts on the initial curated shade', (tester) async {
     final shades = MakeupKitCuratedShades.forCategory(
@@ -49,7 +54,7 @@ void main() {
       _Harness(category: MakeupKitCategory.lipstick, initial: shades.first),
     );
 
-    expect(find.text('Selected: ${shades.first.label}'), findsOneWidget);
+    expect(_selectedShade(tester), shades.first.label);
   });
 
   testWidgets('tapping a different curated shade updates the selection', (
@@ -65,7 +70,7 @@ void main() {
     await tester.tap(find.text(shades[1].label));
     await tester.pumpAndSettle();
 
-    expect(find.text('Selected: ${shades[1].label}'), findsOneWidget);
+    expect(_selectedShade(tester), shades[1].label);
   });
 
   testWidgets('a valid HEX entry updates the color and clears the label', (
@@ -86,7 +91,7 @@ void main() {
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pumpAndSettle();
 
-    expect(find.text('Selected: #AABBCC'), findsOneWidget);
+    expect(_selectedShade(tester), '#AABBCC');
     expect(find.text('Enter a valid 6-digit HEX color.'), findsNothing);
   });
 
@@ -109,7 +114,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Enter a valid 6-digit HEX color.'), findsOneWidget);
-      expect(find.text('Selected: ${shades.first.label}'), findsOneWidget);
+      expect(_selectedShade(tester), shades.first.label);
     },
   );
 
@@ -125,8 +130,8 @@ void main() {
     await tester.drag(find.byType(Slider).first, const Offset(120, 0));
     await tester.pumpAndSettle();
 
-    expect(find.text('Selected: ${shades.first.label}'), findsNothing);
-    expect(find.textContaining('Selected: #'), findsOneWidget);
+    expect(_selectedShade(tester), isNot(shades.first.label));
+    expect(_selectedShade(tester), startsWith('#'));
   });
 
   testWidgets('offers curated shades specific to the category', (tester) async {
@@ -138,7 +143,14 @@ void main() {
     );
 
     for (final shade in shades) {
-      expect(find.text(shade.label), findsOneWidget);
+      // In the grid; the "Selected shade" summary names the selected one too.
+      expect(
+        find.descendant(
+          of: find.byType(Wrap),
+          matching: find.text(shade.label),
+        ),
+        findsOneWidget,
+      );
     }
   });
 

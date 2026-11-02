@@ -95,6 +95,18 @@ class _FakeRepository implements MakeupKitProductsRepository {
 Future<void> _pump(
   WidgetTester tester,
   MakeupKitProductsRepository repository,
+) {
+  // Phone width, and tall: since MKUX-P1 each category is its own spaced
+  // section, and the lazy list would not build the later ones in 800x600.
+  tester.view.physicalSize = const Size(393, 2400);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+  return _pumpApp(tester, repository);
+}
+
+Future<void> _pumpApp(
+  WidgetTester tester,
+  MakeupKitProductsRepository repository,
 ) => tester.pumpWidget(
   ProviderScope(
     overrides: [
@@ -146,10 +158,10 @@ void main() {
       await _pump(tester, _FakeRepository());
       await tester.pumpAndSettle();
 
-      expect(find.text('Your kit is empty'), findsOneWidget);
+      expect(find.text('No products yet'), findsOneWidget);
       expect(
         find.text(
-          'Add the makeup products you own to build personalized looks from them.',
+          'Add the makeup you already own so FaceTune can use it for your My Makeup Kit looks.',
         ),
         findsOneWidget,
       );
@@ -243,10 +255,7 @@ void main() {
       expect(find.text('Lipstick'), findsOneWidget);
       expect(find.text('Everyday Nude'), findsOneWidget);
       expect(find.text('Evening Red'), findsOneWidget);
-      expect(
-        find.text('2 products across 1 category. Incomplete kits are welcome.'),
-        findsOneWidget,
-      );
+      expect(find.text('2 products · 1 category'), findsOneWidget);
     });
   });
 
@@ -295,10 +304,7 @@ void main() {
 
       expect(find.text('Lipstick'), findsOneWidget);
       expect(find.text('Matte'), findsOneWidget);
-      expect(
-        find.text('1 product across 1 category. Incomplete kits are welcome.'),
-        findsOneWidget,
-      );
+      expect(find.text('1 product · 1 category'), findsOneWidget);
     });
   });
 

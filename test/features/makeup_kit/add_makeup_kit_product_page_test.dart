@@ -63,10 +63,12 @@ Future<void> _pump(WidgetTester tester, _FakeRepository repository) async {
 }
 
 Future<void> _selectCategory(WidgetTester tester, String label) async {
-  await tester.ensureVisible(
-    find.byType(DropdownButtonFormField<MakeupKitCategory>),
-  );
-  await tester.tap(find.byType(DropdownButtonFormField<MakeupKitCategory>));
+  final field = find.byKey(const ValueKey('makeup-kit-category-field'));
+  await tester.ensureVisible(field);
+  await tester.tap(field);
+  await tester.pumpAndSettle();
+  // The sheet scrolls on short screens; bring the row into view first.
+  await tester.ensureVisible(find.text(label).last);
   await tester.pumpAndSettle();
   await tester.tap(find.text(label).last);
   await tester.pumpAndSettle();
@@ -149,7 +151,7 @@ void main() {
       await _tap(tester, find.text('Light'));
       await _tap(tester, find.text('Warm'));
       await _selectCategory(tester, 'Lipstick');
-      await _tap(tester, find.text('Add to My Makeup Kit'));
+      await _tap(tester, find.text('Add product'));
 
       expect(repository.lastDraft?.category, MakeupKitCategory.lipstick);
       expect(repository.lastDraft?.foundationDepth, isNull);
@@ -167,12 +169,12 @@ void main() {
       find.widgetWithText(TextField, 'Product name (optional)'),
       'My Nude Lipstick',
     );
-    await _tap(tester, find.text('Add to My Makeup Kit'));
+    await _tap(tester, find.text('Add product'));
 
     expect(repository.createCalls, 1);
     expect(repository.lastDraft?.productName, 'My Nude Lipstick');
     expect(find.text('Open add product'), findsOneWidget);
-    expect(find.text('Add to My Makeup Kit'), findsNothing);
+    expect(find.text('Add product'), findsNothing);
   });
 
   testWidgets(
@@ -187,10 +189,10 @@ void main() {
         find.widgetWithText(TextField, 'Product name (optional)'),
         'My Nude Lipstick',
       );
-      await _tap(tester, find.text('Add to My Makeup Kit'));
+      await _tap(tester, find.text('Add product'));
 
       expect(find.text('The product could not be added.'), findsOneWidget);
-      expect(find.text('Add to My Makeup Kit'), findsOneWidget);
+      expect(find.text('Add product'), findsOneWidget);
       expect(
         find.widgetWithText(TextField, 'Product name (optional)'),
         findsOneWidget,
@@ -212,8 +214,8 @@ void main() {
     final repository = _FakeRepository(pending: pending);
     await _pump(tester, repository);
 
-    await tester.ensureVisible(find.text('Add to My Makeup Kit'));
-    await tester.tap(find.text('Add to My Makeup Kit'));
+    await tester.ensureVisible(find.text('Add product'));
+    await tester.tap(find.text('Add product'));
     await tester.pump();
     expect(find.text('Saving…'), findsOneWidget);
     await tester.tap(find.text('Saving…'), warnIfMissed: false);
