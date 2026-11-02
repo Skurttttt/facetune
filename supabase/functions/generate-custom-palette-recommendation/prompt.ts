@@ -11,6 +11,47 @@ export interface PlacementAttributes {
 }
 
 /**
+ * The analyzer's own vocabularies, checked against `analyze-face` by a test.
+ *
+ * `analyses` rows are writable by their owner, and this model's text goes on to
+ * the image prompt, so anything outside these words is dropped and never sent.
+ */
+const FACE_SHAPES: ReadonlySet<string> = new Set([
+  "oval",
+  "round",
+  "square",
+  "heart",
+  "oblong",
+  "diamond",
+  "triangle",
+]);
+const EYE_SHAPES: ReadonlySet<string> = new Set([
+  "almond",
+  "round",
+  "hooded",
+  "monolid",
+  "upturned",
+  "downturned",
+  "deep_set",
+  "protruding",
+]);
+const LIP_SHAPES: ReadonlySet<string> = new Set([
+  "thin",
+  "medium",
+  "full",
+  "heart_shaped",
+  "wide",
+  "round",
+]);
+
+function closedValue(
+  value: unknown,
+  allowed: ReadonlySet<string>,
+): string | null {
+  return typeof value === "string" && allowed.has(value) ? value : null;
+}
+
+/**
  * Builds the recommendation prompt.
  *
  * Only structural attributes are passed. The colors are already decided, so
@@ -31,6 +72,11 @@ export function customPaletteRecommendationPrompt(
     colorHex: selection.adjusted_color_value,
     finish: selection.finish_code,
   }));
+  const placementAttributes = {
+    faceShape: closedValue(attributes.faceShape, FACE_SHAPES),
+    eyeShape: closedValue(attributes.eyeShape, EYE_SHAPES),
+    lipShape: closedValue(attributes.lipShape, LIP_SHAPES),
+  };
   return `
 You are FaceTune's brand-neutral makeup artist. The user has already chosen the colors and finishes below. Your only job is to explain how to apply them.
 
@@ -52,7 +98,7 @@ HOW TO WRITE
 - Return JSON matching the supplied schema only.
 
 Selected style: ${style}
-Facial attributes: ${JSON.stringify(attributes)}
+Facial attributes: ${JSON.stringify(placementAttributes)}
 Fixed palette: ${JSON.stringify(palette)}
 `.trim();
 }

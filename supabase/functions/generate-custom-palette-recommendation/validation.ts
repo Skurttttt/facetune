@@ -86,7 +86,8 @@ const FINISH_WORDS: Readonly<Record<string, readonly string[]>> = {
   glossy: ["glossy", "gloss"],
 };
 
-const hexLike = /#[0-9a-f]{3,8}\b/i;
+/** A color written as a value rather than a name, in any common notation. */
+const hexLike = /#[0-9a-f]{3,8}\b|\b(?:rgb|hsl|hsv|hwb|cmyk)a?\s*\(/i;
 
 function invalid(code = "invalid_ai_response"): FunctionFailure {
   return new FunctionFailure(
