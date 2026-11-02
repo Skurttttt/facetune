@@ -5,6 +5,7 @@ export type AiOperation =
   | "kit_makeup_recommendation"
   | "makeup_preview"
   | "kit_makeup_preview"
+  | "custom_palette_recommendation"
   | "tutorial_manifest_analysis"
   | "tutorial_step_generation";
 
