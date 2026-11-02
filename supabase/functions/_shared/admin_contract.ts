@@ -90,7 +90,11 @@ export const ALLOWANCE_SOURCES = ["subscription", "purchased_credit"] as const;
 export type AllowanceSource = typeof ALLOWANCE_SOURCES[number];
 
 /** Which pipeline produced a committed row's canonical Final Preview. */
-export const PREVIEW_SOURCE_MODES = ["standard", "makeup_kit"] as const;
+export const PREVIEW_SOURCE_MODES = [
+  "standard",
+  "makeup_kit",
+  "custom_color_palette",
+] as const;
 export type PreviewSourceMode = typeof PREVIEW_SOURCE_MODES[number];
 
 // `ai_look_usage.ts` (SUB-4) already names this union for the reserve /

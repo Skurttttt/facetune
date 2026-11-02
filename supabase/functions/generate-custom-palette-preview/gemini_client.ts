@@ -66,7 +66,15 @@ async function callGemini(
  * spends nothing. The validator reads images, so it is a text model, configured
  * the same way as the app's other text calls.
  */
-export function createGeminiPreviewPorts(apiKey: string): PreviewPorts {
+export function createGeminiPreviewPorts(
+  apiKey: string,
+  options: { deadlineMs?: number } = {},
+): PreviewPorts {
+  // A retry may be shortened by the budget. It is never lengthened.
+  const within = (ceilingMs: number) =>
+    options.deadlineMs === undefined
+      ? ceilingMs
+      : Math.max(1, Math.min(ceilingMs, options.deadlineMs - Date.now()));
   return {
     async generateImage(prompt, original) {
       const model = resolveFinalPreviewModel();
@@ -75,7 +83,7 @@ export function createGeminiPreviewPorts(apiKey: string): PreviewPorts {
           role: "user",
           parts: [{ text: prompt }, inlineImage(original)],
         }],
-      }, imageTimeoutMs) as {
+      }, within(imageTimeoutMs)) as {
         candidates?: Array<{
           content?: {
             parts?: Array<{
@@ -114,7 +122,7 @@ export function createGeminiPreviewPorts(apiKey: string): PreviewPorts {
           temperature: 0,
           candidateCount: 1,
         },
-      }, validatorTimeoutMs) as {
+      }, within(validatorTimeoutMs)) as {
         candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
       };
       const text = payload.candidates?.[0]?.content?.parts?.map((part) =>

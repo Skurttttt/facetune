@@ -101,14 +101,33 @@ void main() {
       'supabase/functions/generate-custom-palette-recommendation/index.ts',
     ).readAsStringSync();
     expect(index, isNot(contains('SERVICE_ROLE')));
+    expect(
+      config.replaceAll('\r\n', '\n'),
+      contains(
+        '[functions.generate-custom-palette-preview]\n'
+        'verify_jwt = true',
+      ),
+    );
+    expect(
+      File(
+        'supabase/functions/generate-custom-palette-preview/index.ts',
+      ).readAsStringSync(),
+      isNot(contains('SERVICE_ROLE')),
+    );
     for (final file
         in Directory('lib')
             .listSync(recursive: true)
             .whereType<File>()
             .where((file) => file.path.endsWith('.dart'))) {
+      final source = file.readAsStringSync();
       expect(
-        file.readAsStringSync(),
+        source,
         isNot(contains('generate-custom-palette-recommendation')),
+        reason: file.path,
+      );
+      expect(
+        source,
+        isNot(contains('generate-custom-palette-preview')),
         reason: file.path,
       );
     }

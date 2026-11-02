@@ -89,7 +89,11 @@ Deno.test("usage vocabulary matches contract §20, §24, §42", () => {
   assertEquals([...USAGE_TYPES], ["final_makeup_preview"]);
   assertEquals([...USAGE_STATUSES], ["reserved", "committed", "released"]);
   assertEquals([...ALLOWANCE_SOURCES], ["subscription", "purchased_credit"]);
-  assertEquals([...PREVIEW_SOURCE_MODES], ["standard", "makeup_kit"]);
+  assertEquals([...PREVIEW_SOURCE_MODES], [
+    "standard",
+    "makeup_kit",
+    "custom_color_palette",
+  ]);
   assertEquals(PREVIEW_SOURCE_MODES_AGREE_WITH_USAGE_ENGINE, true);
 });
 

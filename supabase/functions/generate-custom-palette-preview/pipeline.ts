@@ -97,6 +97,11 @@ function readSource(
   }
 }
 
+/** Throws [InvalidFrozenPalette] unless the stored palette and plan are valid. */
+export function assertFrozenSource(source: FrozenPaletteSource): void {
+  readSource(source);
+}
+
 /**
  * Produces and judges one candidate from one frozen palette.
  *
@@ -110,6 +115,7 @@ export async function runPreviewCandidate(
   original: PreviewImage,
   variationNumber: number,
   ports: PreviewPorts,
+  correction: readonly string[] = [],
 ): Promise<CandidateResult> {
   const { selections, plan } = readSource(source);
 
@@ -121,6 +127,7 @@ export async function runPreviewCandidate(
         selections,
         plan.applications,
         variationNumber,
+        correction,
       ),
       original,
     );

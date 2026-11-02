@@ -23,7 +23,10 @@
  */
 
 /** Which pipeline produced a canonical Final Makeup Preview. */
-export type PreviewSourceMode = "standard" | "makeup_kit";
+export type PreviewSourceMode =
+  | "standard"
+  | "makeup_kit"
+  | "custom_color_palette";
 
 export interface UsageResult {
   ok: boolean;

@@ -1333,9 +1333,10 @@ Subscription figures (`committed_usage`, `reserved_usage`, `available_ai_looks`)
 Canonical Final Preview lineage — concrete deployed form (V1.1). The conceptual `canonical_preview_id` is realized as three columns, because a canonical Final Preview lives in one of two tables (`generated_images` for Standard Mode, `kit_generated_images` for My Makeup Kit):
 
 ```text
-source_mode                       standard | makeup_kit — explicit discriminator, set at commit, never cleared
+source_mode                       standard | makeup_kit | custom_color_palette — explicit discriminator, set at commit, never cleared
 canonical_generated_image_id      (id, user_id) → generated_images, when source_mode = standard
 canonical_kit_generated_image_id  (id, user_id) → kit_generated_images, when source_mode = makeup_kit
+canonical_custom_palette_preview_id  (id, user_id) → custom_palette_generated_images, when source_mode = custom_color_palette
 ```
 
 Exactly one id is populated for a committed row; both are null for reserved/released rows. If the user later deletes the history item the id becomes null (`ON DELETE SET NULL`) while the committed row, `committed_at`, and `source_mode` survive — deletion never refunds. Web Admin read models must carry this as a discriminated reference, not a single id, and must never infer mode from which id happens to be set.
@@ -2452,6 +2453,10 @@ successful new Final Preview
 → 1 AI Look
 
 my_makeup_kit
+successful new Final Preview
+→ 1 AI Look
+
+custom_color_palette
 successful new Final Preview
 → 1 AI Look
 ```

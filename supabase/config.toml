@@ -21,6 +21,9 @@ verify_jwt = true
 [functions.generate-custom-palette-recommendation]
 verify_jwt = true
 
+[functions.generate-custom-palette-preview]
+verify_jwt = true
+
 [functions.generate-tutorial-step-v4]
 verify_jwt = true
 

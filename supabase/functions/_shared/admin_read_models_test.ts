@@ -403,6 +403,22 @@ Deno.test("a committed Standard Mode row carries a discriminated preview referen
   assertEquals(u.usageType, "final_makeup_preview");
 });
 
+Deno.test("a committed Custom Color Palette row is recognized as its own mode", () => {
+  const u = ok(
+    decodeUsageRecord(ledgerRow({
+      source_mode: "custom_color_palette",
+      canonical_generated_image_id: null,
+      canonical_kit_generated_image_id: null,
+      canonical_custom_palette_preview_id:
+        "77777777-7777-4777-8777-777777777777",
+    })),
+  );
+  assertEquals(u.canonicalPreview, {
+    sourceMode: "custom_color_palette",
+    customPalettePreviewId: "77777777-7777-4777-8777-777777777777",
+  });
+});
+
 Deno.test("a committed My Makeup Kit row uses the kit id under makeup_kit", () => {
   const u = ok(decodeUsageRecord(ledgerRow({
     source_mode: "makeup_kit",

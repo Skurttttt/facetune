@@ -529,7 +529,11 @@ export interface AdminUsageListItem {
  */
 export type CanonicalPreviewRef =
   | { sourceMode: "standard"; generatedImageId: string | null }
-  | { sourceMode: "makeup_kit"; kitGeneratedImageId: string | null };
+  | { sourceMode: "makeup_kit"; kitGeneratedImageId: string | null }
+  | {
+    sourceMode: "custom_color_palette";
+    customPalettePreviewId: string | null;
+  };
 
 export interface AdminUsageRecord {
   id: string;
@@ -573,7 +577,15 @@ export function decodeUsageRecord(
       if (sourceMode === null) throw new Decode("source_mode", "missing");
       canonicalPreview = sourceMode === "standard"
         ? { sourceMode, generatedImageId }
-        : { sourceMode, kitGeneratedImageId };
+        : sourceMode === "makeup_kit"
+        ? { sourceMode, kitGeneratedImageId }
+        : {
+          sourceMode,
+          customPalettePreviewId: strOrNull(
+            r,
+            "canonical_custom_palette_preview_id",
+          ),
+        };
     }
 
     const allowanceSource = vocab(r, "allowance_source", asAllowanceSource);

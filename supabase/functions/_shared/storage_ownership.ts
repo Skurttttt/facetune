@@ -42,6 +42,7 @@ export function isOwnedOriginalPath(
  * Shapes accepted (`folder` selects which):
  *   <userId>/analyses/<analysisId>/generated/<recommendationId>/preview_NNNN.ext
  *   <userId>/analyses/<analysisId>/kit-generated/<kitRecommendationId>/preview_NNNN.ext
+ *   <userId>/analyses/<analysisId>/custom-palette-generated/<recommendationId>/preview_NNNN.ext
  *
  * Segment-by-segment like `isOwnedOriginalPath`, because a prefix test would
  * accept traversal and extra segments. The `/original/` folder can never match,
@@ -51,7 +52,7 @@ export function isOwnedGeneratedPreviewPath(
   path: string,
   userId: string,
   analysisId: string,
-  folder: "generated" | "kit-generated",
+  folder: "generated" | "kit-generated" | "custom-palette-generated",
   ownerScopedId: string,
   allowedExtensions: readonly string[] = ["jpg", "jpeg", "png", "webp"],
 ): boolean {

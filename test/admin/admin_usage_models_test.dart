@@ -166,6 +166,18 @@ void main() {
       expect(row.canonicalPreviewRetained, isFalse);
     });
 
+    test(
+      'Custom Color Palette is recognized and never mapped to another mode',
+      () {
+        final row = AdminUsageListItem.decode({
+          ...committedUsagePayload(retained: true),
+          'sourceMode': 'custom_color_palette',
+        });
+        expect(row.sourceMode, AdminPreviewSourceMode.customColorPalette);
+        expect(row.sourceMode?.label, 'Custom Color Palette');
+      },
+    );
+
     test('unknown provenance vocabulary fails closed', () {
       for (final broken in [
         {...committedUsagePayload(), 'allowanceSource': 'gift'},

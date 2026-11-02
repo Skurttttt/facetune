@@ -138,7 +138,12 @@ export interface AiOperationMetric {
   outcome: MetricOutcome;
   /** A sanitized code such as `GEMINI_TIMEOUT`. Never a message. */
   failureCategory?: string | null;
-  sourceMode?: "standard" | "makeup_kit" | "my_makeup_kit" | null;
+  sourceMode?:
+    | "standard"
+    | "makeup_kit"
+    | "my_makeup_kit"
+    | "custom_color_palette"
+    | null;
   /** The AI Look operation, for final previews. Attribution happens server-side. */
   operationId?: string | null;
   tutorialSessionId?: string | null;

@@ -15,6 +15,42 @@ const FINISH_RENDERING: Readonly<Record<string, string>> = {
   glitter: "small localized sparkle, without changing the base color",
 };
 
+/** Reason code -> what the previous attempt got wrong. A closed vocabulary. */
+const CORRECTIONS: Readonly<Record<string, string>> = {
+  hue_differs: "came out as a different color family than its colorHex",
+  much_lighter: "came out much lighter than its colorHex",
+  much_darker: "came out much darker than its colorHex",
+  much_more_saturated: "came out much more saturated than its colorHex",
+  much_less_saturated: "came out much less saturated than its colorHex",
+  not_applied: "was not visibly applied",
+  uncertain: "was too faint to read clearly",
+  too_shiny: "came out shinier than its finish",
+  too_flat: "came out flatter than its finish",
+  wrong_texture: "did not show the texture of its finish",
+  introduced: "was added, but it is not in the palette: leave it out",
+  changed: "changed: keep the person exactly as in the original photo",
+};
+
+/**
+ * Turns the last attempt's `category:reason` codes into instructions.
+ *
+ * Built only from closed vocabularies, and it changes emphasis alone: the palette
+ * section of the prompt is byte-for-byte the same on every attempt.
+ */
+export function correctionSection(reasons: readonly string[]): string {
+  const lines = reasons.flatMap((code) => {
+    const [subject, reason] = code.split(":");
+    const text = CORRECTIONS[reason];
+    return text ? [`- ${subject}: ${text}.`] : [];
+  });
+  if (lines.length === 0) return "";
+  return `
+
+CORRECTION
+The previous attempt missed the palette. The palette below has not changed and must not change. Correct only this:
+${lines.join("\n")}`;
+}
+
 /**
  * Builds the image prompt from the frozen palette and its validated plan.
  *
@@ -30,6 +66,7 @@ export function customPalettePreviewPrompt(
   selections: readonly PaletteSelection[],
   applications: readonly CategoryApplication[],
   variationNumber: number,
+  correction: readonly string[] = [],
 ): string {
   const palette = selections.map((selection) => {
     const application = applications.find(
@@ -70,7 +107,7 @@ Do not add text, labels, borders, watermarks, jewellery, accessories, filters, o
 VARIATION
 This is variation ${variationNumber}. Vary only blend softness or subtle placement interpretation within the palette. Never vary a color, a finish, a category, identity, framing, or lighting.
 
-Return one edited image only.
+Return one edited image only.${correctionSection(correction)}
 
 Style: ${style}
 Fixed palette: ${JSON.stringify(palette)}

@@ -12,7 +12,8 @@ import '../../shared/admin_wire.dart' as wire;
 /// reserved and released rows.
 enum AdminPreviewSourceMode {
   standard('standard', 'Standard Mode'),
-  makeupKit('makeup_kit', 'My Makeup Kit');
+  makeupKit('makeup_kit', 'My Makeup Kit'),
+  customColorPalette('custom_color_palette', 'Custom Color Palette');
 
   const AdminPreviewSourceMode(this.code, this.label);
 
