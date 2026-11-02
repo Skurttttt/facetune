@@ -230,6 +230,26 @@ export function assertWithinWorkspace(
   }
 }
 
+/**
+ * Makes sure the budget folder exists, calling mkdir only when it does not.
+ *
+ * A verified path inside the folder proves it exists, with no read or write
+ * permission on the folder itself. If it really is missing, mkdir runs within
+ * whatever write scope was granted, and a refused mkdir stops the run.
+ */
+export function ensureBudgetFolder(folder: string, knownInside: string): void {
+  const parent = resolve(folder).replaceAll("\\", "/").toLowerCase();
+  const child = resolve(knownInside).replaceAll("\\", "/").toLowerCase();
+  if (child.startsWith(`${parent}/`) && exists(knownInside)) return;
+  try {
+    Deno.mkdirSync(folder, { recursive: true });
+  } catch {
+    throw new GuardRefusal(
+      "The budget folder is missing and cannot be created in the approved scope.",
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The provider call budget
 // ---------------------------------------------------------------------------

@@ -74,6 +74,7 @@ import {
   CallBudget,
   CeilingReached,
   classifyProviderRequest,
+  ensureBudgetFolder,
   findLeak,
   GuardRefusal,
   paletteViolation,
@@ -197,7 +198,7 @@ try {
   }
   const network = await Deno.permissions.query({
     name: "net",
-    host: GEMINI_HOST,
+    host: `${GEMINI_HOST}:443`,
   });
   if (mode === "dry") {
     if (network.state === "granted") {
@@ -264,7 +265,11 @@ const liveBudgetDir = `${
 }/.facetune-eval`;
 let budgetPath = `${outDir}/budget.json`;
 if (mode === "live") {
-  Deno.mkdirSync(liveBudgetDir, { recursive: true });
+  try {
+    ensureBudgetFolder(liveBudgetDir, workspace);
+  } catch (error) {
+    refuse(error instanceof Error ? error.message : "budget folder");
+  }
   budgetPath = `${liveBudgetDir}/ccp10-live-budget.json`;
 }
 const dryCeiling = mode === "dry"

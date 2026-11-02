@@ -942,6 +942,124 @@ Deno.test("live mode refuses without a workspace, and refuses fault injection", 
   }
 });
 
+Deno.test("the exact Gemini host and port is enough, and no broader grant is needed", async () => {
+  const out = Deno.makeTempDirSync({ prefix: "ccp10-net-" });
+  const base = {
+    ...SAFE_ENV,
+    CCP10_OUT: join(out, "run"),
+    CCP10_MODE: "live",
+    CCP10_LIVE_AUTHORIZATION: LIVE_AUTHORIZATION[1],
+  };
+  try {
+    // Past the network check, stopped by the next one: no key file was given.
+    const exact = await runner(
+      base,
+      "127.0.0.1,generativelanguage.googleapis.com:443",
+    );
+    assertEquals(exact.code, 2);
+    assert(exact.stderr.includes("CCP10_KEY_FILE"), exact.stderr);
+    // Another port, or another host on 443, is not that permission.
+    for (
+      const net of [
+        "127.0.0.1,generativelanguage.googleapis.com:8443",
+        "127.0.0.1,example.com:443",
+      ]
+    ) {
+      const wrong = await runner(base, net);
+      assertEquals(wrong.code, 2);
+      assert(
+        wrong.stderr.includes("permission for the Gemini host"),
+        wrong.stderr,
+      );
+    }
+    // A dry run holding that exact permission is still refused.
+    const dry = await runner(
+      { ...SAFE_ENV, CCP10_OUT: join(out, "run") },
+      "127.0.0.1,generativelanguage.googleapis.com:443",
+    );
+    assertEquals(dry.code, 2);
+    assert(dry.stderr.includes("without network permission"), dry.stderr);
+  } finally {
+    Deno.removeSync(out, { recursive: true });
+  }
+});
+
+/** Runs ensureBudgetFolder in a process holding only the given permissions. */
+async function budgetFolderProcess(
+  folder: string,
+  inside: string,
+  flags: string[],
+): Promise<{ code: number; stderr: string }> {
+  const dir = Deno.makeTempDirSync({ prefix: "ccp10-budget-script-" });
+  const script = join(dir, "script.ts");
+  Deno.writeTextFileSync(
+    script,
+    `import { ensureBudgetFolder } from ${
+      JSON.stringify(new URL("./ccp10_guards.ts", import.meta.url).href)
+    };
+ensureBudgetFolder(${JSON.stringify(folder)}, ${JSON.stringify(inside)});`,
+  );
+  try {
+    const output = await new Deno.Command(Deno.execPath(), {
+      args: ["run", "--no-lock", "--no-prompt", "--no-check", ...flags, script],
+      stdout: "null",
+      stderr: "piped",
+      cwd: join(ROOT, "supabase/functions"),
+    }).output();
+    return {
+      code: output.code,
+      stderr: new TextDecoder().decode(output.stderr),
+    };
+  } finally {
+    Deno.removeSync(dir, { recursive: true });
+  }
+}
+
+Deno.test("an existing budget folder needs no permission on the folder", async () => {
+  const folder = Deno.makeTempDirSync({ prefix: "ccp10-budget-folder-" });
+  const workspace = join(folder, "workspace");
+  Deno.mkdirSync(workspace);
+  try {
+    // Read on the workspace only, and write on nothing at all.
+    const { code, stderr } = await budgetFolderProcess(folder, workspace, [
+      `--allow-read=${workspace}`,
+    ]);
+    assertEquals(code, 0, stderr);
+  } finally {
+    Deno.removeSync(folder, { recursive: true });
+  }
+});
+
+Deno.test("a missing budget folder fails safely outside the approved scope", async () => {
+  const base = Deno.makeTempDirSync({ prefix: "ccp10-budget-missing-" });
+  const folder = join(base, "absent");
+  const workspace = join(folder, "workspace");
+  try {
+    const refused = await budgetFolderProcess(folder, workspace, [
+      `--allow-read=${workspace}`,
+    ]);
+    assert(refused.code !== 0);
+    assert(refused.stderr.includes("approved scope"), refused.stderr);
+    assertThrows(() => Deno.statSync(folder), Deno.errors.NotFound);
+
+    // A path that only looks inside proves nothing: it is outside, so mkdir runs.
+    const sibling = await budgetFolderProcess(folder, `${folder}-other`, [
+      `--allow-read=${base}`,
+    ]);
+    assert(sibling.code !== 0);
+
+    // Given write scope on exactly that folder, it is created and nothing more.
+    const created = await budgetFolderProcess(folder, workspace, [
+      `--allow-read=${workspace}`,
+      `--allow-write=${folder}`,
+    ]);
+    assertEquals(created.code, 0, created.stderr);
+    assert(Deno.statSync(folder).isDirectory);
+  } finally {
+    Deno.removeSync(base, { recursive: true });
+  }
+});
+
 Deno.test("source: only live mode can forward a Gemini request", () => {
   const source = Deno.readTextFileSync(join(HERE, "ccp10_eval.ts"));
   assert(source.includes(`const response = mode === "dry"
