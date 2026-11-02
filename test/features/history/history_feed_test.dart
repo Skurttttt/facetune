@@ -192,6 +192,7 @@ void main() {
                       onPressed: () => kitOpenCalls += 1,
                       child: const Text('Open My Kit'),
                     ),
+                    CustomPaletteHistoryFeedItem() => const SizedBox.shrink(),
                   },
                 ),
               ],

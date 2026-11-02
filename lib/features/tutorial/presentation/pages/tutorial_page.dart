@@ -7,6 +7,7 @@ import '../../../../theme/app_tokens.dart';
 import '../../data/providers/tutorial_providers.dart';
 import '../../domain/catalog/tutorial_instruction_catalog.dart';
 import '../../domain/entities/canonical_preview_ref.dart';
+import '../../domain/entities/validated_look_plan.dart';
 import '../../domain/entities/tutorial_step.dart';
 import '../controllers/tutorial_controller.dart';
 import '../controllers/tutorial_state.dart';
@@ -288,7 +289,11 @@ class _TutorialBody extends StatelessWidget {
         const SizedBox(height: AppSpacing.lg),
         TutorialInstructionsCard(instructions: instructions, goal: _goal()),
         const SizedBox(height: AppSpacing.md),
-        if (state.isMyMakeupKit)
+        if (state.session?.lookPlan.source is CustomPaletteLookPlanSource)
+          CustomPaletteShadeCard(
+            palette: state.session!.lookPlan.paletteShadesFor(category),
+          )
+        else if (state.isMyMakeupKit)
           MyMakeupKitProductCard(
             // Prefer the step's own items, but fall back to the look plan when
             // they are empty. A step loaded outside a full session carries no

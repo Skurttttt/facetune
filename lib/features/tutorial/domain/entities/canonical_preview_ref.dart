@@ -23,7 +23,13 @@ class CanonicalPreviewRef {
   final String id;
   final RecommendationSourceMode sourceMode;
 
+  const CanonicalPreviewRef.customColorPalette(this.id)
+    : sourceMode = RecommendationSourceMode.customColorPalette;
+
   bool get isMyMakeupKit => sourceMode == RecommendationSourceMode.myMakeupKit;
+
+  bool get isCustomPalette =>
+      sourceMode == RecommendationSourceMode.customColorPalette;
 
   @override
   bool operator ==(Object other) =>

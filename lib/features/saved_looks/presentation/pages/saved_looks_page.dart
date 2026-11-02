@@ -9,6 +9,10 @@ import '../../../../theme/app_tokens.dart';
 import '../../../analysis/presentation/controllers/face_analysis_controller.dart';
 import '../../../authentication/presentation/controllers/auth_controller.dart';
 import '../../../makeup_styles/presentation/controllers/makeup_style_selection_controller.dart';
+import '../../../custom_palette/domain/entities/custom_palette_look.dart';
+import '../../../custom_palette/presentation/controllers/custom_palette_library_controllers.dart';
+import '../../../custom_palette/presentation/controllers/custom_palette_look_controller.dart';
+import '../../../custom_palette/presentation/widgets/custom_palette_saved_look_card.dart';
 import '../../../makeup_kit/domain/entities/kit_look_result.dart';
 import '../../../makeup_kit/presentation/controllers/makeup_kit_library_state.dart';
 import '../../../makeup_kit/presentation/controllers/makeup_kit_look_controller.dart';
@@ -96,9 +100,17 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
             state.status == SavedLooksStatus.failure && state.items.isEmpty,
       ),
     );
-    final kitIsEmpty = ref.watch(
-      makeupKitSavedControllerProvider.select((state) => state.items.isEmpty),
-    );
+    final kitIsEmpty =
+        ref.watch(
+          makeupKitSavedControllerProvider.select(
+            (state) => state.items.isEmpty,
+          ),
+        ) &&
+        ref.watch(
+          customPaletteSavedControllerProvider.select(
+            (state) => state.items.isEmpty,
+          ),
+        );
     final isGuest = ref.watch(
       authControllerProvider.select((state) => state.user?.isAnonymous == true),
     );
@@ -136,6 +148,9 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
                 ref
                     .read(makeupKitSavedControllerProvider.notifier)
                     .loadInitial(),
+                ref
+                    .read(customPaletteSavedControllerProvider.notifier)
+                    .refresh(),
               ]);
             },
             child: isInitialLoading
@@ -179,6 +194,12 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
         const SliverToBoxAdapter(
           child: SizedBox(height: TopLevelHeaderMetrics.contentGap),
         ),
+        const _PaletteSectionHeaderSliver(),
+        _PaletteSavedLooksGrid(
+          onOpen: _openPaletteResult,
+          onRemove: _confirmRemovePalette,
+        ),
+        const _PaletteSectionGapSliver(),
         const _KitStatusSliver(),
         const _KitSectionHeaderSliver(),
         _KitSavedLooksGrid(onOpen: _openKitResult, onRemove: _confirmRemoveKit),
@@ -210,6 +231,41 @@ class _SavedLooksPageState extends ConsumerState<SavedLooksPage> {
         .restore(look.preview, recommendation: look.recommendation);
     ref.read(resultActionsControllerProvider.notifier).restoreSavedLook(look);
     context.push(AppConstants.previewRoute);
+  }
+
+  /// Opens a look from its own frozen rows. The editor's draft is not consulted.
+  void _openPaletteResult(CustomPaletteSavedLook look) {
+    final result = look.result;
+    ref.read(faceAnalysisControllerProvider.notifier).restore(result.analysis);
+    ref
+        .read(makeupStyleSelectionControllerProvider.notifier)
+        .restore(result.style);
+    ref
+        .read(customPaletteLookControllerProvider.notifier)
+        .restore(
+          recommendation: result.recommendation,
+          preview: result.preview,
+        );
+    ref
+        .read(customPaletteResultActionsControllerProvider.notifier)
+        .restoreSavedLook(look);
+    context.push(AppConstants.customPaletteResultRoute);
+  }
+
+  Future<void> _confirmRemovePalette(CustomPaletteSavedLook look) async {
+    final remove = await showConfirmationDialog(
+      context,
+      title: 'Remove saved look?',
+      message:
+          '${look.result.style.name} will be removed from Saved Looks. Its '
+          'palette and preview remain in private history.',
+      confirmLabel: 'Remove',
+    );
+    if (remove == true) {
+      await ref
+          .read(customPaletteSavedControllerProvider.notifier)
+          .remove(look);
+    }
   }
 
   void _openKitResult(KitSavedLook look) {
@@ -423,6 +479,85 @@ class _KitStatusSliver extends ConsumerWidget {
   }
 }
 
+class _PaletteSectionHeaderSliver extends ConsumerWidget {
+  const _PaletteSectionHeaderSliver();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hasItems = ref.watch(
+      customPaletteSavedControllerProvider.select(
+        (state) => state.items.isNotEmpty,
+      ),
+    );
+    if (!hasItems) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+        child: Text(
+          'Custom Color Palette',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+      ),
+    );
+  }
+}
+
+class _PaletteSectionGapSliver extends ConsumerWidget {
+  const _PaletteSectionGapSliver();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hasItems = ref.watch(
+      customPaletteSavedControllerProvider.select(
+        (state) => state.items.isNotEmpty,
+      ),
+    );
+    return SliverToBoxAdapter(
+      child: SizedBox(height: hasItems ? AppSpacing.lg : 0),
+    );
+  }
+}
+
+class _PaletteSavedLooksGrid extends ConsumerWidget {
+  const _PaletteSavedLooksGrid({required this.onOpen, required this.onRemove});
+
+  final void Function(CustomPaletteSavedLook look) onOpen;
+  final void Function(CustomPaletteSavedLook look) onRemove;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(customPaletteSavedControllerProvider);
+    if (state.items.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+    return SliverLayoutBuilder(
+      builder: (context, constraints) => SliverGrid(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: _columnsFor(constraints.crossAxisExtent),
+          childAspectRatio: .56,
+          crossAxisSpacing: AppSpacing.sm,
+          mainAxisSpacing: AppSpacing.sm,
+        ),
+        delegate: SliverChildBuilderDelegate((context, index) {
+          final look = state.items[index];
+          return CustomPaletteSavedLookCard(
+            key: ValueKey(look.id),
+            look: look,
+            isMutating: state.mutatingIds.contains(look.id),
+            onOpen: () => onOpen(look),
+            onFavorite: () => ref
+                .read(customPaletteSavedControllerProvider.notifier)
+                .toggleFavorite(look),
+            onRemove: () => onRemove(look),
+          );
+        }, childCount: state.items.length),
+      ),
+    );
+  }
+}
+
 class _KitSectionHeaderSliver extends ConsumerWidget {
   const _KitSectionHeaderSliver();
 
@@ -497,9 +632,17 @@ class _EmptySavedLooksSliver extends ConsumerWidget {
     final standardIsEmpty = ref.watch(
       savedLooksControllerProvider.select((state) => state.items.isEmpty),
     );
-    final kitIsEmpty = ref.watch(
-      makeupKitSavedControllerProvider.select((state) => state.items.isEmpty),
-    );
+    final kitIsEmpty =
+        ref.watch(
+          makeupKitSavedControllerProvider.select(
+            (state) => state.items.isEmpty,
+          ),
+        ) &&
+        ref.watch(
+          customPaletteSavedControllerProvider.select(
+            (state) => state.items.isEmpty,
+          ),
+        );
     if (!standardIsEmpty || !kitIsEmpty) {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }

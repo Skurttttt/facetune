@@ -1,4 +1,5 @@
 import 'package:facetune/core/supabase/supabase_availability_provider.dart';
+import 'package:facetune/features/custom_palette/data/custom_palette_providers.dart';
 import 'package:facetune/features/subscription/data/providers/subscription_providers.dart';
 import 'package:facetune/features/subscription/data/repositories/unavailable_subscription_repository.dart';
 import 'package:facetune/features/analysis/data/providers/analysis_providers.dart';
@@ -165,6 +166,9 @@ Future<void> _pumpPage(
         ),
         authRepositoryProvider.overrideWithValue(auth),
         profileRepositoryProvider.overrideWithValue(FakeProfileRepository()),
+        customPaletteLibraryRepositoryProvider.overrideWithValue(
+          const UnavailableCustomPaletteLibrary(),
+        ),
         historyRepositoryProvider.overrideWithValue(FakeHistoryRepository()),
         savedLooksRepositoryProvider.overrideWithValue(
           FakeSavedLooksRepository(),

@@ -35,6 +35,7 @@ class AppConstants {
   static const String customPaletteCategoryRoute =
       '/custom-palette/category/:categoryCode';
   static const String customPaletteReviewRoute = '/custom-palette/review';
+  static const String customPaletteResultRoute = '/custom-palette/result';
   static String customPaletteCategoryLocation(String categoryCode) =>
       '/custom-palette/category/$categoryCode';
   static const String profileRoute = '/profile';

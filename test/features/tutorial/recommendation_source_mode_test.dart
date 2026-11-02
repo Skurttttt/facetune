@@ -4,8 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('RecommendationSourceMode', () {
-    test('exposes exactly the two supported modes', () {
-      expect(RecommendationSourceMode.values, hasLength(2));
+    test('exposes exactly the three supported modes', () {
+      expect(RecommendationSourceMode.values, hasLength(3));
       expect(
         RecommendationSourceMode.values.map((mode) => mode.code),
         containsAll(<String>['standard', 'my_makeup_kit']),

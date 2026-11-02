@@ -1,5 +1,6 @@
 import type { TutorialCategory } from "../_shared/tutorial_vocabulary.ts";
 import type {
+  ResolvedPaletteSelection,
   ResolvedProduct,
   StandardCategoryPlan,
 } from "../_shared/tutorial_source_resolver.ts";
@@ -12,7 +13,19 @@ import type {
 /// apart is what stops a shade name or a brand ending up burned into a picture.
 export type StepProductPresentation =
   | StandardPresentation
-  | MyMakeupKitPresentation;
+  | MyMakeupKitPresentation
+  | CustomPalettePresentation;
+
+/// Custom Color Palette: the user's frozen choice for this category.
+///
+/// Color and finish come from the frozen palette, and guidance from its validated
+/// plan. Nothing here is generated for this step, so a Tutorial can explain how to
+/// apply the choice but has no way to replace it.
+export interface CustomPalettePresentation {
+  mode: "custom_color_palette";
+  category: TutorialCategory;
+  items: ResolvedPaletteSelection[];
+}
 
 /// Standard Mode: brand-neutral colour guidance.
 ///
@@ -114,11 +127,19 @@ export function myMakeupKitPresentation(
 
 /// Selects the adapter matching the source mode.
 export function stepProductPresentation(options: {
-  sourceMode: "standard" | "my_makeup_kit";
+  sourceMode: "standard" | "my_makeup_kit" | "custom_color_palette";
   category: TutorialCategory;
   standardPlan: StandardCategoryPlan[];
   products: ResolvedProduct[];
+  paletteSelections?: ResolvedPaletteSelection[];
 }): StepProductPresentation {
+  if (options.sourceMode === "custom_color_palette") {
+    return {
+      mode: "custom_color_palette",
+      category: options.category,
+      items: options.paletteSelections ?? [],
+    };
+  }
   return options.sourceMode === "my_makeup_kit"
     ? myMakeupKitPresentation(options.category, options.products)
     : standardPresentation(options.category, options.standardPlan);

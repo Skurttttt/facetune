@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../custom_palette/domain/entities/custom_palette_look.dart';
 import '../../domain/entities/look_product_snapshot.dart';
 import '../../domain/entities/standard_look_entry.dart';
 import '../../domain/entities/tutorial_shade_details.dart';
@@ -12,6 +13,26 @@ Color? _colorFromHex(String? hex) {
   if (hex == null) return null;
   final parsed = int.tryParse(hex.replaceFirst('#', ''), radix: 16);
   return parsed == null ? null : Color(0xFF000000 | parsed);
+}
+
+/// Custom Color Palette adapter: the user's frozen choice, exactly as stored.
+class CustomPaletteShadeCard extends StatelessWidget {
+  const CustomPaletteShadeCard({required this.palette, super.key});
+
+  final List<CustomPaletteShade> palette;
+
+  @override
+  Widget build(BuildContext context) => TutorialRecommendationSection(
+    sectionLabel: 'Your color',
+    items: [
+      for (final shade in palette)
+        TutorialRecommendationItem(
+          displayName: shade.colorName,
+          swatch: _colorFromHex(shade.adjustedColor.value),
+          finish: TutorialLabels.finishName(shade.finish),
+        ),
+    ],
+  );
 }
 
 /// Standard Mode adapter: brand-neutral recommendation authority only.

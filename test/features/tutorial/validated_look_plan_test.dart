@@ -65,6 +65,8 @@ void main() {
         final matched = switch (source) {
           StandardLookPlanSource() => RecommendationSourceMode.standard,
           MyMakeupKitLookPlanSource() => RecommendationSourceMode.myMakeupKit,
+          CustomPaletteLookPlanSource() =>
+            RecommendationSourceMode.customColorPalette,
         };
         expect(matched, source.mode);
       }

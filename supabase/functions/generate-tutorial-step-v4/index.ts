@@ -32,6 +32,7 @@ import {
 } from "../_shared/tutorial_source_resolver.ts";
 import { isUnchanged, requestGeminiGuideline } from "./gemini_client.ts";
 import { categoryGuidance } from "./category_prompts.ts";
+import { paletteNote } from "./palette_note.ts";
 import { stepProductPresentation } from "./product_presentation.ts";
 import { productNote, tutorialGuidelinePrompt } from "./prompt.ts";
 import { FunctionFailure } from "./types.ts";
@@ -170,6 +171,7 @@ Deno.serve(async (request: Request) => {
       category: context.category,
       standardPlan: context.standardPlan,
       products: context.products,
+      paletteSelections: context.paletteSelections,
     });
 
     // Duplicate-call protection, read before any spending.
@@ -327,7 +329,9 @@ Deno.serve(async (request: Request) => {
         guidance,
         stepPosition: context.position,
         stepCount: context.includedCount,
-        productNote: productNote(context.products),
+        productNote: context.sourceMode === "custom_color_palette"
+          ? paletteNote(context.paletteSelections)
+          : productNote(context.products),
       }),
       context.originalImage,
       context.canonicalPreview,

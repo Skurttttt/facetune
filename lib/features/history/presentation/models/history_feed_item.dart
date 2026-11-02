@@ -1,19 +1,22 @@
+import '../../../custom_palette/domain/entities/custom_palette_look.dart';
 import '../../../makeup_kit/domain/entities/kit_look_result.dart';
+import '../../../makeup_kit/presentation/utils/makeup_kit_display.dart';
 import '../../domain/entities/history_entry.dart';
 
 /// The authoritative source represented by one row in the shared History feed.
 ///
 /// This is presentation vocabulary only. The two repositories and controllers
 /// remain separate, and adapters below never fill one mode from the other.
-enum HistoryFeedRecordType { recommendation, myMakeupKit }
+enum HistoryFeedRecordType { recommendation, myMakeupKit, customColorPalette }
 
-enum HistoryFeedTypeFilter { all, myMakeupKit, recommendations }
+enum HistoryFeedTypeFilter { all, myMakeupKit, recommendations, customPalette }
 
 extension HistoryFeedTypeFilterLabel on HistoryFeedTypeFilter {
   String get label => switch (this) {
     HistoryFeedTypeFilter.all => 'All',
     HistoryFeedTypeFilter.myMakeupKit => 'My Makeup Kit',
     HistoryFeedTypeFilter.recommendations => 'Recommendations',
+    HistoryFeedTypeFilter.customPalette => 'Custom Color Palette',
   };
 }
 
@@ -189,10 +192,73 @@ final class MyMakeupKitHistoryFeedItem extends HistoryFeedItem {
   }
 }
 
-/// Adapts and orders the two authorities without merging either repository.
+/// Thin adapter for the Custom Color Palette History authority.
+final class CustomPaletteHistoryFeedItem extends HistoryFeedItem {
+  CustomPaletteHistoryFeedItem(this.entry)
+    : super(
+        recordType: HistoryFeedRecordType.customColorPalette,
+        stableId: entry.id,
+        occurredAt: entry.result.preview.createdAt,
+      );
+
+  final CustomPaletteHistoryEntry entry;
+
+  @override
+  String get styleName => entry.result.style.name;
+
+  @override
+  bool get isComplete => true;
+
+  @override
+  bool get isFavorite => entry.isFavorite;
+
+  @override
+  String get thumbnailUrl => entry.result.preview.generatedImageUrl;
+
+  @override
+  String get modeLabel => 'Custom Color Palette';
+
+  /// From this look's own frozen palette.
+  @override
+  String get metadataLabel {
+    final count = entry.result.recommendation.palette.length;
+    return '$count color${count == 1 ? '' : 's'}';
+  }
+
+  @override
+  String get searchableText {
+    final result = entry.result;
+    final attributes = result.analysis.attributes;
+    return [
+      result.style.name,
+      result.style.code,
+      result.recommendation.overallIntensity,
+      result.recommendation.summary,
+      modeLabel,
+      ...result.recommendation.palette.expand(
+        (shade) => [
+          shade.category.label,
+          shade.colorLabel,
+          shade.adjustedColor.value,
+          shade.finish.label,
+        ],
+      ),
+      attributes.faceShape.name,
+      attributes.skinTone.name,
+      attributes.undertone.name,
+      attributes.eyeShape.name,
+      attributes.lipShape.name,
+      attributes.hairColor.name,
+      attributes.eyeColor.name,
+    ].join(' ').toLowerCase();
+  }
+}
+
+/// Adapts and orders the authorities without merging any repository.
 List<HistoryFeedItem> buildHistoryFeed({
   required List<HistoryEntry> recommendations,
   required List<KitHistoryEntry> myMakeupKit,
+  List<CustomPaletteHistoryEntry> customPalette = const [],
   HistoryFeedTypeFilter typeFilter = HistoryFeedTypeFilter.all,
   HistoryFilter statusFilter = HistoryFilter.all,
   String query = '',
@@ -201,6 +267,7 @@ List<HistoryFeedItem> buildHistoryFeed({
   final candidates = <HistoryFeedItem>[
     for (final entry in recommendations) StandardHistoryFeedItem(entry),
     for (final entry in myMakeupKit) MyMakeupKitHistoryFeedItem(entry),
+    for (final entry in customPalette) CustomPaletteHistoryFeedItem(entry),
   ];
   final normalizedQuery = query.trim().toLowerCase();
   final uniqueItems = <String, HistoryFeedItem>{};
@@ -225,6 +292,8 @@ bool _matchesType(HistoryFeedItem item, HistoryFeedTypeFilter filter) =>
         item.recordType == HistoryFeedRecordType.myMakeupKit,
       HistoryFeedTypeFilter.recommendations =>
         item.recordType == HistoryFeedRecordType.recommendation,
+      HistoryFeedTypeFilter.customPalette =>
+        item.recordType == HistoryFeedRecordType.customColorPalette,
     };
 
 bool _matchesStatus(HistoryFeedItem item, HistoryFilter filter) =>

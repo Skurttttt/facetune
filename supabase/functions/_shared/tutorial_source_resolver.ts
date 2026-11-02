@@ -1,3 +1,4 @@
+import { parseFrozenPalette } from "./custom_palette_contract.ts";
 import {
   isOwnedGeneratedPreviewPath,
   isOwnedOriginalPath,
@@ -48,6 +49,21 @@ export interface ResolvedProduct {
   foundationUndertone: string | null;
 }
 
+/// One frozen Custom Color Palette choice, mapped to the category being generated.
+///
+/// The color and finish come from the look's frozen palette alone. The guidance
+/// comes from its validated plan, which holds no color or finish of its own.
+export interface ResolvedPaletteSelection {
+  categoryCode: string;
+  colorHex: string;
+  colorLabel: string;
+  isAdjusted: boolean;
+  finish: string;
+  placement: string | null;
+  technique: string | null;
+  intensity: string | null;
+}
+
 /// Brand-neutral Standard Mode guidance for one category.
 export interface StandardCategoryPlan {
   planKey: string;
@@ -87,6 +103,8 @@ export interface TutorialGenerationContext {
   standardPlan: StandardCategoryPlan[];
   /** My Makeup Kit snapshot item(s) for this category. Empty in Standard Mode. */
   products: ResolvedProduct[];
+  /** The frozen palette's choice for this category. Empty in the other modes. */
+  paletteSelections: ResolvedPaletteSelection[];
 }
 
 /// The minimal Supabase surface the resolver needs.
@@ -165,8 +183,9 @@ export async function resolveTutorialSource(
     .from("tutorial_v4_sessions")
     .select(
       "id,user_id,analysis_id,source_mode,recommendation_id," +
-        "kit_recommendation_id,canonical_generated_image_id," +
-        "canonical_kit_generated_image_id,manifest_status",
+        "kit_recommendation_id,custom_palette_recommendation_id," +
+        "canonical_generated_image_id,canonical_kit_generated_image_id," +
+        "canonical_custom_palette_preview_id,manifest_status",
     )
     .eq("id", request.tutorialSessionId)
     .maybeSingle();
@@ -178,7 +197,10 @@ export async function resolveTutorialSource(
   if (session.user_id !== userId) throw notFound();
 
   const sourceMode = session.source_mode;
-  if (sourceMode !== "standard" && sourceMode !== "my_makeup_kit") {
+  if (
+    sourceMode !== "standard" && sourceMode !== "my_makeup_kit" &&
+    sourceMode !== "custom_color_palette"
+  ) {
     throw new ResolutionFailure(
       422,
       "invalid_source_mode",
@@ -186,6 +208,7 @@ export async function resolveTutorialSource(
     );
   }
   const isKit = sourceMode === "my_makeup_kit";
+  const isPalette = sourceMode === "custom_color_palette";
 
   // In My Makeup Kit mode `kit_preview_mismatch` is a diagnostic, not a block:
   // it records that the image showed a category no selected product backs.
@@ -211,16 +234,18 @@ export async function resolveTutorialSource(
   // My Makeup Kit: backed by the look's immutable product snapshot, whatever the
   // visual verdict. The image never decides whether a kit step exists, and a
   // category no selected product backs is never a kit step even when visible.
+  // Custom Color Palette: selected in the frozen palette, by the same rule.
   const { data: manifestRows } = await client
     .from("tutorial_v4_manifest_items")
-    .select("category,presence,product_backed")
+    .select("category,presence,product_backed,palette_backed")
     .eq("tutorial_session_id", request.tutorialSessionId);
   const manifest = (manifestRows ?? []) as Array<Record<string, unknown>>;
   if (manifest.length === 0) throw notFound();
 
-  const included = manifest.filter((item) =>
-    isKit ? item.product_backed === true : item.presence === "present"
-  );
+  const included = manifest.filter((item) => {
+    if (isPalette) return item.palette_backed === true;
+    return isKit ? item.product_backed === true : item.presence === "present";
+  });
   const approved = included.find((item) => item.category === category);
   if (!approved) {
     throw new ResolutionFailure(
@@ -241,9 +266,13 @@ export async function resolveTutorialSource(
 
   const recommendationId = isKit
     ? session.kit_recommendation_id
+    : isPalette
+    ? session.custom_palette_recommendation_id
     : session.recommendation_id;
   const previewId = isKit
     ? session.canonical_kit_generated_image_id
+    : isPalette
+    ? session.canonical_custom_palette_preview_id
     : session.canonical_generated_image_id;
   if (typeof recommendationId !== "string" || typeof previewId !== "string") {
     throw new ResolutionFailure(
@@ -260,14 +289,26 @@ export async function resolveTutorialSource(
         "id,original_image_path,face_shape,skin_tone,undertone,eye_shape," +
           "lip_shape,hair_color,eye_color",
       ).eq("id", analysisId).maybeSingle(),
-      client.from(isKit ? "kit_generated_images" : "generated_images")
-        .select("id,storage_path").eq("id", previewId).maybeSingle(),
-      client.from(isKit ? "kit_makeup_recommendations" : "recommendations")
-        .select(
-          isKit
-            ? "id,makeup_style,product_snapshot_json"
-            : "id,makeup_style,recommendation_json",
-        ).eq("id", recommendationId).maybeSingle(),
+      client.from(
+        isKit
+          ? "kit_generated_images"
+          : isPalette
+          ? "custom_palette_generated_images"
+          : "generated_images",
+      ).select("id,storage_path").eq("id", previewId).maybeSingle(),
+      client.from(
+        isKit
+          ? "kit_makeup_recommendations"
+          : isPalette
+          ? "custom_palette_recommendations"
+          : "recommendations",
+      ).select(
+        isKit
+          ? "id,makeup_style,product_snapshot_json"
+          : isPalette
+          ? "id,makeup_style,palette_snapshot_json,recommendation_json"
+          : "id,makeup_style,recommendation_json",
+      ).eq("id", recommendationId).maybeSingle(),
     ]);
 
   const analysis = analysisResult?.data as Record<string, unknown> | null;
@@ -296,7 +337,11 @@ export async function resolveTutorialSource(
       previewPath,
       userId,
       analysisId,
-      isKit ? "kit-generated" : "generated",
+      isKit
+        ? "kit-generated"
+        : isPalette
+        ? "custom-palette-generated"
+        : "generated",
       recommendationId,
       imageExtensions,
     )
@@ -335,6 +380,23 @@ export async function resolveTutorialSource(
       409,
       "kit_preview_mismatch",
       "This step uses makeup that is not in your kit.",
+    );
+  }
+
+  const paletteSelections = isPalette
+    ? resolvePaletteSelections(
+      recommendation.palette_snapshot_json,
+      recommendation.recommendation_json,
+      category,
+    )
+    : [];
+  if (isPalette && paletteSelections.length === 0) {
+    // The manifest said this category was selected, so the frozen palette must
+    // hold it. Inventing a color is never the answer.
+    throw new ResolutionFailure(
+      409,
+      "palette_selection_missing",
+      "This step is not part of your palette.",
     );
   }
 
@@ -379,10 +441,11 @@ export async function resolveTutorialSource(
       hairColor: text(analysis, "hair_color"),
       eyeColor: text(analysis, "eye_color"),
     },
-    standardPlan: isKit
+    standardPlan: isKit || isPalette
       ? []
       : resolveStandardPlan(recommendation.recommendation_json, category),
     products,
+    paletteSelections,
   };
 }
 
@@ -419,6 +482,45 @@ export function resolveProducts(
     });
   }
   return resolved;
+}
+
+/// Extracts the frozen palette's choice for [category].
+///
+/// Reads the look's frozen palette only, and refuses one that no longer passes
+/// the contract rather than presenting a color nobody chose. The draft in the app
+/// and the current catalog defaults are never consulted.
+export function resolvePaletteSelections(
+  snapshot: unknown,
+  plan: unknown,
+  category: TutorialCategory,
+): ResolvedPaletteSelection[] {
+  let selections;
+  try {
+    selections = parseFrozenPalette(snapshot);
+  } catch {
+    return [];
+  }
+  const applications = typeof plan === "object" && plan !== null &&
+      Array.isArray((plan as Record<string, unknown>).applications)
+    ? (plan as { applications: Array<Record<string, unknown>> }).applications
+    : [];
+  return selections
+    .filter((s) => INVENTORY_TO_TUTORIAL[s.category_code] === category)
+    .map((s) => {
+      const guidance = applications.find((a) =>
+        a?.categoryCode === s.category_code
+      );
+      return {
+        categoryCode: s.category_code,
+        colorHex: s.adjusted_color_value,
+        colorLabel: s.color_label,
+        isAdjusted: s.adjusted_color_value !== s.base_color_value,
+        finish: s.finish_code,
+        placement: guidance ? text(guidance, "placement") : null,
+        technique: guidance ? text(guidance, "technique") : null,
+        intensity: guidance ? text(guidance, "intensity") : null,
+      };
+    });
 }
 
 /// Extracts the brand-neutral Standard Mode guidance for [category].

@@ -30,6 +30,7 @@ import {
 } from "./types.ts";
 import {
   isReusableManifest,
+  paletteBackedCategories,
   parseManifestResponse,
   productBackedCategories,
   resolveManifest,
@@ -85,16 +86,19 @@ function requestPayload(
   const input = value as Record<string, unknown>;
   const standard = input.generatedImageId;
   const kit = input.kitGeneratedImageId;
+  const palette = input.customPalettePreviewId;
   const hasStandard = typeof standard === "string";
   const hasKit = typeof kit === "string";
-  if (hasStandard === hasKit) {
+  const hasPalette = typeof palette === "string";
+  if ([hasStandard, hasKit, hasPalette].filter(Boolean).length !== 1) {
     throw new FunctionFailure(
       400,
       "invalid_request",
       "Provide exactly one canonical preview.",
     );
   }
-  const previewId = (hasStandard ? standard : kit) as string;
+  const previewId =
+    (hasPalette ? palette : hasStandard ? standard : kit) as string;
   if (!uuidPattern.test(previewId)) {
     throw new FunctionFailure(
       400,
@@ -102,6 +106,7 @@ function requestPayload(
       "A valid canonical preview ID is required.",
     );
   }
+  if (hasPalette) return { previewId, sourceMode: "custom_color_palette" };
   return {
     previewId,
     sourceMode: hasStandard ? "standard" : "my_makeup_kit",
@@ -133,7 +138,7 @@ Deno.serve(async (request: Request) => {
   let telemetryClient: TelemetryClient | null = null;
   let metricUserId: string | null = null;
   let metricPreviewId: string | null = null;
-  let metricSourceMode: "standard" | "my_makeup_kit" | null = null;
+  let metricSourceMode: SourceMode | null = null;
   let metricSessionId: string | null = null;
   let metricModel: string | null = null;
   let geminiStartedAt: number | null = null;
@@ -186,12 +191,24 @@ Deno.serve(async (request: Request) => {
     metricPreviewId = previewId;
     metricSourceMode = sourceMode;
     const isKit = sourceMode === "my_makeup_kit";
+    const isPalette = sourceMode === "custom_color_palette";
+    const previewColumn = isKit
+      ? "canonical_kit_generated_image_id"
+      : isPalette
+      ? "canonical_custom_palette_preview_id"
+      : "canonical_generated_image_id";
 
     // Every read below goes through the RLS-scoped user client, so a preview
     // belonging to another account simply does not resolve.
-    const previewTable = isKit ? "kit_generated_images" : "generated_images";
+    const previewTable = isKit
+      ? "kit_generated_images"
+      : isPalette
+      ? "custom_palette_generated_images"
+      : "generated_images";
     const recommendationColumn = isKit
       ? "kit_recommendation_id"
+      : isPalette
+      ? "custom_palette_recommendation_id"
       : "recommendation_id";
     const { data: preview, error: previewError } = await client
       .from(previewTable)
@@ -218,12 +235,7 @@ Deno.serve(async (request: Request) => {
       .select(
         "id,manifest_status,manifest_prompt_version,manifest_schema_version",
       )
-      .eq(
-        isKit
-          ? "canonical_kit_generated_image_id"
-          : "canonical_generated_image_id",
-        previewId,
-      )
+      .eq(previewColumn, previewId)
       .maybeSingle();
     const existing = existingSession as Record<string, unknown> | null;
     if (
@@ -235,7 +247,9 @@ Deno.serve(async (request: Request) => {
     ) {
       const { data: items } = await client
         .from("tutorial_v4_manifest_items")
-        .select("category,position,presence,visual_confidence,product_backed")
+        .select(
+          "category,position,presence,visual_confidence,product_backed,palette_backed",
+        )
         .eq("tutorial_session_id", existing.id as string)
         .order("position", { ascending: true });
       if (
@@ -342,7 +356,11 @@ Deno.serve(async (request: Request) => {
         previewPath,
         userId,
         analysisId,
-        isKit ? "kit-generated" : "generated",
+        isKit
+          ? "kit-generated"
+          : isPalette
+          ? "custom-palette-generated"
+          : "generated",
         recommendationId,
       )
     ) {
@@ -376,6 +394,28 @@ Deno.serve(async (request: Request) => {
       supportingContext =
         `My Makeup Kit Mode. Categories the user owns a product for: ${
           [...backed].join(", ") || "none"
+        }. This is context only and never evidence of visual presence.`;
+    }
+    if (isPalette) {
+      const { data: paletteRecommendation, error: paletteError } = await client
+        .from("custom_palette_recommendations")
+        .select("id,palette_snapshot_json")
+        .eq("id", recommendationId)
+        .maybeSingle();
+      if (paletteError || !paletteRecommendation) {
+        throw new FunctionFailure(
+          404,
+          "palette_recommendation_not_found",
+          "The makeup plan for this look is no longer available.",
+        );
+      }
+      backed = paletteBackedCategories(
+        (paletteRecommendation as unknown as Record<string, unknown>)
+          .palette_snapshot_json,
+      );
+      supportingContext =
+        `Custom Color Palette Mode. Categories the user selected: ${
+          [...backed].join(", ")
         }. This is context only and never evidence of visual presence.`;
     }
 
@@ -442,6 +482,9 @@ Deno.serve(async (request: Request) => {
     if (isKit) {
       sessionRow.kit_recommendation_id = recommendationId;
       sessionRow.canonical_kit_generated_image_id = previewId;
+    } else if (isPalette) {
+      sessionRow.custom_palette_recommendation_id = recommendationId;
+      sessionRow.canonical_custom_palette_preview_id = previewId;
     } else {
       sessionRow.recommendation_id = recommendationId;
       sessionRow.canonical_generated_image_id = previewId;
@@ -450,9 +493,7 @@ Deno.serve(async (request: Request) => {
     const { data: session, error: sessionError } = await client
       .from("tutorial_v4_sessions")
       .upsert(sessionRow as never, {
-        onConflict: isKit
-          ? "canonical_kit_generated_image_id"
-          : "canonical_generated_image_id",
+        onConflict: previewColumn,
       })
       .select("id")
       .single();
@@ -490,6 +531,7 @@ Deno.serve(async (request: Request) => {
           presence: item.presence,
           visual_confidence: item.visualConfidence,
           product_backed: item.productBacked,
+          palette_backed: item.paletteBacked,
         })) as never,
       );
     if (itemsError) {

@@ -24,11 +24,13 @@ abstract interface class TutorialRemoteDataSource {
   Future<Object?> analyzeManifest({
     required String previewId,
     required bool isMyMakeupKit,
+    bool isCustomPalette = false,
   });
 
   Future<Map<String, Object?>?> fetchSession({
     required String previewId,
     required bool isMyMakeupKit,
+    bool isCustomPalette = false,
   });
 
   Future<Map<String, Object?>?> fetchSessionById(String sessionId);
@@ -47,11 +49,13 @@ abstract interface class TutorialRemoteDataSource {
   Future<Map<String, Object?>?> fetchPreview({
     required String previewId,
     required bool isMyMakeupKit,
+    bool isCustomPalette = false,
   });
 
   Future<Map<String, Object?>?> fetchRecommendation({
     required String recommendationId,
     required bool isMyMakeupKit,
+    bool isCustomPalette = false,
   });
 
   /// Requests one guideline. The server enforces its own duplicate protection;
@@ -73,8 +77,9 @@ class SupabaseTutorialRemoteDataSource extends SupabaseRemoteDataSource
 
   static const _sessionColumns =
       'id,user_id,analysis_id,source_mode,recommendation_id,'
-      'kit_recommendation_id,canonical_generated_image_id,'
-      'canonical_kit_generated_image_id,status,manifest_status,manifest_model,'
+      'kit_recommendation_id,custom_palette_recommendation_id,'
+      'canonical_generated_image_id,canonical_kit_generated_image_id,'
+      'canonical_custom_palette_preview_id,status,manifest_status,manifest_model,'
       'manifest_prompt_version,manifest_schema_version,manifest_created_at,'
       'tutorial_model,tutorial_prompt_version,tutorial_resolution,created_at,'
       'updated_at,completed_at';
@@ -86,7 +91,10 @@ class SupabaseTutorialRemoteDataSource extends SupabaseRemoteDataSource
   @override
   String? get currentUserId => client.auth.currentUser?.id;
 
-  String _previewColumn(bool isMyMakeupKit) => isMyMakeupKit
+  String _previewColumn(bool isMyMakeupKit, bool isCustomPalette) =>
+      isCustomPalette
+      ? 'canonical_custom_palette_preview_id'
+      : isMyMakeupKit
       ? 'canonical_kit_generated_image_id'
       : 'canonical_generated_image_id';
 
@@ -94,12 +102,15 @@ class SupabaseTutorialRemoteDataSource extends SupabaseRemoteDataSource
   Future<Object?> analyzeManifest({
     required String previewId,
     required bool isMyMakeupKit,
+    bool isCustomPalette = false,
   }) async {
     try {
       final response = await client.functions.invoke(
         'analyze-tutorial-manifest-v4',
         body: <String, String>{
-          if (isMyMakeupKit)
+          if (isCustomPalette)
+            'customPalettePreviewId': previewId
+          else if (isMyMakeupKit)
             'kitGeneratedImageId': previewId
           else
             'generatedImageId': previewId,
@@ -130,11 +141,12 @@ class SupabaseTutorialRemoteDataSource extends SupabaseRemoteDataSource
   Future<Map<String, Object?>?> fetchSession({
     required String previewId,
     required bool isMyMakeupKit,
+    bool isCustomPalette = false,
   }) async {
     final row = await client
         .from('tutorial_v4_sessions')
         .select(_sessionColumns)
-        .eq(_previewColumn(isMyMakeupKit), previewId)
+        .eq(_previewColumn(isMyMakeupKit, isCustomPalette), previewId)
         .maybeSingle();
     return row;
   }
@@ -147,12 +159,15 @@ class SupabaseTutorialRemoteDataSource extends SupabaseRemoteDataSource
       .maybeSingle();
 
   @override
-  Future<List<Object?>> fetchManifestItems(String sessionId) async =>
-      await client
-          .from('tutorial_v4_manifest_items')
-          .select('category,position,presence,visual_confidence,product_backed')
-          .eq('tutorial_session_id', sessionId)
-          .order('position', ascending: true);
+  Future<List<Object?>> fetchManifestItems(
+    String sessionId,
+  ) async => await client
+      .from('tutorial_v4_manifest_items')
+      .select(
+        'category,position,presence,visual_confidence,product_backed,palette_backed',
+      )
+      .eq('tutorial_session_id', sessionId)
+      .order('position', ascending: true);
 
   @override
   Future<List<Object?>> fetchSteps(String sessionId) async => await client
@@ -181,10 +196,19 @@ class SupabaseTutorialRemoteDataSource extends SupabaseRemoteDataSource
   Future<Map<String, Object?>?> fetchPreview({
     required String previewId,
     required bool isMyMakeupKit,
+    bool isCustomPalette = false,
   }) => client
-      .from(isMyMakeupKit ? 'kit_generated_images' : 'generated_images')
+      .from(
+        isCustomPalette
+            ? 'custom_palette_generated_images'
+            : isMyMakeupKit
+            ? 'kit_generated_images'
+            : 'generated_images',
+      )
       .select(
-        isMyMakeupKit
+        isCustomPalette
+            ? 'id,analysis_id,custom_palette_recommendation_id'
+            : isMyMakeupKit
             ? 'id,analysis_id,kit_recommendation_id'
             : 'id,analysis_id,recommendation_id',
       )
@@ -195,14 +219,24 @@ class SupabaseTutorialRemoteDataSource extends SupabaseRemoteDataSource
   Future<Map<String, Object?>?> fetchRecommendation({
     required String recommendationId,
     required bool isMyMakeupKit,
+    bool isCustomPalette = false,
   }) => client
-      .from(isMyMakeupKit ? 'kit_makeup_recommendations' : 'recommendations')
+      .from(
+        isCustomPalette
+            ? 'custom_palette_recommendations'
+            : isMyMakeupKit
+            ? 'kit_makeup_recommendations'
+            : 'recommendations',
+      )
       .select(
         // Both modes select the column holding their validated plan. Standard
         // Mode's `recommendation_json` was previously left out, which is why a
         // Standard tutorial had no shade, finish, or intensity to show: the
         // metadata was never fetched, so every category resolved to empty.
-        isMyMakeupKit
+        isCustomPalette
+            ? 'id,analysis_id,makeup_style,model_name,prompt_version,'
+                  'created_at,palette_snapshot_json,recommendation_json'
+            : isMyMakeupKit
             ? 'id,analysis_id,makeup_style,model_name,prompt_version,'
                   'created_at,product_snapshot_json'
             : 'id,analysis_id,makeup_style,model_name,prompt_version,'

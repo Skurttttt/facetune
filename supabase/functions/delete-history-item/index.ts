@@ -219,12 +219,26 @@ Deno.serve(async (request) => {
         true,
       );
     }
+    const { data: paletteGenerated, error: paletteGeneratedError } =
+      await client
+        .from("custom_palette_generated_images")
+        .select("storage_path")
+        .eq("analysis_id", analysisId);
+    if (paletteGeneratedError) {
+      throw new FunctionFailure(
+        500,
+        "palette_preview_lookup_failed",
+        "This history item's previews could not be verified.",
+        true,
+      );
+    }
     const recordedPaths = [
       ...(analysis?.original_image_path
         ? [analysis.original_image_path as string]
         : []),
       ...((generated ?? []).map((row) => row.storage_path as string)),
       ...((kitGenerated ?? []).map((row) => row.storage_path as string)),
+      ...((paletteGenerated ?? []).map((row) => row.storage_path as string)),
     ];
     try {
       assertOwnedHistoryPaths(recordedPaths, prefix);

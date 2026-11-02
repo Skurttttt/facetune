@@ -31,6 +31,7 @@ export interface ManifestItem extends ManifestVerdict {
   position: number;
   /** True only when an owned product maps to this category. */
   productBacked: boolean;
+  paletteBacked: boolean;
   /** True when this category becomes a tutorial step. */
   included: boolean;
 }

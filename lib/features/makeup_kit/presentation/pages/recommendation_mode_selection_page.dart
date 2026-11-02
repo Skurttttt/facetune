@@ -150,18 +150,15 @@ class RecommendationModeSelectionPage extends ConsumerWidget {
   }
 
   /// Enters Custom Color Palette mode for the current analysis and style.
-  ///
-  /// [MakeupRecommendationMode] has no value for this mode yet: adding one
-  /// would force Tutorial's source-mode bridge to change, which belongs to the
-  /// Tutorial integration phase. The selection is cleared instead, so it can
-  /// never claim an earlier Standard or kit choice.
   void _startCustomPalette(BuildContext context, WidgetRef ref) {
     final analysis = ref.read(faceAnalysisControllerProvider).analysis;
     final style = ref
         .read(makeupStyleSelectionControllerProvider)
         .selectedStyle;
     if (analysis == null || style == null) return;
-    ref.read(makeupRecommendationModeControllerProvider.notifier).clear();
+    ref
+        .read(makeupRecommendationModeControllerProvider.notifier)
+        .select(MakeupRecommendationMode.customColorPalette);
     ref
         .read(customPaletteDraftControllerProvider.notifier)
         .prepareFor(analysisId: analysis.id, styleCode: style.code);

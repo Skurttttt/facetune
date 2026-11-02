@@ -107,8 +107,13 @@ class SupabaseLookPlanRepository
     requireAuthentication();
     try {
       final isKit = preview.isMyMakeupKit;
+      final isPalette = preview.isCustomPalette;
       final previewRow = await remote
-          .fetchPreview(previewId: preview.id, isMyMakeupKit: isKit)
+          .fetchPreview(
+            previewId: preview.id,
+            isMyMakeupKit: isKit,
+            isCustomPalette: isPalette,
+          )
           .timeout(_timeout);
       if (previewRow == null) {
         throw const TutorialFailure(
@@ -118,7 +123,11 @@ class SupabaseLookPlanRepository
         );
       }
       final recommendationId =
-          previewRow[isKit ? 'kit_recommendation_id' : 'recommendation_id']
+          previewRow[isPalette
+                  ? 'custom_palette_recommendation_id'
+                  : isKit
+                  ? 'kit_recommendation_id'
+                  : 'recommendation_id']
               ?.toString();
       if (recommendationId == null) {
         throw const TutorialFailure(
@@ -131,6 +140,7 @@ class SupabaseLookPlanRepository
           .fetchRecommendation(
             recommendationId: recommendationId,
             isMyMakeupKit: isKit,
+            isCustomPalette: isPalette,
           )
           .timeout(_timeout);
       if (row == null) {
@@ -187,6 +197,7 @@ class SupabaseTutorialManifestRepository
           .analyzeManifest(
             previewId: preview.id,
             isMyMakeupKit: preview.isMyMakeupKit,
+            isCustomPalette: preview.isCustomPalette,
           )
           .timeout(_analyzeTimeout);
       // Re-read rather than trust the response body: the persisted rows are
@@ -210,6 +221,7 @@ class SupabaseTutorialManifestRepository
         .fetchSession(
           previewId: preview.id,
           isMyMakeupKit: preview.isMyMakeupKit,
+          isCustomPalette: preview.isCustomPalette,
         )
         .timeout(_readTimeout);
     if (row == null) return null;
@@ -253,6 +265,7 @@ class SupabaseTutorialSessionRepository
           .fetchSession(
             previewId: preview.id,
             isMyMakeupKit: preview.isMyMakeupKit,
+            isCustomPalette: preview.isCustomPalette,
           )
           .timeout(_timeout);
       if (row == null) return null;
@@ -330,6 +343,11 @@ class SupabaseTutorialSessionRepository
   }
 
   CanonicalPreviewRef _previewRefFrom(Map<String, Object?> row) {
+    final palettePreview = row['canonical_custom_palette_preview_id']
+        ?.toString();
+    if (palettePreview != null) {
+      return CanonicalPreviewRef.customColorPalette(palettePreview);
+    }
     final kitPreview = row['canonical_kit_generated_image_id']?.toString();
     if (kitPreview != null) {
       return CanonicalPreviewRef.myMakeupKit(kitPreview);

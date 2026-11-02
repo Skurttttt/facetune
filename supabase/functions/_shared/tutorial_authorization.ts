@@ -19,7 +19,10 @@
  */
 
 /** Which pipeline a canonical Final Preview came from, in Tutorial vocabulary. */
-export type TutorialSourceMode = "standard" | "my_makeup_kit";
+export type TutorialSourceMode =
+  | "standard"
+  | "my_makeup_kit"
+  | "custom_color_palette";
 
 export interface TutorialAuthorization {
   authorized: boolean;

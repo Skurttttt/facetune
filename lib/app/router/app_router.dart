@@ -14,6 +14,7 @@ import '../../features/authentication/presentation/controllers/auth_controller.d
 import '../../features/authentication/presentation/controllers/auth_state.dart';
 import '../../features/custom_palette/presentation/pages/custom_palette_category_page.dart';
 import '../../features/custom_palette/presentation/pages/custom_palette_page.dart';
+import '../../features/custom_palette/presentation/pages/custom_palette_result_page.dart';
 import '../../features/custom_palette/presentation/pages/custom_palette_review_page.dart';
 import '../../features/history/presentation/pages/history_page.dart';
 import '../../features/home/presentation/pages/home_page.dart';
@@ -270,6 +271,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: 'customPaletteReview',
         pageBuilder: (context, state) =>
             buildJourneyPage(context, state, const CustomPaletteReviewPage()),
+      ),
+      GoRoute(
+        path: AppConstants.customPaletteResultRoute,
+        name: 'customPaletteResult',
+        pageBuilder: (context, state) =>
+            buildJourneyPage(context, state, const CustomPaletteResultPage()),
       ),
       GoRoute(
         path: AppConstants.subscriptionRoute,

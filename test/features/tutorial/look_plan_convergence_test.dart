@@ -283,6 +283,8 @@ void main() {
             'standard:$recommendationId',
           MyMakeupKitLookPlanSource(:final kitRecommendationId) =>
             'kit:$kitRecommendationId',
+          CustomPaletteLookPlanSource(:final recommendationId) =>
+            'palette:$recommendationId',
         };
         expect(described, contains(plan.id));
       }

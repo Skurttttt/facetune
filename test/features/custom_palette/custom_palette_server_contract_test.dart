@@ -88,7 +88,7 @@ void main() {
     );
   });
 
-  test('the function is JWT-protected and never reached from Flutter', () {
+  test('the functions are JWT-protected and hold no service key at entry', () {
     final config = File('supabase/config.toml').readAsStringSync();
     expect(
       config.replaceAll('\r\n', '\n'),
@@ -114,22 +114,5 @@ void main() {
       ).readAsStringSync(),
       isNot(contains('SERVICE_ROLE')),
     );
-    for (final file
-        in Directory('lib')
-            .listSync(recursive: true)
-            .whereType<File>()
-            .where((file) => file.path.endsWith('.dart'))) {
-      final source = file.readAsStringSync();
-      expect(
-        source,
-        isNot(contains('generate-custom-palette-recommendation')),
-        reason: file.path,
-      );
-      expect(
-        source,
-        isNot(contains('generate-custom-palette-preview')),
-        reason: file.path,
-      );
-    }
   });
 }

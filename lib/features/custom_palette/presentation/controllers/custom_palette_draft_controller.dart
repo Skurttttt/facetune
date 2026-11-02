@@ -7,6 +7,7 @@ import '../../../makeup_kit/domain/entities/makeup_kit_finish.dart';
 import '../../data/custom_palette_providers.dart';
 import '../../domain/catalog/custom_palette_catalog.dart';
 import '../../domain/catalog/custom_palette_color_model.dart';
+import '../../domain/entities/custom_palette_look.dart';
 import '../../domain/repositories/custom_palette_gateway.dart';
 import '../../domain/validation/custom_palette_contract.dart';
 import 'custom_palette_draft_state.dart';
@@ -50,6 +51,37 @@ class CustomPaletteDraftController
     );
   }
 
+  /// Starts a new draft from a generated look's frozen palette.
+  ///
+  /// The look is not touched and never can be: generating from this draft makes a
+  /// new palette, linked back through [CustomPaletteDraftState.derivedFromPaletteId].
+  /// Every value comes from the look's own record, not from catalog defaults.
+  void startFromLook(CustomPaletteRecommendation look) {
+    _operationEpoch += 1;
+    state = CustomPaletteDraftState(
+      analysisId: look.analysisId,
+      styleCode: look.styleCode,
+      derivedFromPaletteId: look.id,
+      selections: {
+        for (final shade in look.palette)
+          shade.category: () {
+            final position = CustomPaletteColorModel.toHsl(shade.adjustedColor);
+            return CustomPaletteDraftSelection(
+              enabled: true,
+              base: CustomPaletteSwatch(
+                shade.colorLabel,
+                shade.baseColor.value,
+              ),
+              saturation: position.saturation,
+              lightness: position.lightness,
+              finish: shade.finish,
+              restoredColor: shade.adjustedColor,
+            );
+          }(),
+      },
+    );
+  }
+
   void setEnabled(MakeupKitCategory category, {required bool enabled}) {
     _edit(category, (selection) => selection.copyWith(enabled: enabled));
   }
@@ -64,6 +96,7 @@ class CustomPaletteDraftController
         base: swatch,
         saturation: position.saturation,
         lightness: position.lightness,
+        clearRestoredColor: true,
       ),
     );
   }
@@ -72,7 +105,10 @@ class CustomPaletteDraftController
     if (state.selectionFor(category).base == null) return;
     _edit(
       category,
-      (selection) => selection.copyWith(saturation: saturation.clamp(0, 100)),
+      (selection) => selection.copyWith(
+        saturation: saturation.clamp(0, 100),
+        clearRestoredColor: true,
+      ),
     );
   }
 
@@ -80,7 +116,10 @@ class CustomPaletteDraftController
     if (state.selectionFor(category).base == null) return;
     _edit(
       category,
-      (selection) => selection.copyWith(lightness: lightness.clamp(0, 100)),
+      (selection) => selection.copyWith(
+        lightness: lightness.clamp(0, 100),
+        clearRestoredColor: true,
+      ),
     );
   }
 
@@ -122,7 +161,7 @@ class CustomPaletteDraftController
       paletteRequestId: requestId,
     );
     try {
-      await _gateway.submit(
+      final recommendation = await _gateway.submit(
         CustomPaletteRequest(
           paletteRequestId: requestId,
           analysisId: analysisId,
@@ -135,6 +174,7 @@ class CustomPaletteDraftController
         state = _copy(
           status: CustomPaletteDraftStatus.submitted,
           paletteRequestId: requestId,
+          recommendation: recommendation,
         );
       }
     } on CustomPaletteFailure catch (failure) {
@@ -188,6 +228,7 @@ class CustomPaletteDraftController
     Map<MakeupKitCategory, CustomPaletteDraftSelection>? selections,
     CustomPaletteDraftStatus status = CustomPaletteDraftStatus.editing,
     String? paletteRequestId,
+    CustomPaletteRecommendation? recommendation,
     String? message,
     bool retryable = false,
   }) => CustomPaletteDraftState(
@@ -197,6 +238,7 @@ class CustomPaletteDraftController
     status: status,
     paletteRequestId: paletteRequestId,
     derivedFromPaletteId: state.derivedFromPaletteId,
+    recommendation: recommendation,
     message: message,
     retryable: retryable,
   );

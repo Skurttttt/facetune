@@ -65,7 +65,11 @@ class TutorialManifestItem {
     required this.presence,
     this.visualConfidence,
     this.productBacked = false,
+    this.paletteBacked = false,
   });
+
+  /// Whether the frozen palette selected this category. Custom Color Palette only.
+  final bool paletteBacked;
 
   final TutorialCategory category;
   final TutorialCategoryPresence presence;
@@ -141,9 +145,13 @@ class TutorialManifest {
       TutorialCategory.orderedSubset(
         items
             .where(
-              (item) => sourceMode == RecommendationSourceMode.myMakeupKit
-                  ? item.productBacked
-                  : item.presence == TutorialCategoryPresence.present,
+              (item) => switch (sourceMode) {
+                RecommendationSourceMode.myMakeupKit => item.productBacked,
+                RecommendationSourceMode.customColorPalette =>
+                  item.paletteBacked,
+                RecommendationSourceMode.standard =>
+                  item.presence == TutorialCategoryPresence.present,
+              },
             )
             .map((item) => item.category),
       );
@@ -175,13 +183,14 @@ class TutorialManifest {
   /// Categories visibly present in the canonical preview that have no
   /// validated owned-product selection behind them.
   ///
-  /// Always empty in Standard Mode, which has no ownership requirement. A
+  /// Always empty outside My Makeup Kit, the only mode with an ownership
+  /// requirement. A
   /// non-empty result in My Makeup Kit mode is the `kit_preview_mismatch`
   /// diagnostic: the preview shows makeup no selected product accounts for.
   /// Those categories never become steps — no product is invented and there is
   /// no fall back to Standard Mode — but they no longer block the tutorial.
   List<TutorialCategory> get unbackedPresentCategories =>
-      sourceMode == RecommendationSourceMode.standard
+      sourceMode != RecommendationSourceMode.myMakeupKit
       ? const <TutorialCategory>[]
       : TutorialCategory.orderedSubset(
           items

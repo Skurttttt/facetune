@@ -14,7 +14,8 @@ import '../../../makeup_kit/domain/entities/makeup_recommendation_mode.dart';
 /// never the identity contract.
 enum RecommendationSourceMode {
   standard('standard'),
-  myMakeupKit('my_makeup_kit');
+  myMakeupKit('my_makeup_kit'),
+  customColorPalette('custom_color_palette');
 
   const RecommendationSourceMode(this.code);
 
@@ -43,11 +44,15 @@ enum RecommendationSourceMode {
   ) => switch (mode) {
     MakeupRecommendationMode.standard => RecommendationSourceMode.standard,
     MakeupRecommendationMode.makeupKit => RecommendationSourceMode.myMakeupKit,
+    MakeupRecommendationMode.customColorPalette =>
+      RecommendationSourceMode.customColorPalette,
   };
 
   /// The inverse of [fromRecommendationMode].
   MakeupRecommendationMode toRecommendationMode() => switch (this) {
     RecommendationSourceMode.standard => MakeupRecommendationMode.standard,
     RecommendationSourceMode.myMakeupKit => MakeupRecommendationMode.makeupKit,
+    RecommendationSourceMode.customColorPalette =>
+      MakeupRecommendationMode.customColorPalette,
   };
 }

@@ -10,34 +10,21 @@ import 'package:facetune/features/makeup_kit/domain/entities/makeup_kit_category
 import 'package:facetune/features/makeup_kit/domain/entities/makeup_kit_finish.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/custom_palette_fixture.dart';
+
 const _blush = MakeupKitCategory.blush;
 const _lipstick = MakeupKitCategory.lipstick;
 
 CustomPaletteSwatch _swatch(String label) =>
     CustomPaletteCatalog.swatches.firstWhere((s) => s.label == label);
 
-class _FakeGateway implements CustomPaletteGateway {
-  final requests = <CustomPaletteRequest>[];
-  Object? error;
-  Completer<void>? gate;
-
-  @override
-  Future<void> submit(CustomPaletteRequest request) async {
-    requests.add(request);
-    final pending = gate;
-    if (pending != null) await pending.future;
-    final failure = error;
-    if (failure != null) throw failure;
-  }
-}
-
 void main() {
-  late _FakeGateway gateway;
+  late FakePaletteGateway gateway;
   late CustomPaletteDraftController controller;
   late int issued;
 
   setUp(() {
-    gateway = _FakeGateway();
+    gateway = FakePaletteGateway();
     issued = 0;
     controller = CustomPaletteDraftController(
       gateway,

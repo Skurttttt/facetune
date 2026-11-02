@@ -8,6 +8,9 @@ import '../../../../theme/app_semantics.dart';
 import '../../../../theme/app_tokens.dart';
 import '../../../analysis/presentation/controllers/face_analysis_controller.dart';
 import '../../../authentication/presentation/controllers/auth_controller.dart';
+import '../../../custom_palette/domain/entities/custom_palette_look.dart';
+import '../../../custom_palette/presentation/controllers/custom_palette_library_controllers.dart';
+import '../../../custom_palette/presentation/controllers/custom_palette_look_controller.dart';
 import '../../../makeup_styles/presentation/controllers/makeup_style_selection_controller.dart';
 import '../../../makeup_kit/domain/entities/kit_look_result.dart';
 import '../../../makeup_kit/data/providers/makeup_kit_library_providers.dart';
@@ -59,6 +62,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     if (_scrollController.position.extentAfter < 500) {
       ref.read(historyControllerProvider.notifier).loadMore();
       ref.read(makeupKitHistoryControllerProvider.notifier).loadMore();
+      ref.read(customPaletteHistoryControllerProvider.notifier).loadMore();
     }
   }
 
@@ -74,6 +78,18 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   Widget build(BuildContext context) {
     final state = ref.watch(historyControllerProvider);
     final kitState = ref.watch(makeupKitHistoryControllerProvider);
+    ref.listen<CustomPaletteLibraryState<CustomPaletteHistoryEntry>>(
+      customPaletteHistoryControllerProvider,
+      (previous, next) {
+        final message = next.message;
+        if (message == null ||
+            previous?.message == message ||
+            next.status == CustomPaletteLibraryStatus.failure) {
+          return;
+        }
+        showAppSnackBar(context, message: message, tone: AppTone.danger);
+      },
+    );
     final isGuest = ref.watch(authControllerProvider).user?.isAnonymous == true;
     final previewIsGenerating = ref.watch(
       makeupPreviewControllerProvider.select(
@@ -139,6 +155,9 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
               await Future.wait([
                 ref.read(historyControllerProvider.notifier).refresh(),
                 ref.read(makeupKitHistoryControllerProvider.notifier).refresh(),
+                ref
+                    .read(customPaletteHistoryControllerProvider.notifier)
+                    .refresh(),
               ]);
             },
             child: _content(
@@ -163,7 +182,8 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   ) {
     if (state.status == HistoryLoadStatus.failure &&
         state.items.isEmpty &&
-        kitState.items.isEmpty) {
+        kitState.items.isEmpty &&
+        ref.read(customPaletteHistoryControllerProvider).items.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
@@ -188,6 +208,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     final feedItems = buildHistoryFeed(
       recommendations: state.items,
       myMakeupKit: kitState.items,
+      customPalette: ref.watch(customPaletteHistoryControllerProvider).items,
       typeFilter: _typeFilter,
       statusFilter: state.filter,
       query: state.query,
@@ -199,10 +220,16 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     // there — there is no full-screen spinner that later gives way to a layout.
     final stillLoading =
         (state.status == HistoryLoadStatus.loading ? 1 : 0) +
-        (kitState.status == MakeupKitLibraryStatus.loading ? 1 : 0);
+        (kitState.status == MakeupKitLibraryStatus.loading ? 1 : 0) +
+        (ref.watch(customPaletteHistoryControllerProvider).status ==
+                CustomPaletteLibraryStatus.loading
+            ? 1
+            : 0);
     final isLoadingMore =
         state.status == HistoryLoadStatus.loadingMore ||
-        kitState.status == MakeupKitLibraryStatus.loadingMore;
+        kitState.status == MakeupKitLibraryStatus.loadingMore ||
+        ref.watch(customPaletteHistoryControllerProvider).status ==
+            CustomPaletteLibraryStatus.loadingMore;
     return CustomScrollView(
       // Opening a record and coming back must land where the user left, not at
       // the top. The offset is kept twice over: by [_scrollController], which
@@ -279,7 +306,12 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
               builder: (context) {
                 final reason = resolveHistoryEmptyReason(
                   hasAnyRecords:
-                      state.items.isNotEmpty || kitState.items.isNotEmpty,
+                      state.items.isNotEmpty ||
+                      kitState.items.isNotEmpty ||
+                      ref
+                          .read(customPaletteHistoryControllerProvider)
+                          .items
+                          .isNotEmpty,
                   typeFilter: _typeFilter,
                   statusFilter: state.filter,
                   query: state.query,
@@ -337,6 +369,15 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                 onOpen: () => _openKit(entry),
                 onDelete: () => _confirmDeleteKit(entry),
               ),
+              CustomPaletteHistoryFeedItem(:final entry) => HistoryCard(
+                item: item,
+                isMutating: ref
+                    .watch(customPaletteHistoryControllerProvider)
+                    .mutatingIds
+                    .contains(entry.result.analysis.id),
+                onOpen: () => _openPalette(entry),
+                onDelete: () => _confirmDeletePalette(entry),
+              ),
             },
           ),
         // Two rows standing in for the page being fetched — whether that is one
@@ -362,6 +403,21 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                   : () => ref
                         .read(historyControllerProvider.notifier)
                         .retryLoadMore(),
+            ),
+          ),
+        if (ref.watch(customPaletteHistoryControllerProvider).status ==
+            CustomPaletteLibraryStatus.failure)
+          SliverToBoxAdapter(
+            child: StatusState.error(
+              title: 'Could not load your Custom Color Palette looks',
+              message:
+                  ref.watch(customPaletteHistoryControllerProvider).message ??
+                  'Pull to refresh and try again.',
+              icon: Icons.palette_outlined,
+              actionLabel: 'Retry',
+              onAction: () => ref
+                  .read(customPaletteHistoryControllerProvider.notifier)
+                  .refresh(),
             ),
           ),
         if (kitState.status == MakeupKitLibraryStatus.failure &&
@@ -506,6 +562,54 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       ref.read(makeupStyleSelectionControllerProvider.notifier).clear();
       ref.read(makeupRecommendationControllerProvider.notifier).clear();
       ref.read(makeupPreviewControllerProvider.notifier).clear();
+    }
+  }
+
+  /// Opens a look from its own frozen rows. The editor's draft is not consulted.
+  void _openPalette(CustomPaletteHistoryEntry entry) {
+    final result = entry.result;
+    ref.read(faceAnalysisControllerProvider.notifier).restore(result.analysis);
+    ref
+        .read(makeupStyleSelectionControllerProvider.notifier)
+        .restore(result.style);
+    ref
+        .read(customPaletteLookControllerProvider.notifier)
+        .restore(
+          recommendation: result.recommendation,
+          preview: result.preview,
+        );
+    final saved = entry.savedLook;
+    if (saved != null) {
+      ref
+          .read(customPaletteResultActionsControllerProvider.notifier)
+          .restoreSavedLook(saved);
+    }
+    context.push(AppConstants.customPaletteResultRoute);
+  }
+
+  Future<void> _confirmDeletePalette(CustomPaletteHistoryEntry entry) async {
+    final confirmed = await showConfirmationDialog(
+      context,
+      title: 'Delete this history session?',
+      message:
+          'This permanently removes the original selfie, every preview, '
+          'recommendation and palette, and saved looks in this session.',
+      confirmLabel: 'Delete permanently',
+      isDestructive: true,
+    );
+    if (confirmed != true || !mounted) return;
+    final deleted = await ref
+        .read(customPaletteHistoryControllerProvider.notifier)
+        .deleteSession(entry);
+    if (!deleted || !mounted) return;
+    if (ref.read(faceAnalysisControllerProvider).analysis?.id ==
+        entry.result.analysis.id) {
+      ref.read(faceAnalysisControllerProvider.notifier).clear();
+      ref.read(makeupStyleSelectionControllerProvider.notifier).clear();
+      ref.read(makeupRecommendationControllerProvider.notifier).clear();
+      ref.read(makeupPreviewControllerProvider.notifier).clear();
+      ref.read(makeupKitLookControllerProvider.notifier).clear();
+      ref.read(customPaletteLookControllerProvider.notifier).clear();
     }
   }
 

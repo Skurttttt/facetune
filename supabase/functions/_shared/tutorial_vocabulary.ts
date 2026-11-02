@@ -92,4 +92,4 @@ export function inventoryCategoriesFor(category: TutorialCategory): string[] {
 }
 
 export type CategoryPresence = "present" | "absent" | "uncertain";
-export type SourceMode = "standard" | "my_makeup_kit";
+export type SourceMode = "standard" | "my_makeup_kit" | "custom_color_palette";

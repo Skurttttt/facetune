@@ -2,6 +2,7 @@ import '../../../makeup_kit/domain/entities/kit_makeup_recommendation.dart';
 import '../../domain/catalog/tutorial_category_mapping.dart';
 import '../../domain/entities/canonical_preview_ref.dart';
 import '../../domain/entities/look_product_snapshot.dart';
+import '../../../custom_palette/data/custom_palette_dtos.dart';
 import '../../domain/entities/recommendation_source_mode.dart';
 import '../../domain/entities/standard_look_entry.dart';
 import '../../domain/entities/tutorial_ai_configuration.dart';
@@ -116,6 +117,7 @@ abstract final class TutorialManifestDto {
           presence: presence,
           visualConfidence: _Read.nullableDouble(row, 'visual_confidence'),
           productBacked: row['product_backed'] == true,
+          paletteBacked: row['palette_backed'] == true,
         ),
       );
     }
@@ -216,6 +218,14 @@ abstract final class LookPlanDto {
           kitRecommendationId: id,
           productSnapshot: _snapshot(row['product_snapshot_json']),
         ),
+        RecommendationSourceMode.customColorPalette =>
+          CustomPaletteLookPlanSource(
+            recommendationId: id,
+            palette: CustomPaletteDtos.palette(row['palette_snapshot_json']),
+            applications: CustomPaletteDtos.applications(
+              row['recommendation_json'],
+            ),
+          ),
       },
       modelId: _Read.nullableText(row, 'model_name') ?? '',
       promptVersion: _Read.nullableText(row, 'prompt_version') ?? '',

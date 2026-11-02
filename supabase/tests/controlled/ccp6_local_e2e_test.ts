@@ -74,6 +74,11 @@ const gemini = {
   validatorCalls: 0,
   textCalls: 0,
   imageDelayMs: 0,
+  manifestCalls: 0,
+  guidelineCalls: 0,
+  manifestContext: "",
+  manifestPresent: [] as string[],
+  guidelinePrompts: [] as string[],
   prompts: [] as string[],
 };
 
@@ -85,14 +90,44 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const parts = body.contents[0].parts as Array<{ text?: string }>;
     const prompt = parts[0].text ?? "";
     if (target.pathname.includes("gemini-3.1-flash-image")) {
-      gemini.imageCalls += 1;
-      gemini.prompts.push(prompt);
+      if (prompt.startsWith("Edit the supplied selfie")) {
+        gemini.imageCalls += 1;
+        gemini.prompts.push(prompt);
+      } else {
+        gemini.guidelineCalls += 1;
+        gemini.guidelinePrompts.push(prompt);
+      }
       await new Promise((resolve) => setTimeout(resolve, gemini.imageDelayMs));
       const data = btoa(String.fromCharCode(...pngBytes(gemini.imageCalls)));
       return Response.json({
         candidates: [{
           content: { parts: [{ inlineData: { data, mimeType: "image/png" } }] },
         }],
+      });
+    }
+    if (prompt.startsWith("You are comparing two photographs")) {
+      gemini.manifestCalls += 1;
+      gemini.manifestContext = prompt;
+      const presence = (category: string) =>
+        gemini.manifestPresent.includes(category) ? "present" : "absent";
+      const text = JSON.stringify(Object.fromEntries(
+        [
+          "foundation",
+          "concealer",
+          "contour_bronzer",
+          "blush",
+          "highlighter",
+          "eyebrows",
+          "eyeshadow",
+          "eyeliner",
+          "lips",
+        ].map((category) => [
+          category,
+          { presence: presence(category), visualConfidence: 0.9 },
+        ]),
+      ));
+      return Response.json({
+        candidates: [{ content: { parts: [{ text }] } }],
       });
     }
     if (prompt.startsWith("You are checking")) {
@@ -439,4 +474,205 @@ Deno.test("an unreachable validator can never accept", async () => {
   ) as unknown as { code: string };
   assertEquals(error.code, "palette_preview_failed");
   assertEquals((await ledger(user, operationId))?.status, "released");
+});
+
+// ---------------------------------------------------------------------------
+// CCP-7: the real manifest, step and deletion functions, captured in process.
+// ---------------------------------------------------------------------------
+type Handler = (request: Request) => Promise<Response> | Response;
+
+async function loadFunction(path: string): Promise<Handler> {
+  const realServe = Deno.serve;
+  let captured: Handler | null = null;
+  // deno-lint-ignore no-explicit-any
+  (Deno as any).serve = (handler: Handler) => {
+    captured = handler;
+    return { finished: Promise.resolve() };
+  };
+  try {
+    await import(path);
+  } finally {
+    // deno-lint-ignore no-explicit-any
+    (Deno as any).serve = realServe;
+  }
+  if (!captured) throw new Error(`No handler in ${path}`);
+  return captured;
+}
+
+const manifestHandler = await loadFunction(
+  "../../functions/analyze-tutorial-manifest-v4/index.ts",
+);
+const stepHandler = await loadFunction(
+  "../../functions/generate-tutorial-step-v4/index.ts",
+);
+const deleteHandler = await loadFunction(
+  "../../functions/delete-history-item/index.ts",
+);
+
+async function call(handler: Handler, token: string, body: unknown) {
+  const response = await handler(http(token, body));
+  return { status: response.status, body: await response.json() };
+}
+
+async function acceptedLook(
+  user: Awaited<ReturnType<typeof signUp>>,
+  selections?: unknown[],
+) {
+  const analysisId = await createAnalysis(user);
+  const authorization = `Bearer ${user.token}`;
+  const recommendation = await createRecommendation(
+    http(user.token, {
+      ...recommendationBody(analysisId, crypto.randomUUID()),
+      ...(selections ? { categorySelections: selections } : {}),
+    }),
+    recommendationPorts(authorization),
+  );
+  const recommendationId = (recommendation.body as {
+    recommendation: { id: string };
+  }).recommendation.id;
+  gemini.validations = [observed()];
+  const result = await preview(user, recommendationId, crypto.randomUUID());
+  const previewId = (result.body as { preview: { id: string } }).preview.id;
+  return { analysisId, recommendationId, previewId };
+}
+
+Deno.test("Tutorial: a selected category judged absent gets a step, with its frozen color", async () => {
+  const user = await signUp();
+  const { previewId } = await acceptedLook(user);
+  gemini.manifestPresent = ["foundation"];
+  const manifestsBefore = gemini.manifestCalls;
+
+  const manifest = await call(manifestHandler, user.token, {
+    customPalettePreviewId: previewId,
+  });
+  assertEquals(manifest.status, 200, JSON.stringify(manifest.body));
+  assertEquals(manifest.body.manifest.sourceMode, "custom_color_palette");
+  assertEquals(manifest.body.manifest.manifestStatus, "accepted");
+  assertEquals(
+    manifest.body.manifest.promptVersion,
+    "tutorial_manifest_v4_1",
+    "the protected manifest version is unchanged",
+  );
+  assertEquals(gemini.manifestCalls, manifestsBefore + 1);
+  assert(gemini.manifestContext.includes("Custom Color Palette Mode"));
+  assert(gemini.manifestContext.includes("blush"));
+
+  const items = await user.client
+    .from("tutorial_v4_manifest_items")
+    .select("category,presence,palette_backed,product_backed,step_eligible")
+    .eq("tutorial_session_id", manifest.body.manifest.tutorialSessionId);
+  const byCategory = Object.fromEntries(
+    // deno-lint-ignore no-explicit-any
+    (items.data as any[]).map((row) => [row.category, row]),
+  );
+  assertEquals(byCategory.blush.presence, "absent");
+  assertEquals(byCategory.blush.palette_backed, true);
+  assertEquals(byCategory.blush.step_eligible, true);
+  assertEquals(byCategory.foundation.palette_backed, false);
+
+  // Reopening reuses the accepted manifest: no second paid analysis.
+  const reused = await call(manifestHandler, user.token, {
+    customPalettePreviewId: previewId,
+  });
+  assertEquals(reused.body.manifest.reused, true);
+  assertEquals(gemini.manifestCalls, manifestsBefore + 1);
+
+  const sessionId = manifest.body.manifest.tutorialSessionId;
+  const inserted = await user.client.from("tutorial_v4_steps").insert({
+    user_id: user.userId,
+    tutorial_session_id: sessionId,
+    category: "blush",
+    position: 1,
+  } as never);
+  assert(!inserted.error, inserted.error?.message);
+
+  const step = await call(stepHandler, user.token, {
+    tutorialSessionId: sessionId,
+    category: "blush",
+  });
+  assertEquals(step.status, 200, JSON.stringify(step.body));
+  assertEquals(step.body.step.promptVersion, "tutorial_guideline_v4_7");
+  assertEquals(step.body.products.mode, "custom_color_palette");
+  assertEquals(step.body.products.items[0].colorHex, "#D93A52");
+  assertEquals(step.body.products.items[0].finish, "matte");
+  assert(step.body.products.items[0].placement.length > 0);
+  assert(
+    gemini.guidelinePrompts.at(-1)!.includes("#D93A52 (matte finish)"),
+    "the guideline is grounded in the frozen palette",
+  );
+
+  // A visible category the user did not choose is never a step.
+  const refused = await call(stepHandler, user.token, {
+    tutorialSessionId: sessionId,
+    category: "foundation",
+  });
+  assertEquals(refused.body.error.code, "category_not_included");
+});
+
+Deno.test("Tutorial: a palette preview cannot be claimed as another mode", async () => {
+  const user = await signUp();
+  const { previewId } = await acceptedLook(user);
+  for (const key of ["generatedImageId", "kitGeneratedImageId"]) {
+    const result = await call(manifestHandler, user.token, {
+      [key]: previewId,
+    });
+    assertEquals(result.body.error.code, "canonical_preview_not_found", key);
+  }
+  const two = await call(manifestHandler, user.token, {
+    customPalettePreviewId: previewId,
+    generatedImageId: previewId,
+  });
+  assertEquals(two.body.error.code, "invalid_request");
+});
+
+Deno.test("Tutorial: another account cannot open a palette look", async () => {
+  const owner = await signUp();
+  const stranger = await signUp();
+  const { previewId } = await acceptedLook(owner);
+  const result = await call(manifestHandler, stranger.token, {
+    customPalettePreviewId: previewId,
+  });
+  assertEquals(result.body.error.code, "canonical_preview_not_found");
+});
+
+Deno.test("Saved Looks and history deletion, on the real stack", async () => {
+  const user = await signUp();
+  const { analysisId, previewId } = await acceptedLook(user);
+
+  const saved = await user.client.from("custom_palette_saved_looks").insert({
+    user_id: user.userId,
+    custom_palette_generated_image_id: previewId,
+    is_favorite: true,
+  } as never);
+  assert(!saved.error, saved.error?.message);
+
+  const deleted = await call(deleteHandler, user.token, { analysisId });
+  assertEquals(deleted.status, 200, JSON.stringify(deleted.body));
+  assertEquals(deleted.body.deleted, true);
+
+  for (
+    const table of [
+      "custom_palette_recommendations",
+      "custom_palette_generated_images",
+      "custom_palette_saved_looks",
+    ]
+  ) {
+    const { data } = await user.client.from(table).select("id");
+    assertEquals(data, [], table);
+  }
+  const files = await admin.storage.from("face-images").list(
+    `${user.userId}/analyses/${analysisId}`,
+  );
+  assertEquals(files.data ?? [], [], "private files are removed");
+
+  // Deleting history never refunds: the charge survives with its link cleared.
+  const { data: usage } = await user.client
+    .from("usage_ledger")
+    .select("status,source_mode,canonical_custom_palette_preview_id")
+    .eq("source_mode", "custom_color_palette")
+    .maybeSingle();
+  // deno-lint-ignore no-explicit-any
+  const row = usage as any;
+  assertEquals(row.status, "committed");
+  assertEquals(row.canonical_custom_palette_preview_id, null);
 });

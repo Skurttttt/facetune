@@ -1,3 +1,4 @@
+import '../../../custom_palette/domain/entities/custom_palette_look.dart';
 import '../../../makeup_kit/domain/entities/makeup_kit_finish.dart';
 import '../../../makeup_kit/domain/value_objects/normalized_hex_color.dart';
 import 'look_product_snapshot.dart';
@@ -133,6 +134,18 @@ class TutorialShadeDetails {
       intensity: TutorialIntensity.fromCode(entry.intensity),
     );
   }
+
+  /// Reads the shade block out of a frozen palette choice.
+  ///
+  /// The color and finish carry across untouched. Intensity is `null` because the
+  /// palette records no such value: how strongly to apply it is guidance, not part
+  /// of what the user chose.
+  factory TutorialShadeDetails.fromPaletteShade(CustomPaletteShade shade) =>
+      TutorialShadeDetails(
+        shadeName: shade.colorName,
+        color: shade.adjustedColor,
+        finish: TutorialFinish.fromKit(shade.finish),
+      );
 
   /// Reads the shade block out of an immutable owned-product snapshot item.
   ///

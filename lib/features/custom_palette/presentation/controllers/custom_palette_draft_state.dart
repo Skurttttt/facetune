@@ -3,6 +3,7 @@ import '../../../makeup_kit/domain/entities/makeup_kit_finish.dart';
 import '../../../makeup_kit/domain/value_objects/normalized_hex_color.dart';
 import '../../domain/catalog/custom_palette_catalog.dart';
 import '../../domain/catalog/custom_palette_color_model.dart';
+import '../../domain/entities/custom_palette_look.dart';
 import '../../domain/validation/custom_palette_contract.dart';
 
 enum CustomPaletteDraftStatus { editing, submitting, submitted, failed }
@@ -15,6 +16,7 @@ class CustomPaletteDraftSelection {
     this.saturation = 0,
     this.lightness = 0,
     this.finish,
+    this.restoredColor,
   });
 
   /// A disabled category keeps its values for re-enabling but is never sent.
@@ -24,10 +26,17 @@ class CustomPaletteDraftSelection {
   final int lightness;
   final MakeupKitFinish? finish;
 
+  /// The exact color of the look this draft was started from. The sliders hold
+  /// rounded positions, so recomputing could shift it by a step without the user
+  /// touching anything. Cleared by the first adjustment.
+  final NormalizedHexColor? restoredColor;
+
   /// The authoritative final color; `null` until a base is chosen.
   NormalizedHexColor? get adjustedColor {
     final swatch = base;
     if (swatch == null) return null;
+    final restored = restoredColor;
+    if (restored != null) return restored;
     return CustomPaletteColorModel.adjust(
       swatch.color,
       saturation: saturation,
@@ -52,12 +61,14 @@ class CustomPaletteDraftSelection {
     int? saturation,
     int? lightness,
     MakeupKitFinish? finish,
+    bool clearRestoredColor = false,
   }) => CustomPaletteDraftSelection(
     enabled: enabled ?? this.enabled,
     base: base ?? this.base,
     saturation: saturation ?? this.saturation,
     lightness: lightness ?? this.lightness,
     finish: finish ?? this.finish,
+    restoredColor: clearRestoredColor ? null : restoredColor,
   );
 }
 
@@ -73,6 +84,7 @@ class CustomPaletteDraftState {
     this.status = CustomPaletteDraftStatus.editing,
     this.paletteRequestId,
     this.derivedFromPaletteId,
+    this.recommendation,
     this.message,
     this.retryable = false,
   });
@@ -85,6 +97,9 @@ class CustomPaletteDraftState {
   /// Issued on the first submit and kept across retries of that request.
   final String? paletteRequestId;
   final String? derivedFromPaletteId;
+
+  /// What the server froze for the last successful submit.
+  final CustomPaletteRecommendation? recommendation;
   final String? message;
   final bool retryable;
 

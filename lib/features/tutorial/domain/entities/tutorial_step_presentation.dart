@@ -1,3 +1,4 @@
+import '../../../custom_palette/domain/entities/custom_palette_look.dart';
 import 'look_product_snapshot.dart';
 import 'recommendation_source_mode.dart';
 import 'standard_look_entry.dart';
@@ -84,6 +85,29 @@ final class MyMakeupKitProductPresentation extends TutorialProductPresentation {
       );
 }
 
+/// Custom Color Palette: the user's frozen choice, exactly as stored.
+///
+/// [shades] are read from the look's frozen palette, so a Tutorial can explain how
+/// to apply a color but has no way to present a different one.
+final class CustomPaletteShadePresentation extends TutorialProductPresentation {
+  CustomPaletteShadePresentation({
+    required super.category,
+    required List<CustomPaletteShade> palette,
+  }) : palette = List<CustomPaletteShade>.unmodifiable(palette);
+
+  final List<CustomPaletteShade> palette;
+
+  @override
+  RecommendationSourceMode get sourceMode =>
+      RecommendationSourceMode.customColorPalette;
+
+  @override
+  List<TutorialShadeDetails> get shades =>
+      List<TutorialShadeDetails>.unmodifiable(
+        palette.map(TutorialShadeDetails.fromPaletteShade),
+      );
+}
+
 /// Everything one tutorial step presents beside its guideline image.
 ///
 /// The four parts answer four different questions, from four different
@@ -146,6 +170,10 @@ class TutorialStepPresentation {
           category: category,
           items: productSnapshot.itemsFor(category),
         ),
+      CustomPaletteLookPlanSource() => CustomPaletteShadePresentation(
+        category: category,
+        palette: plan.paletteShadesFor(category),
+      ),
     };
     return TutorialStepPresentation(
       category: category,

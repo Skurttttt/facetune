@@ -1,3 +1,4 @@
+import { parseFrozenPalette } from "../_shared/custom_palette_contract.ts";
 import {
   categoryPosition,
   type CategoryPresence,
@@ -120,6 +121,28 @@ export function productBackedCategories(
   return backed;
 }
 
+/// The tutorial categories the frozen palette selected.
+///
+/// Read from the frozen palette through the server-owned mapping. A palette that
+/// no longer passes the contract is refused rather than guessed at.
+export function paletteBackedCategories(
+  snapshot: unknown,
+): Set<TutorialCategory> {
+  let selections;
+  try {
+    selections = parseFrozenPalette(snapshot);
+  } catch {
+    throw new FunctionFailure(
+      422,
+      "invalid_frozen_palette",
+      "This look can no longer be presented.",
+    );
+  }
+  return new Set(
+    selections.map((s) => INVENTORY_TO_TUTORIAL[s.category_code]),
+  );
+}
+
 /// Turns visual verdicts into tutorial inclusion.
 ///
 /// Standard Mode:  included = visually present. `uncertain` and `absent` are
@@ -127,6 +150,11 @@ export function productBackedCategories(
 /// My Makeup Kit:  included = backed by the look's immutable product snapshot,
 ///                 whatever the visual verdict. The snapshot says which products
 ///                 were selected; the image only says where and how.
+///
+/// Custom Color Palette: included = selected in the frozen palette, whatever the
+///                 visual verdict. A visible category the user did not select is
+///                 never a step, and it is not a mismatch either: that status is
+///                 a kit concept, and the preview validator already judged it.
 ///
 /// In My Makeup Kit a category that is visible but backed by no selected
 /// product is never included. It is still reported, as
@@ -138,15 +166,19 @@ export function resolveManifest(
   backedCategories: Set<TutorialCategory>,
 ): ResolvedManifest {
   const isKit = sourceMode === "my_makeup_kit";
+  const isPalette = sourceMode === "custom_color_palette";
   const items: ManifestItem[] = verdicts.map((verdict) => {
     const productBacked = isKit && backedCategories.has(verdict.category);
+    const paletteBacked = isPalette && backedCategories.has(verdict.category);
     const visible = verdict.presence === "present";
-    return {
+    const item = {
       ...verdict,
       position: categoryPosition(verdict.category),
       productBacked,
+      paletteBacked,
       included: isKit ? productBacked : visible,
     };
+    return isPalette ? { ...item, included: paletteBacked } : item;
   });
 
   // Sorting by the vocabulary position AFTER filtering is what keeps inclusion
@@ -198,6 +230,6 @@ export function isReusableManifest(options: {
   ) {
     return false;
   }
-  return options.sourceMode !== "my_makeup_kit" ||
+  return options.sourceMode === "standard" ||
     options.itemCount === TUTORIAL_CATEGORIES.length;
 }

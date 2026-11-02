@@ -106,6 +106,7 @@ class FakeTutorialRemote implements TutorialRemoteDataSource {
   Future<Object?> analyzeManifest({
     required String previewId,
     required bool isMyMakeupKit,
+    bool isCustomPalette = false,
   }) async {
     analyzeCalls += 1;
     session ??= sessionRow(isKit: isMyMakeupKit);
@@ -122,6 +123,7 @@ class FakeTutorialRemote implements TutorialRemoteDataSource {
   Future<Map<String, Object?>?> fetchSession({
     required String previewId,
     required bool isMyMakeupKit,
+    bool isCustomPalette = false,
   }) async => session;
 
   @override
@@ -154,6 +156,7 @@ class FakeTutorialRemote implements TutorialRemoteDataSource {
   Future<Map<String, Object?>?> fetchPreview({
     required String previewId,
     required bool isMyMakeupKit,
+    bool isCustomPalette = false,
   }) async => <String, Object?>{
     'id': previewId,
     'analysis_id': 'analysis-1',
@@ -167,6 +170,7 @@ class FakeTutorialRemote implements TutorialRemoteDataSource {
   Future<Map<String, Object?>?> fetchRecommendation({
     required String recommendationId,
     required bool isMyMakeupKit,
+    bool isCustomPalette = false,
   }) async => <String, Object?>{
     'id': recommendationId,
     'analysis_id': 'analysis-1',

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +11,7 @@ import '../../../../theme/app_tokens.dart';
 import '../../../makeup_kit/presentation/utils/makeup_kit_display.dart';
 import '../controllers/custom_palette_draft_controller.dart';
 import '../controllers/custom_palette_draft_state.dart';
+import '../controllers/custom_palette_look_controller.dart';
 import '../widgets/custom_palette_not_ready_state.dart';
 import '../widgets/custom_palette_selection_summary.dart';
 
@@ -82,9 +85,7 @@ class CustomPaletteReviewPage extends ConsumerWidget {
                 icon: Icons.auto_awesome_rounded,
                 isLoading: draft.isSubmitting,
                 onPressed: _canGenerate(draft)
-                    ? () => ref
-                          .read(customPaletteDraftControllerProvider.notifier)
-                          .generate()
+                    ? () => _generate(context, ref)
                     : null,
               ),
               const SizedBox(height: AppSpacing.lg),
@@ -96,7 +97,23 @@ class CustomPaletteReviewPage extends ConsumerWidget {
   }
 
   bool _canGenerate(CustomPaletteDraftState draft) =>
-      draft.isValid &&
-      !draft.isSubmitting &&
-      draft.status != CustomPaletteDraftStatus.submitted;
+      draft.isValid && !draft.isSubmitting;
+
+  /// Freezes the palette, then starts its first preview.
+  ///
+  /// Returning here without editing reopens the same look: the request id is
+  /// unchanged, so nothing is generated or charged a second time.
+  Future<void> _generate(BuildContext context, WidgetRef ref) async {
+    await ref.read(customPaletteDraftControllerProvider.notifier).generate();
+    final recommendation = ref
+        .read(customPaletteDraftControllerProvider)
+        .recommendation;
+    if (recommendation == null || !context.mounted) return;
+    unawaited(
+      ref
+          .read(customPaletteLookControllerProvider.notifier)
+          .start(recommendation),
+    );
+    await context.push(AppConstants.customPaletteResultRoute);
+  }
 }

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:facetune/core/supabase/supabase_availability_provider.dart';
+import 'package:facetune/features/custom_palette/data/custom_palette_providers.dart';
 import 'package:facetune/features/analysis/data/models/face_analysis_dto.dart';
 import 'package:facetune/features/analysis/data/providers/analysis_providers.dart';
 import 'package:facetune/features/analysis/data/repositories/unavailable_face_analysis_repository.dart';
@@ -541,6 +542,9 @@ Future<void> _pumpHistoryPage(
       overrides: [
         supabaseAvailableProvider.overrideWithValue(true),
         authRepositoryProvider.overrideWithValue(auth),
+        customPaletteLibraryRepositoryProvider.overrideWithValue(
+          const UnavailableCustomPaletteLibrary(),
+        ),
         historyRepositoryProvider.overrideWithValue(
           history ?? _CountingHistoryRepository(),
         ),

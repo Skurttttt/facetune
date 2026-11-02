@@ -12,6 +12,7 @@ import 'package:facetune/features/custom_palette/domain/repositories/custom_pale
 import 'package:facetune/features/custom_palette/domain/validation/custom_palette_contract.dart';
 import 'package:facetune/features/custom_palette/presentation/pages/custom_palette_category_page.dart';
 import 'package:facetune/features/custom_palette/presentation/pages/custom_palette_page.dart';
+import 'package:facetune/features/custom_palette/presentation/pages/custom_palette_result_page.dart';
 import 'package:facetune/features/custom_palette/presentation/pages/custom_palette_review_page.dart';
 import 'package:facetune/features/makeup_kit/domain/entities/makeup_recommendation_mode.dart';
 import 'package:facetune/features/makeup_kit/presentation/controllers/makeup_recommendation_mode_controller.dart';
@@ -27,25 +28,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../helpers/analysis_response_fixture.dart';
+import '../../helpers/custom_palette_fixture.dart';
 import '../../helpers/fake_auth_repository.dart';
-
-class _FakeGateway implements CustomPaletteGateway {
-  final requests = <CustomPaletteRequest>[];
-  Object? error;
-
-  @override
-  Future<void> submit(CustomPaletteRequest request) async {
-    requests.add(request);
-    final failure = error;
-    if (failure != null) throw failure;
-  }
-}
 
 class _Harness {
   _Harness(this.container, this.gateway);
 
   final ProviderContainer container;
-  final _FakeGateway gateway;
+  final FakePaletteGateway gateway;
 }
 
 Future<_Harness> _pump(
@@ -58,7 +48,7 @@ Future<_Harness> _pump(
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  final gateway = _FakeGateway();
+  final gateway = FakePaletteGateway();
   final container = ProviderContainer(
     overrides: [
       supabaseAvailableProvider.overrideWithValue(false),
@@ -112,6 +102,10 @@ Future<_Harness> _pump(
             GoRoute(
               path: AppConstants.customPaletteReviewRoute,
               builder: (context, state) => const CustomPaletteReviewPage(),
+            ),
+            GoRoute(
+              path: AppConstants.customPaletteResultRoute,
+              builder: (context, state) => const CustomPaletteResultPage(),
             ),
             GoRoute(
               path: AppConstants.stylesRoute,
@@ -173,7 +167,7 @@ void main() {
       expect(find.text('Choose your colors'), findsOneWidget);
       expect(
         harness.container.read(makeupRecommendationModeControllerProvider),
-        isNull,
+        MakeupRecommendationMode.customColorPalette,
       );
       expect(
         harness.container.read(makeupRecommendationControllerProvider).status,
@@ -438,7 +432,28 @@ void main() {
           'finishCode': 'matte',
         },
       ]);
-      expect(_callback(tester, 'Generate my look'), isNull);
+    });
+
+    testWidgets('generating opens the result with the frozen palette', (
+      tester,
+    ) async {
+      final harness = await _pump(tester);
+      await _enterPalette(tester);
+      await _chooseBlush(tester);
+      await _tapText(tester, 'Review palette');
+      await tester.tap(find.text('Generate my look'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final result = find.byType(CustomPaletteResultPage);
+      expect(result, findsOneWidget);
+      Finder onResult(String text) =>
+          find.descendant(of: result, matching: find.text(text));
+      expect(onResult('Your palette'), findsOneWidget);
+      expect(onResult('Red (#C8102E)'), findsOneWidget);
+      expect(onResult('Matte finish'), findsOneWidget);
+      expect(harness.gateway.operations, hasLength(1));
+      expect(harness.gateway.previewRecommendations, ['palette-1']);
     });
 
     testWidgets('an invalid draft cannot generate', (tester) async {
@@ -468,7 +483,9 @@ void main() {
       expect(_callback(tester, 'Generate my look'), isNotNull);
 
       harness.gateway.error = null;
-      await _tapText(tester, 'Generate my look');
+      await tester.tap(find.text('Generate my look'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
       expect(harness.gateway.requests, hasLength(2));
       expect(
         harness.gateway.requests.first.paletteRequestId,
@@ -563,9 +580,14 @@ void main() {
   });
 
   test('no Booking or provider scope, and no direct AI or database access', () {
-    final sources = Directory('lib/features/custom_palette')
+    final sources = Directory('lib/features/custom_palette/presentation')
         .listSync(recursive: true)
         .whereType<File>()
+        .followedBy(
+          Directory(
+            'lib/features/custom_palette/domain',
+          ).listSync(recursive: true).whereType<File>(),
+        )
         .where((file) => file.path.endsWith('.dart'));
     expect(sources, isNotEmpty);
     for (final file in sources) {

@@ -93,6 +93,7 @@ void main() {
           AppConstants.customPaletteRoute,
           AppConstants.customPaletteCategoryRoute,
           AppConstants.customPaletteReviewRoute,
+          AppConstants.customPaletteResultRoute,
           AppConstants.previewRoute,
           AppConstants.tutorialRoute,
         };

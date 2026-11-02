@@ -1,5 +1,7 @@
 import 'look_product_snapshot.dart';
 import 'standard_look_entry.dart';
+import '../../../custom_palette/domain/entities/custom_palette_look.dart';
+import '../catalog/tutorial_category_mapping.dart';
 import 'recommendation_source_mode.dart';
 import 'tutorial_category.dart';
 
@@ -58,6 +60,29 @@ final class MyMakeupKitLookPlanSource extends LookPlanSource {
   RecommendationSourceMode get mode => RecommendationSourceMode.myMakeupKit;
 }
 
+/// A look plan produced by Custom Color Palette from the user's frozen palette.
+final class CustomPaletteLookPlanSource extends LookPlanSource {
+  CustomPaletteLookPlanSource({
+    required this.recommendationId,
+    required List<CustomPaletteShade> palette,
+    List<CustomPaletteApplication> applications = const [],
+  }) : palette = List<CustomPaletteShade>.unmodifiable(palette),
+       applications = List<CustomPaletteApplication>.unmodifiable(applications);
+
+  /// The row in `custom_palette_recommendations` this plan was validated from.
+  final String recommendationId;
+
+  /// The immutable palette. The only source of this look's colors and finishes.
+  final List<CustomPaletteShade> palette;
+
+  /// Guidance from the validated plan. It holds no color and no finish.
+  final List<CustomPaletteApplication> applications;
+
+  @override
+  RecommendationSourceMode get mode =>
+      RecommendationSourceMode.customColorPalette;
+}
+
 /// The single convergence point both recommendation modes reduce to before a
 /// canonical final preview or any tutorial work happens.
 ///
@@ -111,7 +136,21 @@ class ValidatedLookPlan {
   LookProductSnapshot get productSnapshot => switch (source) {
     StandardLookPlanSource() => LookProductSnapshot.empty,
     MyMakeupKitLookPlanSource(:final productSnapshot) => productSnapshot,
+    CustomPaletteLookPlanSource() => LookProductSnapshot.empty,
   };
+
+  /// The frozen palette's choices for [category]. Empty in the other modes.
+  List<CustomPaletteShade> paletteShadesFor(TutorialCategory category) =>
+      switch (source) {
+        CustomPaletteLookPlanSource(:final palette) => List.unmodifiable(
+          palette.where(
+            (shade) =>
+                TutorialCategoryMapping.fromKitCategory(shade.category) ==
+                category,
+          ),
+        ),
+        _ => const <CustomPaletteShade>[],
+      };
 
   /// The brand-neutral entries for [category]. Empty in My Makeup Kit mode,
   /// which shows the user's own products instead.
@@ -119,6 +158,7 @@ class ValidatedLookPlan {
       switch (source) {
         StandardLookPlanSource(:final entries) => entries.forCategory(category),
         MyMakeupKitLookPlanSource() => const <StandardLookEntry>[],
+        CustomPaletteLookPlanSource() => const <StandardLookEntry>[],
       };
 
   /// Tutorial categories backed by a validated owned product, in deterministic
