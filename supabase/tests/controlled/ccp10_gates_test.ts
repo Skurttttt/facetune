@@ -233,4 +233,150 @@ Deno.test("the targeted remediation run is exactly three cases and cannot lead t
   );
 });
 
-Deno.test("the stops all ran", () => assertEquals(runs, 5));
+for (
+  const [inject, word] of [["preview_v1", "preview"], [
+    "validator_v1",
+    "validator",
+  ]]
+) {
+  Deno.test(`a ${word} v1 version stops the run at once and blocks later calls`, async () => {
+    const { code, summary, rows, out } = await run({
+      CCP10_DRY_INJECT: inject,
+    });
+    assertEquals(code, 3);
+    assert(
+      summary.stop_reason?.includes(`${word} version is not`),
+      summary.stop_reason ?? "",
+    );
+    assert(
+      summary.violations.some((v) => String(v).includes(`${word} version`)),
+    );
+    // 3 setup analyses and one case's 3 calls; nothing after the stop.
+    assertEquals(summary.provider_calls.total, 6);
+    assertEquals(rows.filter((r) => r.kind === "look").length, 1);
+    assertEquals([...Deno.readDirSync(join(out, "review"))].length, 0);
+  });
+}
+
+Deno.test("the Stage 1 rerun runs the 8 Stage 1 cases, alone, with full identity evidence", async () => {
+  const out = join(
+    WORKSPACE,
+    "out",
+    `gate-1r-${crypto.randomUUID().slice(0, 8)}`,
+  );
+  const command = (stage: string) =>
+    new Deno.Command(Deno.execPath(), {
+      args: [
+        "run",
+        "--no-lock",
+        "--allow-env",
+        "--allow-read",
+        `--allow-write=${out}`,
+        "--allow-sys",
+        "--allow-run=docker,icacls",
+        "--allow-net=127.0.0.1,localhost",
+        join(HERE, "ccp10_eval.ts"),
+      ],
+      cwd: FUNCTIONS,
+      env: {
+        CCP10_MODE: "dry",
+        CCP10_STAGE: stage,
+        CCP10_OUT: out,
+        CCP10_WORKSPACE: WORKSPACE,
+      },
+      stdout: "null",
+      stderr: "piped",
+    }).output();
+  const rerun = await command("1R");
+  assertEquals(rerun.code, 0, new TextDecoder().decode(rerun.stderr));
+  const summary = JSON.parse(
+    Deno.readTextFileSync(join(out, "summary-stage1.json")),
+  ) as Summary & {
+    run: string;
+    run_kind: string;
+    live_budget: {
+      spent_before: number;
+      ceiling: number;
+      new_call_allowance: number;
+    };
+  };
+  assertEquals(summary.run, "Stage 1 Post-Remediation Rerun");
+  assertEquals(summary.run_kind, "stage1_post_remediation_rerun");
+  assertEquals(summary.stop_reason, null);
+  assertEquals(summary.cases.preview_requests, 8);
+  assertEquals(summary.live_budget.new_call_allowance, 54);
+  assert(summary.provider_calls.total <= 54);
+  assertEquals(summary.evidence_complete, true);
+  const rows = Deno.readTextFileSync(join(out, "results.jsonl")).split("\n")
+    .filter(Boolean).map((line) => JSON.parse(line));
+  assertEquals(rows.map((r) => r.id).sort(), [
+    "A-blush-Gold",
+    "A-eyeliner-Violet",
+    "A-lipstick-Red",
+    "A-lipstick-Teal",
+    "B-lipstick-dark",
+    "C-eyeshadow-glitter",
+    "D1",
+    "D6",
+  ]);
+  for (const row of rows) {
+    assertEquals(
+      row.evidence.preview_version,
+      "custom_palette_preview_v2",
+      row.id,
+    );
+    assertEquals(
+      row.evidence.validator_version,
+      "custom_palette_validator_v2",
+      row.id,
+    );
+    const features = row.observations.at(-1).identityFeatures;
+    for (
+      const name of ["faceShape", "skinMarks", "apparentAge", "eyes", "framing"]
+    ) {
+      assertEquals(features[name], "same", `${row.id} ${name}`);
+    }
+    assert(!("invalid" in features), row.id);
+  }
+  // It stopped there: nothing from Stage 2, and no Stage 2 summary.
+  assert(rows.every((r) => !/^(F-|G-|N-|E-|H)/.test(r.id)));
+  let stage2Summary = true;
+  try {
+    Deno.statSync(join(out, "summary-stage2.json"));
+  } catch {
+    stage2Summary = false;
+  }
+  assertEquals(stage2Summary, false);
+});
+
+Deno.test("Stage 2 refuses the original Stage 1 as its predecessor", async () => {
+  const { out } = await run();
+  const stage2 = await new Deno.Command(Deno.execPath(), {
+    args: [
+      "run",
+      "--no-lock",
+      "--allow-env",
+      "--allow-read",
+      `--allow-write=${out}`,
+      "--allow-sys",
+      "--allow-run=docker,icacls",
+      "--allow-net=127.0.0.1,localhost",
+      join(HERE, "ccp10_eval.ts"),
+    ],
+    cwd: FUNCTIONS,
+    env: {
+      CCP10_MODE: "dry",
+      CCP10_STAGE: "2",
+      CCP10_OUT: out,
+      CCP10_WORKSPACE: WORKSPACE,
+    },
+    stdout: "null",
+    stderr: "piped",
+  }).output();
+  assertEquals(stage2.code, 2);
+  assert(
+    new TextDecoder().decode(stage2.stderr).includes("post-remediation rerun"),
+  );
+});
+
+Deno.test("the stops all ran", () => assertEquals(runs, 8));

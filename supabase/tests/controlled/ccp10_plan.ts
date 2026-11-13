@@ -30,6 +30,49 @@ export const REMEDIATION_R1 = [
 export const REMEDIATION_CEILING = 22;
 export const REMEDIATION_AUTHORIZATION =
   "CCP-10-REMEDIATION-R1:3-cases:22-calls";
+
+/**
+ * The clean Stage 1 after remediation: the same 8 cases and rules as Stage 1, with
+ * its own token and its own 54-call allowance on top of everything already spent.
+ * Only a run of this kind can be the predecessor of Stage 2.
+ */
+export const STAGE_1_RERUN_AUTHORIZATION =
+  "CCP-10-STAGE-1-RERUN:8-cases:54-calls";
+export const STAGE_1_RERUN_KIND = "stage1_post_remediation_rerun";
+export const STAGE_1_RERUN_TITLE = "Stage 1 Post-Remediation Rerun";
+
+export type RunKind = "1" | "2" | "R1" | "1R";
+
+export function authorizationFor(kind: RunKind): string {
+  switch (kind) {
+    case "1":
+      return LIVE_AUTHORIZATION[1];
+    case "2":
+      return LIVE_AUTHORIZATION[2];
+    case "R1":
+      return REMEDIATION_AUTHORIZATION;
+    case "1R":
+      return STAGE_1_RERUN_AUTHORIZATION;
+  }
+}
+
+/**
+ * The ceiling a run may count up to. The live budget is cumulative and never
+ * reset, so a later run's allowance sits on top of what was already spent, and no
+ * run may ever pass the overall total.
+ */
+export function runCeiling(kind: RunKind, spentBefore: number): number {
+  switch (kind) {
+    case "1":
+      return STAGE_1_CEILING;
+    case "2":
+      return TOTAL_CEILING;
+    case "R1":
+      return Math.min(TOTAL_CEILING, spentBefore + REMEDIATION_CEILING);
+    case "1R":
+      return Math.min(TOTAL_CEILING, spentBefore + STAGE_1_CEILING);
+  }
+}
 export type SelfieSlot = "S1" | "S2" | "S3";
 export type AccountId = "S1a" | "S1b" | "S2a" | "S2b" | "S3a" | "S3b";
 

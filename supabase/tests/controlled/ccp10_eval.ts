@@ -49,7 +49,12 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 import { createGeminiPreviewPorts } from "../../functions/generate-custom-palette-preview/gemini_client.ts";
 import { judgeValidatorResponse } from "../../functions/generate-custom-palette-preview/validator.ts";
-import { customPaletteValidatorPrompt } from "../../functions/generate-custom-palette-preview/validator_prompt.ts";
+import {
+  CUSTOM_PALETTE_VALIDATOR_VERSION,
+  customPaletteValidatorPrompt,
+  IDENTITY_FEATURES,
+} from "../../functions/generate-custom-palette-preview/validator_prompt.ts";
+import { CUSTOM_PALETTE_PREVIEW_PROMPT_VERSION } from "../../functions/generate-custom-palette-preview/prompt.ts";
 import {
   CUSTOM_COLOR_PALETTE_CONTRACT_VERSION,
   CUSTOM_COLOR_PALETTE_SOURCE_MODE,
@@ -80,12 +85,16 @@ import {
   paletteViolation,
   type ProviderKind,
   readReviewSheet,
+  recordValidatorObservations,
+  REQUIRED_PREVIEW_VERSION,
+  REQUIRED_VALIDATOR_VERSION,
   REVIEW_COLUMNS,
   reviewStopReason,
   samePalette,
   stageViolation,
   StopLoss,
   validatorBypassReason,
+  versionViolation,
   wilson,
 } from "./ccp10_guards.ts";
 import {
@@ -93,6 +102,7 @@ import {
   type AccountId,
   ACCOUNTS,
   ALL_CASES,
+  authorizationFor,
   type Choice,
   type EvalCase,
   isClearCutProbe,
@@ -103,16 +113,16 @@ import {
   type ProbeCase,
   PROBES,
   probeTarget,
-  REMEDIATION_AUTHORIZATION,
-  REMEDIATION_CEILING,
   REMEDIATION_R1,
   REPLAY_CASES,
+  runCeiling,
+  type RunKind,
   selfieOf,
   type SelfieSlot,
   type Stage,
   STAGE_1_ACCOUNTS,
-  STAGE_1_CEILING,
-  TOTAL_CEILING,
+  STAGE_1_RERUN_KIND,
+  STAGE_1_RERUN_TITLE,
   TUTORIAL_CATEGORY,
   type TutorialCase,
   TUTORIALS,
@@ -153,13 +163,26 @@ const mode = Deno.env.get("CCP10_MODE") === "live"
   ? "live" as const
   : "dry" as const;
 const stageText = Deno.env.get("CCP10_STAGE") ?? "1";
-if (stageText !== "1" && stageText !== "2" && stageText !== "R1") {
-  refuse("CCP10_STAGE must be 1, 2, or R1");
+if (!["1", "2", "R1", "1R"].includes(stageText)) {
+  refuse("CCP10_STAGE must be 1, 2, R1, or 1R");
 }
+const runKind = stageText as RunKind;
 /** R1 runs under every Stage 1 rule, but only its three cases, and on its own. */
-const remediation = stageText === "R1";
-const stage = (remediation ? 1 : Number(stageText)) as Stage;
+const remediation = runKind === "R1";
+/** 1R is Stage 1 again, after remediation: same cases, same rules, new allowance. */
+const rerun = runKind === "1R";
+const stage = (remediation || rerun ? 1 : Number(stageText)) as Stage;
 const runLabel = remediation ? "remediation-r1" : `stage${stage}`;
+// The remediation lock: the code loaded here must be the remediated versions.
+if (
+  CUSTOM_PALETTE_PREVIEW_PROMPT_VERSION !== REQUIRED_PREVIEW_VERSION ||
+  CUSTOM_PALETTE_VALIDATOR_VERSION !== REQUIRED_VALIDATOR_VERSION
+) {
+  refuse("The loaded preview or validator is not the remediated version.");
+}
+const liveBudgetFile = `${
+  Deno.env.get("USERPROFILE") ?? Deno.env.get("HOME")
+}/.facetune-eval/ccp10-live-budget.json`;
 const planned: ReadonlySet<string> | null = remediation
   ? new Set(REMEDIATION_R1)
   : null;
@@ -178,6 +201,8 @@ if (
     "validator_bypass",
     "manifest_call",
     "guideline_call",
+    "preview_v1",
+    "validator_v1",
   ]
     .includes(inject)
 ) {
@@ -217,8 +242,7 @@ try {
     }
   } else {
     if (
-      Deno.env.get("CCP10_LIVE_AUTHORIZATION") !==
-        (remediation ? REMEDIATION_AUTHORIZATION : LIVE_AUTHORIZATION[stage])
+      Deno.env.get("CCP10_LIVE_AUTHORIZATION") !== authorizationFor(runKind)
     ) {
       throw new GuardRefusal(
         "Live mode needs the exact authorization for this stage.",
@@ -226,6 +250,17 @@ try {
     }
     if (network.state !== "granted") {
       throw new GuardRefusal("Live mode needs permission for the Gemini host.");
+    }
+    // Only the first Stage 1 may start a live budget. Every later run must find the
+    // history it builds on, so a missing or relocated file cannot hand back calls.
+    if (runKind !== "1") {
+      try {
+        Deno.statSync(liveBudgetFile);
+      } catch {
+        throw new GuardRefusal(
+          "A later live run needs the live budget history, and it is missing.",
+        );
+      }
     }
     const keyFile = Deno.env.get("CCP10_KEY_FILE") ?? "";
     assertOutsideRepository("CCP10_KEY_FILE", keyFile, harnessRoot);
@@ -288,13 +323,7 @@ const dryCeiling = mode === "dry"
 // R1's ceiling sits on top of whatever the live budget has already spent, and the
 // whole evaluation still never passes the total ceiling.
 const spentBefore = new CallBudget(budgetPath, 0).total;
-const ceiling = dryCeiling > 0
-  ? dryCeiling
-  : remediation
-  ? Math.min(TOTAL_CEILING, spentBefore + REMEDIATION_CEILING)
-  : stage === 1
-  ? STAGE_1_CEILING
-  : TOTAL_CEILING;
+const ceiling = dryCeiling > 0 ? dryCeiling : runCeiling(runKind, spentBefore);
 const budget = new CallBudget(budgetPath, ceiling);
 const stopLoss = new StopLoss();
 const scenarioText = Deno.env.get("CCP10_DRY_SCENARIO") ?? "mixed";
@@ -356,40 +385,6 @@ function newRecord(): CaseProviderRecord {
   };
 }
 let current = newRecord();
-
-const codePattern = /^[a-z_]{1,40}$/;
-/** Copies closed vocabulary only, so model prose can never reach the results. */
-function safeObservations(text: string): Record<string, unknown> {
-  try {
-    const root = JSON.parse(text) as {
-      categories?: Array<Record<string, unknown>>;
-      introducedCategories?: unknown[];
-      identity?: unknown;
-    };
-    const code = (value: unknown) =>
-      typeof value === "string" && codePattern.test(value) ? value : "invalid";
-    return {
-      categories: (root.categories ?? []).map((entry) => ({
-        category: code(entry.categoryCode),
-        presence: code(entry.presence),
-        color: code(entry.color),
-        colorReason: code(entry.colorReason),
-        finish: code(entry.finish),
-        finishReason: code(entry.finishReason),
-      })),
-      introduced: (root.introducedCategories ?? []).map(code),
-      identity: code(root.identity),
-      identityFeatures: Object.fromEntries(
-        Object.entries(
-          (root as { identityFeatures?: Record<string, unknown> })
-            .identityFeatures ?? {},
-        ).map(([key, value]) => [code(key), code(value)]),
-      ),
-    };
-  } catch {
-    return { malformed: true };
-  }
-}
 
 async function sha256(text: string): Promise<string> {
   const digest = await crypto.subtle.digest(
@@ -481,7 +476,9 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     };
     const text = copy.candidates?.[0]?.content?.parts
       ?.map((part) => part.text ?? "").join("") ?? "";
-    current.observations.push(safeObservations(text));
+    current.observations.push(
+      recordValidatorObservations(text, IDENTITY_FEATURES),
+    );
     if (inject !== "validator_bypass") current.validatorTexts.push(text);
   }
   return response;
@@ -624,6 +621,10 @@ if (stage === 2) {
       stage1.cases.preview_requests !== stage1.cases.expected_preview_requests
     ) {
       refuse("Stage 1 did not finish cleanly.");
+    }
+    // The original Stage 1 failed human review. Only the clean rerun can lead on.
+    if ((stage1 as { run_kind?: string }).run_kind !== STAGE_1_RERUN_KIND) {
+      refuse("Stage 2 must follow a clean Stage 1 post-remediation rerun.");
     }
   } catch {
     refuse("Stage 2 needs Stage 1's summary.");
@@ -812,6 +813,7 @@ async function evidenceFor(
   acceptedAttemptStatus: string | null;
   storedOutcome: string | null;
   storedValidatorVersion: string | null;
+  versions: { preview: Array<string | null>; validator: Array<string | null> };
 }> {
   const row = await ownerQuery(`
     select json_build_object(
@@ -820,6 +822,7 @@ async function evidenceFor(
       'accepted_attempt', g.accepted_attempt_number,
       'outcome', g.validation_outcome,
       'validator_version', g.validator_version,
+      'preview_version', g.prompt_version,
       'ledger_status', u.status,
       'reserved', u.reserved_at is not null,
       'committed', u.committed_at is not null,
@@ -828,6 +831,8 @@ async function evidenceFor(
         select coalesce(json_agg(json_build_object(
           'number', a.attempt_number,
           'status', a.status,
+          'prompt_version', a.prompt_version,
+          'validator_version', a.validator_version,
           'seconds', round(extract(epoch from a.finished_at - a.started_at)::numeric, 3)
         ) order by a.attempt_number), '[]'::json)
         from public.custom_palette_preview_attempts a
@@ -848,7 +853,14 @@ async function evidenceFor(
     reserved: boolean | null;
     committed: boolean | null;
     released: boolean | null;
-    attempts: Array<{ number: number; status: string; seconds: number | null }>;
+    attempts: Array<{
+      number: number;
+      status: string;
+      seconds: number | null;
+      prompt_version: string | null;
+      validator_version: string | null;
+    }>;
+    preview_version: string | null;
   };
   const selections = parseFrozenPalette(row.snapshot);
   const recomputed = await paletteDigest(selections);
@@ -860,6 +872,17 @@ async function evidenceFor(
     acceptedAttemptStatus: accepted?.status ?? null,
     storedOutcome: row.outcome,
     storedValidatorVersion: row.validator_version,
+    versions: {
+      // An accepted preview's own record, and every attempt behind the request.
+      preview: [
+        ...(row.outcome === null ? [] : [row.preview_version]),
+        ...row.attempts.map((a) => a.prompt_version),
+      ],
+      validator: [
+        ...(row.outcome === null ? [] : [row.validator_version]),
+        ...row.attempts.map((a) => a.validator_version),
+      ],
+    },
     evidence: {
       operation_id: operationId,
       palette_id: recommendationId,
@@ -868,6 +891,7 @@ async function evidenceFor(
       accepted_attempt_number: row.accepted_attempt,
       validator_outcome: row.outcome ?? row.attempts.at(-1)?.status ?? null,
       validator_version: row.validator_version,
+      preview_version: row.preview_version,
       latency_ms: wallMs,
       attempt_seconds: row.attempts.map((a) => a.seconds),
       retry_count: Math.max(0, row.attempts.length - 1),
@@ -1009,6 +1033,23 @@ async function previewChecks(
     record({ id: "violation", block: "-", kind: "violation", reason: bypass });
     stopLoss.stop(bypass);
   }
+  // Dry-only fault injection: what a request would record if old code had run.
+  if (inject === "preview_v1") {
+    proof.versions.preview.push("custom_palette_preview_v1");
+  }
+  if (inject === "validator_v1") {
+    proof.versions.validator.push("custom_palette_validator_v1");
+  }
+  const versionStop = versionViolation(proof.versions);
+  if (versionStop) {
+    record({
+      id: "violation",
+      block: "-",
+      kind: "violation",
+      reason: versionStop,
+    });
+    stopLoss.stop(versionStop);
+  }
   const ledger = await ledgerFor(account, operationId);
 
   const accounting: string[] = [];
@@ -1058,7 +1099,7 @@ async function previewChecks(
   }
 
   // A preview that failed the validator check is never offered for review.
-  if (accepted && !bypass) {
+  if (accepted && !bypass && !versionStop) {
     await exportForReview(evalCase.id, account, outcome.previewId!, choices);
   }
   return {
@@ -1676,6 +1717,25 @@ const evidenceComplete = previews.length > 0 && previews.every((r) => {
 });
 
 const summary = {
+  run: rerun
+    ? STAGE_1_RERUN_TITLE
+    : remediation
+    ? "Targeted Remediation R1"
+    : `Stage ${stage}`,
+  run_kind: rerun
+    ? STAGE_1_RERUN_KIND
+    : remediation
+    ? "remediation_r1"
+    : `stage${stage}`,
+  versions_required: {
+    preview: REQUIRED_PREVIEW_VERSION,
+    validator: REQUIRED_VALIDATOR_VERSION,
+  },
+  live_budget: {
+    spent_before: spentBefore,
+    ceiling,
+    new_call_allowance: ceiling - spentBefore,
+  },
   simulated: mode === "dry",
   note: mode === "dry"
     ? "Simulated provider. Proves the harness only; these rates say nothing about Gemini."

@@ -30,17 +30,22 @@ import {
   markerPathsFor,
   paletteViolation,
   readReviewSheet,
+  recordValidatorObservations,
+  REQUIRED_PREVIEW_VERSION,
+  REQUIRED_VALIDATOR_VERSION,
   REVIEW_COLUMNS,
   reviewStopReason,
   samePalette,
   stageViolation,
   StopLoss,
   validatorBypassReason,
+  versionViolation,
   wilson,
 } from "./ccp10_guards.ts";
 import {
   ACCOUNTS,
   ALL_CASES,
+  authorizationFor,
   type Category,
   LIVE_AUTHORIZATION,
   lookById,
@@ -50,9 +55,11 @@ import {
   REMEDIATION_AUTHORIZATION,
   REMEDIATION_CEILING,
   REMEDIATION_R1,
+  runCeiling,
   selfieOf,
   STAGE_1_ACCOUNTS,
   STAGE_1_CEILING,
+  STAGE_1_RERUN_AUTHORIZATION,
   stepsOf,
   STYLES,
   TOTAL_CEILING,
@@ -1111,10 +1118,257 @@ Deno.test("the remediation token and the Stage tokens are not interchangeable", 
       CCP10_STAGE: "R2",
     });
     assertEquals(unknown.code, 2);
-    assert(unknown.stderr.includes("1, 2, or R1"), unknown.stderr);
+    assert(unknown.stderr.includes("1, 2, R1, or 1R"), unknown.stderr);
   } finally {
     Deno.removeSync(out, { recursive: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// The Stage 1 post-remediation rerun
+// ---------------------------------------------------------------------------
+
+Deno.test("rerun: its token is unique, and each run kind requires its own", () => {
+  const tokens = (["1", "2", "R1", "1R"] as const).map(authorizationFor);
+  assertEquals(new Set(tokens).size, 4);
+  assertEquals(authorizationFor("1R"), "CCP-10-STAGE-1-RERUN:8-cases:54-calls");
+  assertEquals(STAGE_1_RERUN_AUTHORIZATION, authorizationFor("1R"));
+});
+
+Deno.test("rerun: 54 new calls on top of the 38 already spent, never past 420", () => {
+  assertEquals(runCeiling("1R", 38), 92);
+  assertEquals(runCeiling("1R", 0), 54);
+  assertEquals(runCeiling("1R", 400), 420);
+  assertEquals(runCeiling("1R", 420), 420);
+  // The other kinds are unchanged.
+  assertEquals(runCeiling("1", 38), 54);
+  assertEquals(runCeiling("R1", 27), 49);
+  assertEquals(runCeiling("2", 38), 420);
+});
+
+Deno.test("rerun: the budget keeps prior calls and allows exactly 54 new ones", () => {
+  const dir = Deno.makeTempDirSync({ prefix: "ccp10-rerun-budget-" });
+  const path = join(dir, "ccp10-live-budget.json");
+  const prior = {
+    total: 38,
+    byKind: { analysis: 5, recommendation: 11, image: 11, validator: 11 },
+  };
+  Deno.writeTextFileSync(path, JSON.stringify(prior));
+  try {
+    const budget = new CallBudget(path, runCeiling("1R", 38));
+    // Reading the budget changes nothing.
+    assertEquals(JSON.parse(Deno.readTextFileSync(path)), prior);
+    let charged = 0;
+    while (true) {
+      try {
+        budget.charge("image");
+        charged += 1;
+      } catch (error) {
+        assert(error instanceof CeilingReached);
+        break;
+      }
+    }
+    assertEquals(charged, 54);
+    const after = JSON.parse(Deno.readTextFileSync(path));
+    assertEquals(after.total, 92);
+    // Prior calls are still there, by kind; nothing was reset to make room.
+    assertEquals(after.byKind.analysis, 5);
+    assertEquals(after.byKind.recommendation, 11);
+    assertEquals(after.byKind.validator, 11);
+    assertEquals(after.byKind.image, 11 + 54);
+    // A restart cannot hand any of it back.
+    assertThrows(
+      () => new CallBudget(path, runCeiling("1R", 38)).charge("image"),
+      CeilingReached,
+    );
+  } finally {
+    Deno.removeSync(dir, { recursive: true });
+  }
+});
+
+Deno.test("rerun: a live rerun with no budget history is refused", async () => {
+  const home = Deno.makeTempDirSync({ prefix: "ccp10-no-history-" });
+  try {
+    const result = await runner(
+      {
+        ...SAFE_ENV,
+        CCP10_OUT: join(home, "run"),
+        CCP10_MODE: "live",
+        CCP10_STAGE: "1R",
+        CCP10_LIVE_AUTHORIZATION: STAGE_1_RERUN_AUTHORIZATION,
+        // A home with no history: the trick that would hand back the budget.
+        USERPROFILE: home,
+        HOME: home,
+      },
+      "127.0.0.1,generativelanguage.googleapis.com:443",
+    );
+    assertEquals(result.code, 2);
+    assert(result.stderr.includes("live budget history"), result.stderr);
+  } finally {
+    Deno.removeSync(home, { recursive: true });
+  }
+});
+
+Deno.test("rerun: the live budget lives at one fixed path that no setting moves", () => {
+  const source = Deno.readTextFileSync(join(HERE, "ccp10_eval.ts"));
+  assert(
+    source.includes("budgetPath = `${liveBudgetDir}/ccp10-live-budget.json`;"),
+  );
+  assert(
+    !/CCP10_[A-Z_]*BUDGET/.test(source),
+    "no setting points the budget elsewhere",
+  );
+});
+
+Deno.test("rerun: earlier run directories cannot be overwritten", async () => {
+  const base = Deno.makeTempDirSync({ prefix: "ccp10-prior-" });
+  try {
+    for (const name of ["stage1", "remediation-r1"]) {
+      const dir = join(base, name);
+      Deno.mkdirSync(dir);
+      const state = {
+        mode: "dry",
+        runTag: "prior",
+        accounts: {},
+        looks: {},
+        finished: ["A-lipstick-Red"],
+        reviewIssued: 1,
+      };
+      Deno.writeTextFileSync(join(dir, "state.json"), JSON.stringify(state));
+      Deno.writeTextFileSync(join(dir, "results.jsonl"), "prior\n");
+      const result = await runner({
+        ...SAFE_ENV,
+        CCP10_OUT: dir,
+        CCP10_STAGE: "1R",
+      });
+      assertEquals(result.code, 2, name);
+      assert(
+        result.stderr.includes("already ran in this directory"),
+        result.stderr,
+      );
+      // Untouched.
+      assertEquals(
+        JSON.parse(Deno.readTextFileSync(join(dir, "state.json"))),
+        state,
+      );
+      assertEquals(
+        Deno.readTextFileSync(join(dir, "results.jsonl")),
+        "prior\n",
+      );
+    }
+  } finally {
+    Deno.removeSync(base, { recursive: true });
+  }
+});
+
+Deno.test("rerun: Stage 2 refuses a predecessor that is not the clean rerun", async () => {
+  const out = Deno.makeTempDirSync({ prefix: "ccp10-pred-" });
+  try {
+    Deno.writeTextFileSync(
+      join(out, "state.json"),
+      JSON.stringify({
+        mode: "dry",
+        runTag: "t",
+        accounts: {},
+        looks: {},
+        finished: [],
+        reviewIssued: 0,
+      }),
+    );
+    // A Stage 1 that finished clean, but is the original, failed-review run.
+    Deno.writeTextFileSync(
+      join(out, "summary-stage1.json"),
+      JSON.stringify({
+        stop_reason: null,
+        run_kind: "stage1",
+        cases: { preview_requests: 8, expected_preview_requests: 8 },
+      }),
+    );
+    const result = await runner({
+      ...SAFE_ENV,
+      CCP10_OUT: out,
+      CCP10_STAGE: "2",
+    });
+    assertEquals(result.code, 2);
+    assert(result.stderr.includes("post-remediation rerun"), result.stderr);
+  } finally {
+    Deno.removeSync(out, { recursive: true });
+  }
+});
+
+Deno.test("evidence: every identity feature is recorded by its own name", () => {
+  const features = {
+    faceShape: "same",
+    eyes: "same",
+    eyebrows: "same",
+    nose: "different",
+    mouth: "same",
+    skinMarks: "uncertain",
+    apparentAge: "different",
+    hair: "same",
+    framing: "same",
+  };
+  const recorded = recordValidatorObservations(
+    JSON.stringify({
+      identityFeatures: features,
+      identity: "changed",
+      categories: [],
+      introducedCategories: [],
+    }),
+    Object.keys(features),
+  ) as { identityFeatures: Record<string, string>; identity: string };
+  assertEquals(recorded.identityFeatures, features);
+  assertEquals(recorded.identityFeatures.faceShape, "same");
+  assertEquals(recorded.identityFeatures.skinMarks, "uncertain");
+  assertEquals(recorded.identityFeatures.apparentAge, "different");
+  assert(!("invalid" in recorded.identityFeatures));
+  assertEquals(recorded.identity, "changed");
+});
+
+Deno.test("evidence: missing, unexpected and prose identity values stay visible as codes", () => {
+  const names = ["faceShape", "eyes"];
+  const recorded = recordValidatorObservations(
+    JSON.stringify({
+      identityFeatures: { eyes: "They look identical to me", ears: "same" },
+      identity: "preserved",
+    }),
+    names,
+  ) as {
+    identityFeatures: Record<string, string>;
+    unexpectedIdentityFeatures: number;
+  };
+  assertEquals(recorded.identityFeatures, {
+    faceShape: "missing",
+    eyes: "invalid",
+  });
+  assertEquals(recorded.unexpectedIdentityFeatures, 1);
+  assertEquals(recordValidatorObservations("not json", names), {
+    malformed: true,
+  });
+});
+
+Deno.test("version lock: v2 passes; v1 or a missing preview version stops", () => {
+  const v2 = {
+    preview: [REQUIRED_PREVIEW_VERSION, REQUIRED_PREVIEW_VERSION],
+    validator: [REQUIRED_VALIDATOR_VERSION, null],
+  };
+  assertEquals(REQUIRED_PREVIEW_VERSION, "custom_palette_preview_v2");
+  assertEquals(REQUIRED_VALIDATOR_VERSION, "custom_palette_validator_v2");
+  assertEquals(versionViolation(v2), null);
+  assert(
+    versionViolation({
+      ...v2,
+      preview: [...v2.preview, "custom_palette_preview_v1"],
+    })
+      ?.includes("preview version"),
+  );
+  assert(
+    versionViolation({ ...v2, validator: ["custom_palette_validator_v1"] })
+      ?.includes("validator version"),
+  );
+  assert(
+    versionViolation({ ...v2, preview: [null] })?.includes("preview version"),
+  );
 });
 
 Deno.test("source: only live mode can forward a Gemini request", () => {

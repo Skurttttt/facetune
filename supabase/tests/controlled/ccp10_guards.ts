@@ -417,6 +417,83 @@ export function validatorBypassReason(options: {
   return null;
 }
 
+export const REQUIRED_PREVIEW_VERSION = "custom_palette_preview_v2";
+export const REQUIRED_VALIDATOR_VERSION = "custom_palette_validator_v2";
+
+/**
+ * Returns why these recorded versions break the remediation lock, or null. Every
+ * recorded preview version must be v2; every validator version that was recorded
+ * must be v2 (an attempt that never reached the validator records none).
+ */
+export function versionViolation(recorded: {
+  preview: ReadonlyArray<string | null>;
+  validator: ReadonlyArray<string | null>;
+}): string | null {
+  const bad = (values: ReadonlyArray<string | null>, required: string) =>
+    values.filter((v): v is string => v !== null).find((v) => v !== required);
+  const preview = bad(recorded.preview, REQUIRED_PREVIEW_VERSION);
+  if (preview !== undefined || recorded.preview.includes(null)) {
+    return `preview version is not ${REQUIRED_PREVIEW_VERSION}`;
+  }
+  const validator = bad(recorded.validator, REQUIRED_VALIDATOR_VERSION);
+  if (validator !== undefined) {
+    return `validator version is not ${REQUIRED_VALIDATOR_VERSION}`;
+  }
+  return null;
+}
+
+const CODE = /^[a-z_]{1,40}$/;
+
+/**
+ * Copies a validator response into the results as closed codes only, so model prose
+ * can never reach them. Identity features are recorded by their approved names, each
+ * one, so an audit can see what the validator judged; a feature it did not report is
+ * recorded as "missing".
+ */
+export function recordValidatorObservations(
+  text: string,
+  identityFeatures: readonly string[],
+): Record<string, unknown> {
+  const code = (value: unknown) =>
+    typeof value === "string" && CODE.test(value) ? value : "invalid";
+  try {
+    const root = JSON.parse(text) as {
+      categories?: Array<Record<string, unknown>>;
+      introducedCategories?: unknown[];
+      identity?: unknown;
+      identityFeatures?: Record<string, unknown>;
+    };
+    const features = root.identityFeatures;
+    return {
+      categories: (root.categories ?? []).map((entry) => ({
+        category: code(entry.categoryCode),
+        presence: code(entry.presence),
+        color: code(entry.color),
+        colorReason: code(entry.colorReason),
+        finish: code(entry.finish),
+        finishReason: code(entry.finishReason),
+      })),
+      introduced: (root.introducedCategories ?? []).map(code),
+      identity: code(root.identity),
+      identityFeatures: Object.fromEntries(
+        identityFeatures.map((name) => [
+          name,
+          features && typeof features === "object" && name in features
+            ? code(features[name])
+            : "missing",
+        ]),
+      ),
+      unexpectedIdentityFeatures:
+        features && typeof features === "object" && !Array.isArray(features)
+          ? Object.keys(features).filter((k) => !identityFeatures.includes(k))
+            .length
+          : 0,
+    };
+  } catch {
+    return { malformed: true };
+  }
+}
+
 /** The only hosts this process may reach. */
 export function assertAllowedHost(hostname: string): void {
   if (
