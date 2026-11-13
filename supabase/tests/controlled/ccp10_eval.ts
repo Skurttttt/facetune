@@ -82,7 +82,9 @@ import {
   ensureBudgetFolder,
   findLeak,
   GuardRefusal,
+  manifestModelViolation,
   paletteViolation,
+  protectedSourceCheck,
   type ProviderKind,
   readReviewSheet,
   recordValidatorObservations,
@@ -132,20 +134,6 @@ import {
 } from "./ccp10_plan.ts";
 
 const GEMINI_HOST = "generativelanguage.googleapis.com";
-const PROTECTED_BASELINE = "2b29652";
-const PROTECTED_PATHS = [
-  "supabase/migrations",
-  "supabase/functions/analyze-face",
-  "supabase/functions/analyze-tutorial-manifest-v4",
-  "supabase/functions/generate-tutorial-step-v4",
-  "supabase/functions/generate-makeup-recommendation",
-  "supabase/functions/generate-makeup-preview",
-  "supabase/functions/generate-kit-makeup-recommendation",
-  "supabase/functions/generate-kit-makeup-preview",
-  "supabase/functions/generate-custom-palette-recommendation",
-  "supabase/functions/generate-custom-palette-preview",
-  "lib",
-];
 
 // ---------------------------------------------------------------------------
 // Configuration and refusals. Nothing below this block runs if any check fails.
@@ -230,6 +218,10 @@ try {
       throw new GuardRefusal(`${name} must be unset: the models are locked.`);
     }
   }
+  const manifestModel = manifestModelViolation(
+    Deno.env.get("GEMINI_MANIFEST_MODEL"),
+  );
+  if (manifestModel) throw new GuardRefusal(manifestModel);
   const network = await Deno.permissions.query({
     name: "net",
     host: `${GEMINI_HOST}:443`,
@@ -1659,20 +1651,7 @@ const fullyFailed = Object.entries(strata).flatMap(([name, groups]) =>
 );
 
 function gitProtectedCheck(): string {
-  if (!repoCheck) return "NOT_CHECKED";
-  const result = new Deno.Command("git", {
-    args: [
-      "-C",
-      repoCheck,
-      "diff",
-      "--quiet",
-      PROTECTED_BASELINE,
-      "--",
-      ...PROTECTED_PATHS,
-    ],
-    stderr: "null",
-  }).outputSync();
-  return result.code === 0 ? "PASS" : "FAIL";
+  return repoCheck ? protectedSourceCheck(repoCheck) : "NOT_CHECKED";
 }
 
 const scanTargets = [resultsPath, statePath, `${outDir}/review_key.jsonl`];

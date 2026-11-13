@@ -351,6 +351,23 @@ export function classifyProviderRequest(
   throw new GuardRefusal("Unrecognized provider request.");
 }
 
+/**
+ * The Tutorial manifest analyzer reads GEMINI_MANIFEST_MODEL and falls back to the
+ * text model when it is unset or blank. Any other value, the image model included,
+ * would send manifest requests somewhere this harness does not charge as a
+ * manifest, so it is refused at startup rather than corrected. Returns the reason,
+ * or null when the setting is allowed.
+ */
+export function manifestModelViolation(
+  value: string | undefined,
+): string | null {
+  if (value === undefined || value.trim() === "") return null;
+  if (value === TEXT_MODEL) return null;
+  return value.trim() === IMAGE_MODEL
+    ? `GEMINI_MANIFEST_MODEL may not be the image model; it must be ${TEXT_MODEL} or unset.`
+    : `GEMINI_MANIFEST_MODEL must be ${TEXT_MODEL} or unset.`;
+}
+
 const STAGE_1_KINDS: ReadonlySet<ProviderKind> = new Set([
   "analysis",
   "recommendation",
@@ -495,6 +512,55 @@ export function recordValidatorObservations(
 }
 
 /** The only hosts this process may reach. */
+// ---------------------------------------------------------------------------
+// Protected source (H9)
+// ---------------------------------------------------------------------------
+
+/** The authorized CCP remediation. Protected source must match it exactly. */
+export const PROTECTED_BASELINE = "56546aaf0d67cd4a588ced868bb1f302d86ea6b5";
+export const PROTECTED_PATHS: readonly string[] = [
+  "supabase/migrations",
+  "supabase/functions/analyze-face",
+  "supabase/functions/analyze-tutorial-manifest-v4",
+  "supabase/functions/generate-tutorial-step-v4",
+  "supabase/functions/generate-makeup-recommendation",
+  "supabase/functions/generate-makeup-preview",
+  "supabase/functions/generate-kit-makeup-recommendation",
+  "supabase/functions/generate-kit-makeup-preview",
+  "supabase/functions/generate-custom-palette-recommendation",
+  "supabase/functions/generate-custom-palette-preview",
+  "lib",
+];
+
+/**
+ * PASS only when the working tree's protected paths equal the baseline: no edited,
+ * deleted, or staged file, and no new untracked one, since a new migration or
+ * module counts too. Any git error is a FAIL.
+ */
+export function protectedSourceCheck(
+  repo: string,
+  baseline: string = PROTECTED_BASELINE,
+  paths: readonly string[] = PROTECTED_PATHS,
+): "PASS" | "FAIL" {
+  const git = (args: string[]) =>
+    new Deno.Command("git", {
+      args: ["-C", repo, ...args],
+      stdout: "piped",
+      stderr: "null",
+    }).outputSync();
+  const diff = git(["diff", "--quiet", baseline, "--", ...paths]);
+  if (diff.code !== 0) return "FAIL";
+  const untracked = git([
+    "ls-files",
+    "--others",
+    "--exclude-standard",
+    "--",
+    ...paths,
+  ]);
+  if (untracked.code !== 0 || untracked.stdout.length > 0) return "FAIL";
+  return "PASS";
+}
+
 export function assertAllowedHost(hostname: string): void {
   if (
     hostname !== "generativelanguage.googleapis.com" &&

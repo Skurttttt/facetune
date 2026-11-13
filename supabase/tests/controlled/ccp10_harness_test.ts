@@ -27,8 +27,12 @@ import {
   classifyProviderRequest,
   findLeak,
   GuardRefusal,
+  manifestModelViolation,
   markerPathsFor,
   paletteViolation,
+  PROTECTED_BASELINE,
+  PROTECTED_PATHS,
+  protectedSourceCheck,
   readReviewSheet,
   recordValidatorObservations,
   REQUIRED_PREVIEW_VERSION,
@@ -1397,4 +1401,333 @@ Deno.test("source: only live mode can forward a Gemini request", () => {
   assert(source.indexOf("paletteViolation({") < charge);
   // No prompt tuning, and no stored credentials.
   assert(!source.includes("password:") || !source.includes('"password"'));
+});
+
+// ---------------------------------------------------------------------------
+// GEMINI_MANIFEST_MODEL is the text model or unset, checked before anything runs
+// ---------------------------------------------------------------------------
+
+Deno.test("the manifest model is the text model, or unset", () => {
+  for (const allowed of [undefined, "", "  ", "gemini-3.6-flash"]) {
+    assertEquals(manifestModelViolation(allowed), null, `${allowed}`);
+  }
+  assert(
+    manifestModelViolation("gemini-3.1-flash-image")?.includes("image model"),
+  );
+  assert(
+    manifestModelViolation(" gemini-3.1-flash-image ")?.includes("image model"),
+  );
+  for (
+    const refused of [
+      "gemini-9",
+      "gemini-3.6-pro",
+      "gemini-3.6-flash-lite",
+      "gemini-3-pro-image",
+      "models/gemini-3.6-flash",
+      "gemini-3.6-flash:generateContent",
+      "GEMINI-3.6-FLASH",
+      " gemini-3.6-flash",
+      "gemini-3.6-flash\n",
+      "gemini-3.6-flash,gemini-3.1-flash-image",
+    ]
+  ) {
+    assert(
+      manifestModelViolation(refused)?.includes("must be gemini-3.6-flash"),
+      JSON.stringify(refused),
+    );
+  }
+});
+
+Deno.test("source: the manifest analyzer's default is the approved text model", () => {
+  const source = Deno.readTextFileSync(
+    join(ROOT, "supabase/functions/analyze-tutorial-manifest-v4/index.ts"),
+  );
+  const found = source.match(
+    /Deno\.env\.get\("GEMINI_MANIFEST_MODEL"\)\?\.trim\(\) \|\|\s*"([^"]+)"/,
+  );
+  assertEquals(found?.[1], "gemini-3.6-flash");
+  // That default is the model a manifest request is charged as a manifest on.
+  assertEquals(
+    classifyProviderRequest(
+      `/v1beta/models/${found![1]}:generateContent`,
+      "You are comparing two photographs",
+    ),
+    "manifest",
+  );
+  assertEquals(stageViolation(2, "manifest"), null);
+  assert(stageViolation(1, "manifest")?.includes("forbids"));
+});
+
+const LIVE_NET = "127.0.0.1,generativelanguage.googleapis.com";
+const manifestRefusals: Array<[string, Record<string, string>, string?]> = [
+  ["the image model", { GEMINI_MANIFEST_MODEL: "gemini-3.1-flash-image" }],
+  ["an unknown model", { GEMINI_MANIFEST_MODEL: "gemini-9" }],
+  ["a malformed model", {
+    GEMINI_MANIFEST_MODEL: "models/gemini-3.6-flash:generateContent",
+  }],
+  ["the image model on an authorized Stage 2", {
+    GEMINI_MANIFEST_MODEL: "gemini-3.1-flash-image",
+    CCP10_MODE: "live",
+    CCP10_STAGE: "2",
+    CCP10_LIVE_AUTHORIZATION: LIVE_AUTHORIZATION[2],
+  }, LIVE_NET],
+  ["the image model on Stage 1", {
+    GEMINI_MANIFEST_MODEL: "gemini-3.1-flash-image",
+    CCP10_MODE: "live",
+    CCP10_LIVE_AUTHORIZATION: LIVE_AUTHORIZATION[1],
+  }, LIVE_NET],
+];
+
+function liveBudgetBytes(): string | null {
+  const home = Deno.env.get("USERPROFILE") ?? Deno.env.get("HOME") ?? "";
+  try {
+    return Deno.readTextFileSync(
+      `${home}/.facetune-eval/ccp10-live-budget.json`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+for (const [name, overrides, net] of manifestRefusals) {
+  Deno.test(`the runner refuses ${name} as the manifest model, before any call or charge`, async () => {
+    const out = Deno.makeTempDirSync({ prefix: "ccp10-manifest-" });
+    const before = liveBudgetBytes();
+    try {
+      const run = join(out, "run");
+      const { code, stderr } = await runner(
+        { ...SAFE_ENV, CCP10_OUT: run, ...overrides },
+        net,
+      );
+      assertEquals(code, 2, stderr);
+      assert(stderr.includes("GEMINI_MANIFEST_MODEL"), stderr);
+      // Refused before the output folder, the budget, or any handler existed.
+      assertThrows(() => Deno.statSync(run), Deno.errors.NotFound);
+      assertEquals(liveBudgetBytes(), before);
+    } finally {
+      Deno.removeSync(out, { recursive: true });
+    }
+  });
+}
+
+Deno.test("the approved manifest model, or none, passes startup to the next check", async () => {
+  for (const value of ["gemini-3.6-flash", ""]) {
+    const out = Deno.makeTempDirSync({ prefix: "ccp10-manifest-" });
+    try {
+      // Live without a token is refused by the authorization check, which runs
+      // after the model checks: reaching it proves the model was accepted.
+      const { code, stderr } = await runner(
+        {
+          ...SAFE_ENV,
+          CCP10_OUT: join(out, "run"),
+          CCP10_MODE: "live",
+          CCP10_STAGE: "2",
+          GEMINI_MANIFEST_MODEL: value,
+        },
+        LIVE_NET,
+      );
+      assertEquals(code, 2, stderr);
+      assert(stderr.includes("exact authorization"), stderr);
+      assert(!stderr.includes("GEMINI_MANIFEST_MODEL"), stderr);
+    } finally {
+      Deno.removeSync(out, { recursive: true });
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// H9: protected source equals the authorized remediation, 56546aa
+// ---------------------------------------------------------------------------
+
+// A git checkout holding the baseline. The scratch copies these tests run from
+// are not repositories, so the run passes one in.
+const H9_REPO = Deno.env.get("CCP10_TEST_REPO") ?? ROOT;
+const PRE_REMEDIATION = "2b29652";
+const RERUN_HEAD = "e6fdb43e4e465d6b931be31e9fa893b03a5f8415";
+
+function git(repo: string, ...args: string[]): string {
+  const output = new Deno.Command("git", {
+    args: ["-C", repo, "-c", "core.longpaths=true", ...args],
+    stdout: "piped",
+    stderr: "piped",
+  }).outputSync();
+  if (output.code !== 0) {
+    throw new Error(
+      `git ${args.join(" ")}: ${new TextDecoder().decode(output.stderr)}`,
+    );
+  }
+  return new TextDecoder().decode(output.stdout).trim();
+}
+
+/** A disposable clone of lib and supabase at a commit, so no worktree is edited. */
+function cloneAt(commit: string): { repo: string; dispose: () => void } {
+  const dir = Deno.makeTempDirSync({ prefix: "ccp10-h9-" });
+  const repo = join(dir, "r");
+  git(dir, "clone", "--quiet", "--shared", "--no-checkout", H9_REPO, repo);
+  git(repo, "sparse-checkout", "set", "lib", "supabase");
+  git(repo, "checkout", "--quiet", "--detach", commit);
+  return { repo, dispose: () => Deno.removeSync(dir, { recursive: true }) };
+}
+
+Deno.test("H9: the baseline is the authorized remediation, not the stale one", () => {
+  assertEquals(git(H9_REPO, "rev-parse", "56546aa"), PROTECTED_BASELINE);
+  assertEquals(
+    git(H9_REPO, "log", "-1", "--format=%s", PROTECTED_BASELINE),
+    "fix(ccp): harden preview identity and palette validation",
+  );
+  const runnerSource = Deno.readTextFileSync(join(HERE, "ccp10_eval.ts"));
+  assert(!runnerSource.includes(PRE_REMEDIATION));
+  assert(!runnerSource.includes("PROTECTED_BASELINE ="));
+  assert(runnerSource.includes("protectedSourceCheck(repoCheck)"));
+});
+
+Deno.test("H9: no protected path was dropped from the gate the rerun used", () => {
+  const before = git(
+    H9_REPO,
+    "show",
+    `${RERUN_HEAD}:supabase/tests/controlled/ccp10_eval.ts`,
+  );
+  assert(before.includes(`const PROTECTED_BASELINE = "${PRE_REMEDIATION}";`));
+  const block = before.match(/const PROTECTED_PATHS = \[([\s\S]*?)\];/)![1];
+  const old = [...block.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  assertEquals(old.length, 11);
+  assertEquals([...PROTECTED_PATHS], old);
+});
+
+Deno.test("H9: the remediation changed only CCP preview code", () => {
+  const changed = git(
+    H9_REPO,
+    "diff",
+    "--name-only",
+    PRE_REMEDIATION,
+    PROTECTED_BASELINE,
+    "--",
+    ...PROTECTED_PATHS,
+  ).split("\n").filter(Boolean);
+  assert(changed.length > 0);
+  for (const file of changed) {
+    assert(
+      file.startsWith("supabase/functions/generate-custom-palette-preview/"),
+      file,
+    );
+  }
+});
+
+Deno.test("H9: the baseline and harness-only descendants pass; protected drift fails", async (t) => {
+  const { repo, dispose } = cloneAt(PROTECTED_BASELINE);
+  const restore = () => {
+    git(repo, "reset", "--quiet", "--hard");
+    git(repo, "clean", "--quiet", "-fd", "--", "lib", "supabase");
+  };
+  const edit = (file: string) => {
+    const path = join(repo, file);
+    Deno.statSync(path);
+    Deno.writeTextFileSync(path, "\n// drift\n", { append: true });
+  };
+  try {
+    await t.step("the exact tree at 56546aa passes", () => {
+      assertEquals(protectedSourceCheck(repo), "PASS");
+    });
+    await t.step("the stale baseline would fail the same tree", () => {
+      assertEquals(protectedSourceCheck(repo, PRE_REMEDIATION), "FAIL");
+    });
+    await t.step("an unknown baseline fails closed", () => {
+      assertEquals(protectedSourceCheck(repo, "0".repeat(40)), "FAIL");
+    });
+    const drift: Array<[string, string]> = [
+      [
+        "CCP preview after 56546aa",
+        "supabase/functions/generate-custom-palette-preview/prompt.ts",
+      ],
+      [
+        "CCP validator after 56546aa",
+        "supabase/functions/generate-custom-palette-preview/validator_prompt.ts",
+      ],
+      [
+        "CCP recommendation",
+        "supabase/functions/generate-custom-palette-recommendation/prompt.ts",
+      ],
+      [
+        "Standard Recommendation",
+        "supabase/functions/generate-makeup-recommendation/prompt.ts",
+      ],
+      [
+        "Standard Final Preview",
+        "supabase/functions/generate-makeup-preview/index.ts",
+      ],
+      [
+        "My Makeup Kit Recommendation",
+        "supabase/functions/generate-kit-makeup-recommendation/index.ts",
+      ],
+      [
+        "My Makeup Kit Final Preview",
+        "supabase/functions/generate-kit-makeup-preview/prompt.ts",
+      ],
+      [
+        "Tutorial V4 step",
+        "supabase/functions/generate-tutorial-step-v4/index.ts",
+      ],
+      [
+        "Tutorial V4 manifest",
+        "supabase/functions/analyze-tutorial-manifest-v4/prompt.ts",
+      ],
+      ["face analysis", "supabase/functions/analyze-face/prompt.ts"],
+      [
+        "subscription client source",
+        "lib/features/subscription/data/data_sources/google_play_billing_data_source.dart",
+      ],
+      [
+        "a subscription migration",
+        "supabase/migrations/20260907000200_subscription_entitlement_resolver.sql",
+      ],
+    ];
+    for (const [label, file] of drift) {
+      await t.step(`modifying ${label} fails`, () => {
+        edit(file);
+        assertEquals(protectedSourceCheck(repo), "FAIL");
+        restore();
+        assertEquals(protectedSourceCheck(repo), "PASS");
+      });
+    }
+    await t.step("a staged protected change fails", () => {
+      edit("lib/main.dart");
+      git(repo, "add", "lib/main.dart");
+      assertEquals(protectedSourceCheck(repo), "FAIL");
+      restore();
+    });
+    await t.step("a deleted protected file fails", () => {
+      Deno.removeSync(
+        join(repo, "supabase/functions/generate-makeup-preview/index.ts"),
+      );
+      assertEquals(protectedSourceCheck(repo), "FAIL");
+      restore();
+    });
+    await t.step("a new untracked migration or module fails", () => {
+      for (
+        const file of [
+          "supabase/migrations/20991231000000_unreviewed.sql",
+          "supabase/functions/generate-makeup-recommendation/extra.ts",
+        ]
+      ) {
+        Deno.writeTextFileSync(join(repo, file), "select 1;\n");
+        assertEquals(protectedSourceCheck(repo), "FAIL", file);
+        restore();
+      }
+    });
+    await t.step("harness-only changes do not fail", () => {
+      edit("supabase/tests/controlled/ccp10_plan.ts");
+      Deno.writeTextFileSync(
+        join(repo, "supabase/tests/controlled/ccp10_note.ts"),
+        "export {};\n",
+      );
+      assertEquals(protectedSourceCheck(repo), "PASS");
+      restore();
+    });
+    await t.step("the harness-only rerun commit after 56546aa passes", () => {
+      git(repo, "checkout", "--quiet", "--detach", RERUN_HEAD);
+      assertEquals(protectedSourceCheck(repo), "PASS");
+    });
+  } finally {
+    dispose();
+  }
 });
