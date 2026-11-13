@@ -7,11 +7,19 @@
  */
 
 export const STAGE_1_CEILING = 54;
-export const TOTAL_CEILING = 420;
+/**
+ * The global live ceiling, cumulative across every live run. The accepted plan's
+ * worst case through Stage 2 is 420, but Stage 1 took three live runs (27 + 11 +
+ * 27 = 65 calls) instead of one, so the ceiling was raised to 440 to keep Stage 2's
+ * full worst case (65 + 366 = 431) inside it without dropping a case.
+ */
+export const TOTAL_CEILING = 440;
+/** Stage 2's own worst case: its 71 cases plus analysis for its 3 new accounts. */
+export const STAGE_2_CEILING = 366;
 
 export const LIVE_AUTHORIZATION = {
   1: "CCP-10-STAGE-1:8-cases:54-calls",
-  2: "CCP-10-STAGE-2:79-cases:420-calls",
+  2: "CCP-10-STAGE-2:71-cases:366-calls",
 } as const;
 
 export type Stage = 1 | 2;
@@ -66,13 +74,23 @@ export function runCeiling(kind: RunKind, spentBefore: number): number {
     case "1":
       return STAGE_1_CEILING;
     case "2":
-      return TOTAL_CEILING;
+      return Math.min(TOTAL_CEILING, spentBefore + STAGE_2_CEILING);
     case "R1":
       return Math.min(TOTAL_CEILING, spentBefore + REMEDIATION_CEILING);
     case "1R":
       return Math.min(TOTAL_CEILING, spentBefore + STAGE_1_CEILING);
   }
 }
+/**
+ * Stage 2 starts only when its whole worst case fits under the global ceiling, so it
+ * can never be cut short by the budget part-way through. Returns the reason, or null.
+ */
+export function stage2BudgetViolation(spentBefore: number): string | null {
+  return spentBefore + STAGE_2_CEILING > TOTAL_CEILING
+    ? `Stage 2's worst case (${STAGE_2_CEILING}) does not fit: ${spentBefore} of ${TOTAL_CEILING} already spent.`
+    : null;
+}
+
 export type SelfieSlot = "S1" | "S2" | "S3";
 export type AccountId = "S1a" | "S1b" | "S2a" | "S2b" | "S3a" | "S3b";
 

@@ -122,6 +122,7 @@ import {
   selfieOf,
   type SelfieSlot,
   type Stage,
+  stage2BudgetViolation,
   STAGE_1_ACCOUNTS,
   STAGE_1_RERUN_KIND,
   STAGE_1_RERUN_TITLE,
@@ -222,6 +223,14 @@ try {
     Deno.env.get("GEMINI_MANIFEST_MODEL"),
   );
   if (manifestModel) throw new GuardRefusal(manifestModel);
+  // Stage 2 starts only on protected source equal to the authorized baseline (H9).
+  if (
+    stage === 2 && repoCheck && protectedSourceCheck(repoCheck) !== "PASS"
+  ) {
+    throw new GuardRefusal(
+      "Stage 2 refuses protected source that differs from the H9 baseline.",
+    );
+  }
   const network = await Deno.permissions.query({
     name: "net",
     host: `${GEMINI_HOST}:443`,
@@ -242,6 +251,9 @@ try {
     }
     if (network.state !== "granted") {
       throw new GuardRefusal("Live mode needs permission for the Gemini host.");
+    }
+    if (stage === 2 && !repoCheck) {
+      throw new GuardRefusal("Live Stage 2 needs CCP10_REPO for the H9 check.");
     }
     // Only the first Stage 1 may start a live budget. Every later run must find the
     // history it builds on, so a missing or relocated file cannot hand back calls.
@@ -316,6 +328,10 @@ const dryCeiling = mode === "dry"
 // whole evaluation still never passes the total ceiling.
 const spentBefore = new CallBudget(budgetPath, 0).total;
 const ceiling = dryCeiling > 0 ? dryCeiling : runCeiling(runKind, spentBefore);
+if (stage === 2 && dryCeiling === 0) {
+  const tooLate = stage2BudgetViolation(spentBefore);
+  if (tooLate) refuse(tooLate);
+}
 const budget = new CallBudget(budgetPath, ceiling);
 const stopLoss = new StopLoss();
 const scenarioText = Deno.env.get("CCP10_DRY_SCENARIO") ?? "mixed";
@@ -600,6 +616,14 @@ if (stage === 1 && previousState && previousState.finished.length > 0) {
   refuse("Stage 1 already ran in this directory.");
 }
 if (stage === 2) {
+  // One Stage 2 per directory: a stopped run is never resumed or restarted.
+  let alreadyRan = true;
+  try {
+    Deno.statSync(`${outDir}/summary-stage2.json`);
+  } catch {
+    alreadyRan = false;
+  }
+  if (alreadyRan) refuse("Stage 2 already ran in this directory.");
   // Stage 2 builds on Stage 1, so it may only follow a Stage 1 that finished clean.
   try {
     const stage1 = JSON.parse(
@@ -617,6 +641,17 @@ if (stage === 2) {
     // The original Stage 1 failed human review. Only the clean rerun can lead on.
     if ((stage1 as { run_kind?: string }).run_kind !== STAGE_1_RERUN_KIND) {
       refuse("Stage 2 must follow a clean Stage 1 post-remediation rerun.");
+    }
+    const gates = (stage1 as { gates?: Record<string, string> }).gates ?? {};
+    for (
+      const gate of [
+        "H1_palette_preserved",
+        "H2_no_ai_color_stored",
+        "H3_palette_identical_across_attempts",
+        "H4_accounting_exact",
+      ]
+    ) {
+      if (gates[gate] !== "PASS") refuse(`Stage 1 gate ${gate} did not pass.`);
     }
   } catch {
     refuse("Stage 2 needs Stage 1's summary.");
@@ -1046,6 +1081,7 @@ async function previewChecks(
 
   const accounting: string[] = [];
   if (ledger.length > 1) accounting.push("more_than_one_ledger_row");
+  if (attempts.length > 2) accounting.push("retry_bound_exceeded");
   if (accepted) {
     if (ledger[0]?.status !== "committed") {
       accounting.push("accepted_not_committed");

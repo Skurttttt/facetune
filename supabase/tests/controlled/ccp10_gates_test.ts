@@ -10,6 +10,8 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { dirname, fromFileUrl, join } from "jsr:@std/path@1";
 
+import { ALL_CASES } from "./ccp10_plan.ts";
+
 const HERE = dirname(fromFileUrl(import.meta.url));
 const FUNCTIONS = join(HERE, "..", "..", "functions");
 const WORKSPACE = Deno.env.get("CCP10_TEST_WORKSPACE") ?? "";
@@ -376,6 +378,95 @@ Deno.test("Stage 2 refuses the original Stage 1 as its predecessor", async () =>
   assertEquals(stage2.code, 2);
   assert(
     new TextDecoder().decode(stage2.stderr).includes("post-remediation rerun"),
+  );
+});
+
+Deno.test("Stage 2 continues the rerun: its 71 cases, within 366 calls, then stops", async () => {
+  const out = join(
+    WORKSPACE,
+    "out",
+    `gate-s2-${crypto.randomUUID().slice(0, 8)}`,
+  );
+  const command = (stage: string) =>
+    new Deno.Command(Deno.execPath(), {
+      args: [
+        "run",
+        "--no-lock",
+        "--allow-env",
+        "--allow-read",
+        `--allow-write=${out}`,
+        "--allow-sys",
+        "--allow-run=docker,icacls",
+        "--allow-net=127.0.0.1,localhost",
+        join(HERE, "ccp10_eval.ts"),
+      ],
+      cwd: FUNCTIONS,
+      env: {
+        CCP10_MODE: "dry",
+        CCP10_STAGE: stage,
+        CCP10_OUT: out,
+        CCP10_WORKSPACE: WORKSPACE,
+      },
+      stdout: "null",
+      stderr: "piped",
+    }).output();
+  const rerun = await command("1R");
+  assertEquals(rerun.code, 0, new TextDecoder().decode(rerun.stderr));
+  const stage1Summary = Deno.readTextFileSync(join(out, "summary-stage1.json"));
+  const stage1Rows = Deno.readTextFileSync(join(out, "results.jsonl"));
+  const stage1Key = Deno.readTextFileSync(join(out, "review_key.jsonl"));
+  const spent = JSON.parse(stage1Summary).provider_calls.total as number;
+
+  const stage2 = await command("2");
+  assertEquals(stage2.code, 0, new TextDecoder().decode(stage2.stderr));
+  const summary = JSON.parse(
+    Deno.readTextFileSync(join(out, "summary-stage2.json")),
+  ) as Summary & {
+    run_kind: string;
+    live_budget: {
+      spent_before: number;
+      ceiling: number;
+      new_call_allowance: number;
+    };
+  };
+  assertEquals(summary.run_kind, "stage2");
+  assertEquals(summary.stop_reason, null);
+  assertEquals(summary.violations, []);
+  assertEquals(summary.evidence_complete, true);
+  assertEquals(summary.live_budget.spent_before, spent);
+  assertEquals(summary.live_budget.new_call_allowance, 366);
+  assertEquals(summary.provider_calls.ceiling, spent + 366);
+  assert(summary.provider_calls.total - spent <= 366);
+  // Exactly the 71 Stage 2 cases were added, after Stage 1's, which are untouched.
+  const allRows = Deno.readTextFileSync(join(out, "results.jsonl"));
+  assert(allRows.startsWith(stage1Rows));
+  const added = allRows.slice(stage1Rows.length).split("\n").filter(Boolean)
+    .map((line) => JSON.parse(line) as { id: string; kind: string })
+    .filter((row) => row.kind !== "violation");
+  const ids = new Set(added.map((row) => row.id));
+  assertEquals(
+    [...ids].sort(),
+    ALL_CASES.filter((c) => c.stage === 2).map((c) => c.id).sort(),
+  );
+  assertEquals(ids.size, 71);
+  assertEquals(
+    Deno.readTextFileSync(join(out, "summary-stage1.json")),
+    stage1Summary,
+  );
+  assert(
+    Deno.readTextFileSync(join(out, "review_key.jsonl")).startsWith(stage1Key),
+  );
+  // It stops there: Stage 2 again in this directory is refused, nothing follows it.
+  // The budget no longer fits a second Stage 2's worst case, and the directory
+  // already holds a Stage 2 summary: either one refuses it.
+  const again = await command("2");
+  const againError = new TextDecoder().decode(again.stderr);
+  assertEquals(again.code, 2, againError);
+  assert(/already ran|does not fit/.test(againError), againError);
+  assertEquals(
+    [...Deno.readDirSync(out)].filter((e) => /summary-stage[^12]/.test(e.name))
+      .length,
+    0,
   );
 });
 

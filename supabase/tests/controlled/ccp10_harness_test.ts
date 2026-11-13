@@ -61,14 +61,17 @@ import {
   REMEDIATION_R1,
   runCeiling,
   selfieOf,
+  stage2BudgetViolation,
   STAGE_1_ACCOUNTS,
   STAGE_1_CEILING,
   STAGE_1_RERUN_AUTHORIZATION,
+  STAGE_2_CEILING,
   stepsOf,
   STYLES,
   TOTAL_CEILING,
   TUTORIALS,
   VARIATIONS,
+  worstCaseFor,
   worstCaseForLooks,
   worstCaseThroughStage,
 } from "./ccp10_plan.ts";
@@ -108,11 +111,17 @@ Deno.test("the plan's counts are exactly the accepted CCP-9 plan", () => {
   assertEquals(TUTORIALS.reduce((sum, t) => sum + stepsOf(t), 0), 15);
 });
 
-Deno.test("worst-case arithmetic equals both ceilings exactly", () => {
+Deno.test("worst-case arithmetic: the plan's 54 and 420, Stage 2's 366, ceiling 440", () => {
   assertEquals(worstCaseThroughStage(1), STAGE_1_CEILING);
-  assertEquals(worstCaseThroughStage(2), TOTAL_CEILING);
+  // The accepted CCP-9 plan is unchanged: 420 calls through Stage 2.
+  assertEquals(worstCaseThroughStage(2), 420);
   assertEquals(STAGE_1_CEILING, 54);
-  assertEquals(TOTAL_CEILING, 420);
+  assertEquals(
+    STAGE_2_CEILING,
+    worstCaseThroughStage(2) - worstCaseThroughStage(1),
+  );
+  assertEquals(STAGE_2_CEILING, 366);
+  assertEquals(TOTAL_CEILING, 440);
 });
 
 Deno.test("Stage 1 is exactly the 8 accepted cases on 3 accounts", () => {
@@ -710,6 +719,9 @@ async function runner(
       ...(Deno.env.get("SystemRoot")
         ? { SystemRoot: Deno.env.get("SystemRoot")! }
         : {}),
+      // So the H9 check can find git.
+      ...(Deno.env.get("PATH") ? { PATH: Deno.env.get("PATH")! } : {}),
+      ...(Deno.env.get("PATHEXT") ? { PATHEXT: Deno.env.get("PATHEXT")! } : {}),
       ...env,
     },
     stdout: "null",
@@ -1139,15 +1151,14 @@ Deno.test("rerun: its token is unique, and each run kind requires its own", () =
   assertEquals(STAGE_1_RERUN_AUTHORIZATION, authorizationFor("1R"));
 });
 
-Deno.test("rerun: 54 new calls on top of the 38 already spent, never past 420", () => {
+Deno.test("rerun: 54 new calls on top of the 38 already spent, never past the total", () => {
   assertEquals(runCeiling("1R", 38), 92);
   assertEquals(runCeiling("1R", 0), 54);
-  assertEquals(runCeiling("1R", 400), 420);
-  assertEquals(runCeiling("1R", 420), 420);
-  // The other kinds are unchanged.
+  assertEquals(runCeiling("1R", 400), 440);
+  assertEquals(runCeiling("1R", 440), 440);
+  // The other kinds keep their allowances.
   assertEquals(runCeiling("1", 38), 54);
   assertEquals(runCeiling("R1", 27), 49);
-  assertEquals(runCeiling("2", 38), 420);
 });
 
 Deno.test("rerun: the budget keeps prior calls and allows exactly 54 new ones", () => {
@@ -1564,6 +1575,9 @@ function cloneAt(commit: string): { repo: string; dispose: () => void } {
   const dir = Deno.makeTempDirSync({ prefix: "ccp10-h9-" });
   const repo = join(dir, "r");
   git(dir, "clone", "--quiet", "--shared", "--no-checkout", H9_REPO, repo);
+  // Line endings fixed in the clone itself, so a runner with another HOME (and no
+  // global git config) sees the same tree.
+  git(repo, "config", "core.autocrlf", "false");
   git(repo, "sparse-checkout", "set", "lib", "supabase");
   git(repo, "checkout", "--quiet", "--detach", commit);
   return { repo, dispose: () => Deno.removeSync(dir, { recursive: true }) };
@@ -1730,4 +1744,393 @@ Deno.test("H9: the baseline and harness-only descendants pass; protected drift f
   } finally {
     dispose();
   }
+});
+
+// ---------------------------------------------------------------------------
+// Stage 2 readiness: budget, token, case set, start gates
+// ---------------------------------------------------------------------------
+
+const STAGE_2_TOKEN = "CCP-10-STAGE-2:71-cases:366-calls";
+/** The H9 check runs git, as the live scripts allow. */
+const RUN_GIT = ["--allow-run=git"];
+
+Deno.test("Stage 2 budget: 65 prior + 366 = 431, under the 440 global ceiling", () => {
+  assertEquals(TOTAL_CEILING, 440);
+  assertEquals(STAGE_2_CEILING, 366);
+  assertEquals(runCeiling("2", 65), 431);
+  assertEquals(runCeiling("2", 0), 366);
+  assertEquals(stage2BudgetViolation(65), null);
+  assertEquals(stage2BudgetViolation(74), null);
+  assert(stage2BudgetViolation(75)?.includes("does not fit"));
+  assert(stage2BudgetViolation(440)?.includes("does not fit"));
+  // No run kind, at any spend, may count past the global ceiling.
+  for (let spent = 0; spent <= 440; spent += 1) {
+    for (const kind of ["1", "2", "R1", "1R"] as const) {
+      assert(runCeiling(kind, spent) <= TOTAL_CEILING, `${kind} ${spent}`);
+    }
+  }
+});
+
+Deno.test("Stage 2 budget: the 65 prior calls stay, and exactly 366 new ones fit", () => {
+  const dir = Deno.makeTempDirSync({ prefix: "ccp10-stage2-budget-" });
+  const path = join(dir, "ccp10-live-budget.json");
+  const prior = {
+    total: 65,
+    byKind: { analysis: 8, recommendation: 19, image: 19, validator: 19 },
+  };
+  Deno.writeTextFileSync(path, JSON.stringify(prior));
+  try {
+    const budget = new CallBudget(path, runCeiling("2", 65));
+    assertEquals(budget.total, 65);
+    assertEquals(JSON.parse(Deno.readTextFileSync(path)), prior);
+    let charged = 0;
+    while (true) {
+      try {
+        budget.charge("guideline");
+        charged += 1;
+      } catch (error) {
+        assert(error instanceof CeilingReached);
+        break;
+      }
+    }
+    assertEquals(charged, 366);
+    const after = JSON.parse(Deno.readTextFileSync(path));
+    assertEquals(after.total, 431);
+    assertEquals(after.byKind.analysis, 8);
+    assertEquals(after.byKind.recommendation, 19);
+    assertEquals(after.byKind.image, 19);
+    assertEquals(after.byKind.validator, 19);
+    // A restart reads 431 back: it cannot become a fresh 440-call budget, only 9
+    // calls remain globally, and a second Stage 2 would refuse to start.
+    const again = new CallBudget(path, runCeiling("2", 431));
+    assertEquals(again.total, 431);
+    assertEquals(again.ceiling, 440);
+    assertEquals(again.remaining, 9);
+    assert(stage2BudgetViolation(again.total)?.includes("does not fit"));
+  } finally {
+    Deno.removeSync(dir, { recursive: true });
+  }
+});
+
+Deno.test("Stage 2 token: exact, unique, and not any other run's", () => {
+  assertEquals(LIVE_AUTHORIZATION[2], STAGE_2_TOKEN);
+  assertEquals(authorizationFor("2"), STAGE_2_TOKEN);
+  const tokens = [
+    authorizationFor("1"),
+    authorizationFor("2"),
+    authorizationFor("R1"),
+    authorizationFor("1R"),
+  ];
+  assertEquals(new Set(tokens).size, 4);
+});
+
+Deno.test("Stage 2 is exactly the 71 accepted cases, within 366 calls", () => {
+  const stage2 = ALL_CASES.filter((c) => c.stage === 2);
+  assertEquals(stage2.length, 71);
+  const kinds: Record<string, number> = {};
+  for (const c of stage2) kinds[c.kind] = (kinds[c.kind] ?? 0) + 1;
+  assertEquals(kinds, { look: 47, variation: 6, tutorial: 6, probe: 12 });
+  const stage1Ids = new Set(
+    ALL_CASES.filter((c) => c.stage === 1).map((c) => c.id),
+  );
+  assertEquals(stage1Ids.size, 8);
+  assert(stage2.every((c) => !stage1Ids.has(c.id)));
+  // Its 3 new accounts are analyzed; the 3 Stage 1 accounts carry over.
+  const newAccounts = ACCOUNTS.filter((a) => !STAGE_1_ACCOUNTS.includes(a));
+  assertEquals(newAccounts, ["S1b", "S2b", "S3b"]);
+  assertEquals(
+    newAccounts.length * 2 +
+      stage2.reduce((sum, c) => sum + worstCaseFor(c), 0),
+    STAGE_2_CEILING,
+  );
+});
+
+Deno.test("Stage 2 refuses every other run's token", async () => {
+  const out = Deno.makeTempDirSync({ prefix: "ccp10-stage2-token-" });
+  try {
+    for (
+      const token of [
+        LIVE_AUTHORIZATION[1],
+        REMEDIATION_AUTHORIZATION,
+        STAGE_1_RERUN_AUTHORIZATION,
+        "CCP-10-STAGE-2:79-cases:420-calls",
+        `${STAGE_2_TOKEN} `,
+        "",
+      ]
+    ) {
+      const result = await runner({
+        ...SAFE_ENV,
+        CCP10_OUT: join(out, "run"),
+        CCP10_MODE: "live",
+        CCP10_STAGE: "2",
+        CCP10_LIVE_AUTHORIZATION: token,
+      }, LIVE_NET);
+      assertEquals(result.code, 2, token);
+      assert(result.stderr.includes("exact authorization"), result.stderr);
+    }
+    // And its own token authorizes nothing else.
+    for (const stage of ["1", "R1", "1R"]) {
+      const result = await runner({
+        ...SAFE_ENV,
+        CCP10_OUT: join(out, "run"),
+        CCP10_MODE: "live",
+        CCP10_STAGE: stage,
+        CCP10_LIVE_AUTHORIZATION: STAGE_2_TOKEN,
+      }, LIVE_NET);
+      assertEquals(result.code, 2, stage);
+      assert(result.stderr.includes("exact authorization"), result.stderr);
+    }
+  } finally {
+    Deno.removeSync(out, { recursive: true });
+  }
+});
+
+Deno.test("there is no stage after 2: CCP-11 and CCP-12 cannot start from here", async () => {
+  const out = Deno.makeTempDirSync({ prefix: "ccp10-stage3-" });
+  try {
+    for (const stage of ["3", "11", "12", "CCP-11", "CCP-12", "2R", " 2"]) {
+      const result = await runner({
+        ...SAFE_ENV,
+        CCP10_OUT: join(out, "run"),
+        CCP10_STAGE: stage,
+      });
+      assertEquals(result.code, 2, stage);
+      assert(result.stderr.includes("1, 2, R1, or 1R"), result.stderr);
+    }
+  } finally {
+    Deno.removeSync(out, { recursive: true });
+  }
+  const source = Deno.readTextFileSync(join(HERE, "ccp10_eval.ts"));
+  assert(!/CCP-1[12]/.test(source));
+});
+
+Deno.test("Stage 2 keeps the model locks", async () => {
+  const out = Deno.makeTempDirSync({ prefix: "ccp10-stage2-models-" });
+  try {
+    for (
+      const name of [
+        "GEMINI_MODEL",
+        "GEMINI_IMAGE_MODEL",
+        "GEMINI_TUTORIAL_MODEL",
+      ]
+    ) {
+      const result = await runner({
+        ...SAFE_ENV,
+        CCP10_OUT: join(out, "run"),
+        CCP10_STAGE: "2",
+        [name]: "gemini-3.6-flash",
+      });
+      assertEquals(result.code, 2, name);
+      assert(result.stderr.includes("models are locked"), result.stderr);
+    }
+  } finally {
+    Deno.removeSync(out, { recursive: true });
+  }
+});
+
+Deno.test("Stage 2 live start: budget history, H9 repository, key file are required", async () => {
+  const out = Deno.makeTempDirSync({ prefix: "ccp10-stage2-live-" });
+  const home = join(out, "home");
+  Deno.mkdirSync(join(home, ".facetune-eval"), { recursive: true });
+  const live = {
+    ...SAFE_ENV,
+    CCP10_OUT: join(out, "run"),
+    CCP10_MODE: "live",
+    CCP10_STAGE: "2",
+    CCP10_LIVE_AUTHORIZATION: STAGE_2_TOKEN,
+    USERPROFILE: home,
+    HOME: home,
+  };
+  const { repo, dispose } = cloneAt(PROTECTED_BASELINE);
+  try {
+    const noRepo = await runner(live, LIVE_NET);
+    assertEquals(noRepo.code, 2);
+    assert(noRepo.stderr.includes("CCP10_REPO"), noRepo.stderr);
+    // With no budget history it cannot begin a fresh budget.
+    const noBudget = await runner(
+      { ...live, CCP10_REPO: repo },
+      LIVE_NET,
+      "--allow-read",
+      RUN_GIT,
+    );
+    assertEquals(noBudget.code, 2);
+    assert(noBudget.stderr.includes("live budget history"), noBudget.stderr);
+    Deno.writeTextFileSync(
+      join(home, ".facetune-eval", "ccp10-live-budget.json"),
+      JSON.stringify({ total: 65, byKind: {} }),
+    );
+    const noKey = await runner(
+      { ...live, CCP10_REPO: repo },
+      LIVE_NET,
+      "--allow-read",
+      RUN_GIT,
+    );
+    assertEquals(noKey.code, 2);
+    assert(noKey.stderr.includes("CCP10_KEY_FILE"), noKey.stderr);
+    const keyInRepo = await runner(
+      {
+        ...live,
+        CCP10_REPO: repo,
+        CCP10_KEY_FILE: join(ROOT, "supabase/config.toml"),
+      },
+      LIVE_NET,
+      "--allow-read",
+      RUN_GIT,
+    );
+    assertEquals(keyInRepo.code, 2);
+    assert(keyInRepo.stderr.includes("CCP10_KEY_FILE"), keyInRepo.stderr);
+    assertThrows(() => Deno.statSync(join(out, "run")), Deno.errors.NotFound);
+  } finally {
+    dispose();
+    Deno.removeSync(out, { recursive: true });
+  }
+});
+
+/** A Stage 2 directory seeded as a clean Stage 1 rerun would leave it. */
+function stage2Directory(
+  gates: Record<string, string> = {},
+  extra: Record<string, string> = {},
+): string {
+  const out = Deno.makeTempDirSync({ prefix: "ccp10-stage2-dir-" });
+  Deno.writeTextFileSync(
+    join(out, "state.json"),
+    JSON.stringify({
+      mode: "dry",
+      runTag: "seed",
+      accounts: {},
+      looks: {},
+      finished: [],
+      reviewIssued: 0,
+    }),
+  );
+  Deno.writeTextFileSync(
+    join(out, "summary-stage1.json"),
+    JSON.stringify({
+      run_kind: "stage1_post_remediation_rerun",
+      stop_reason: null,
+      cases: { preview_requests: 8, expected_preview_requests: 8 },
+      gates: {
+        H1_palette_preserved: "PASS",
+        H2_no_ai_color_stored: "PASS",
+        H3_palette_identical_across_attempts: "PASS",
+        H4_accounting_exact: "PASS",
+        ...gates,
+      },
+    }),
+  );
+  for (const [name, text] of Object.entries(extra)) {
+    Deno.writeTextFileSync(join(out, name), text);
+  }
+  return out;
+}
+
+const stage2Refusals: Array<
+  [string, Record<string, string>, Record<string, string>, string]
+> = [
+  [
+    "a Stage 1 gate that did not pass",
+    { H4_accounting_exact: "FAIL" },
+    {},
+    "H4_accounting_exact",
+  ],
+  [
+    "a Stage 1 gate that is missing",
+    { H2_no_ai_color_stored: "" },
+    {},
+    "H2_no_ai_color_stored",
+  ],
+  ["a directory where Stage 2 already ran", {}, {
+    "summary-stage2.json": "{}",
+  }, "already ran"],
+  ["a budget whose Stage 2 worst case no longer fits", {}, {
+    "budget.json": JSON.stringify({ total: 75, byKind: {} }),
+  }, "does not fit"],
+];
+
+for (const [name, gates, extra, message] of stage2Refusals) {
+  Deno.test(`Stage 2 refuses ${name}`, async () => {
+    const out = stage2Directory(gates, extra);
+    const before = [...Deno.readDirSync(out)].map((e) => e.name).sort();
+    try {
+      const result = await runner({
+        ...SAFE_ENV,
+        CCP10_OUT: out,
+        CCP10_STAGE: "2",
+      });
+      assertEquals(result.code, 2, result.stderr);
+      assert(result.stderr.includes(message), result.stderr);
+      // Refused without writing a result or a summary.
+      assertEquals(
+        [...Deno.readDirSync(out)].map((e) => e.name).filter((n) =>
+          n !== "review"
+        )
+          .sort(),
+        before,
+      );
+    } finally {
+      Deno.removeSync(out, { recursive: true });
+    }
+  });
+}
+
+Deno.test("Stage 2 refuses protected source that is not the H9 baseline", async () => {
+  const out = stage2Directory();
+  const { repo, dispose } = cloneAt(PROTECTED_BASELINE);
+  try {
+    Deno.writeTextFileSync(
+      join(repo, "supabase/functions/generate-makeup-recommendation/prompt.ts"),
+      "\n// drift\n",
+      { append: true },
+    );
+    const result = await runner(
+      {
+        ...SAFE_ENV,
+        CCP10_OUT: out,
+        CCP10_STAGE: "2",
+        CCP10_REPO: repo,
+      },
+      "127.0.0.1",
+      "--allow-read",
+      RUN_GIT,
+    );
+    assertEquals(result.code, 2, result.stderr);
+    assert(result.stderr.includes("H9 baseline"), result.stderr);
+  } finally {
+    dispose();
+    Deno.removeSync(out, { recursive: true });
+  }
+});
+
+Deno.test("production and unknown hosts are refused", () => {
+  for (
+    const host of [
+      "abc.supabase.co",
+      "facetune.supabase.co",
+      "api.supabase.com",
+      "androidpublisher.googleapis.com",
+      "127.0.0.1.example.com",
+    ]
+  ) {
+    assertThrows(() => assertAllowedHost(host), GuardRefusal, undefined, host);
+  }
+  assertThrows(
+    () => assertLoopbackDatabase("https://abc.supabase.co"),
+    GuardRefusal,
+  );
+});
+
+Deno.test("source: Stage 2 checks the next case's worst case, and the retry bound", () => {
+  const source = Deno.readTextFileSync(join(HERE, "ccp10_eval.ts"));
+  const loop = source.indexOf("for (const evalCase of queue) {");
+  const fit = source.indexOf(
+    "if (budget.total + worstCaseFor(evalCase) > budget.ceiling) {",
+  );
+  const start = source.indexOf("current = newRecord();", loop);
+  assert(loop > 0 && loop < fit && fit < start);
+  assert(
+    source.includes(
+      'if (attempts.length > 2) accounting.push("retry_bound_exceeded");',
+    ),
+  );
+  assert(source.includes("stage2BudgetViolation(spentBefore)"));
 });

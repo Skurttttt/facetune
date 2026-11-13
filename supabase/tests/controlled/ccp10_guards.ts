@@ -548,17 +548,22 @@ export function protectedSourceCheck(
       stdout: "piped",
       stderr: "null",
     }).outputSync();
-  const diff = git(["diff", "--quiet", baseline, "--", ...paths]);
-  if (diff.code !== 0) return "FAIL";
-  const untracked = git([
-    "ls-files",
-    "--others",
-    "--exclude-standard",
-    "--",
-    ...paths,
-  ]);
-  if (untracked.code !== 0 || untracked.stdout.length > 0) return "FAIL";
-  return "PASS";
+  try {
+    const diff = git(["diff", "--quiet", baseline, "--", ...paths]);
+    if (diff.code !== 0) return "FAIL";
+    const untracked = git([
+      "ls-files",
+      "--others",
+      "--exclude-standard",
+      "--",
+      ...paths,
+    ]);
+    if (untracked.code !== 0 || untracked.stdout.length > 0) return "FAIL";
+    return "PASS";
+  } catch {
+    // git could not even start, so nothing was proven.
+    return "FAIL";
+  }
 }
 
 export function assertAllowedHost(hostname: string): void {
