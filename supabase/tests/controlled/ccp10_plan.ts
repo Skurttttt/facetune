@@ -49,7 +49,21 @@ export const STAGE_1_RERUN_AUTHORIZATION =
 export const STAGE_1_RERUN_KIND = "stage1_post_remediation_rerun";
 export const STAGE_1_RERUN_TITLE = "Stage 1 Post-Remediation Rerun";
 
-export type RunKind = "1" | "2" | "R1" | "1R";
+/**
+ * The targeted rerun after Stage 2: exactly the two cases Stage 2 could not
+ * settle, with evidence capture, on a copy of the Stage 2 state. One look whose
+ * recommendation was refused (worst case 2 recommendation + 4 preview calls) and
+ * one probe that ended in validator_failure (1 validator call): 7 calls.
+ */
+export const STAGE_2_TARGETED = [
+  "E-no_makeup_makeup",
+  "N-eyeshadow-absent",
+] as const;
+export const STAGE_2_TARGETED_CEILING = 7;
+export const STAGE_2_TARGETED_AUTHORIZATION = "CCP-10-STAGE-2R:2-cases:7-calls";
+export const STAGE_2_TARGETED_KIND = "stage2_targeted_rerun";
+
+export type RunKind = "1" | "2" | "R1" | "1R" | "2R";
 
 export function authorizationFor(kind: RunKind): string {
   switch (kind) {
@@ -61,6 +75,8 @@ export function authorizationFor(kind: RunKind): string {
       return REMEDIATION_AUTHORIZATION;
     case "1R":
       return STAGE_1_RERUN_AUTHORIZATION;
+    case "2R":
+      return STAGE_2_TARGETED_AUTHORIZATION;
   }
 }
 
@@ -79,6 +95,8 @@ export function runCeiling(kind: RunKind, spentBefore: number): number {
       return Math.min(TOTAL_CEILING, spentBefore + REMEDIATION_CEILING);
     case "1R":
       return Math.min(TOTAL_CEILING, spentBefore + STAGE_1_CEILING);
+    case "2R":
+      return Math.min(TOTAL_CEILING, spentBefore + STAGE_2_TARGETED_CEILING);
   }
 }
 /**
@@ -88,6 +106,13 @@ export function runCeiling(kind: RunKind, spentBefore: number): number {
 export function stage2BudgetViolation(spentBefore: number): string | null {
   return spentBefore + STAGE_2_CEILING > TOTAL_CEILING
     ? `Stage 2's worst case (${STAGE_2_CEILING}) does not fit: ${spentBefore} of ${TOTAL_CEILING} already spent.`
+    : null;
+}
+
+/** The targeted rerun starts only when its whole worst case fits. Reason, or null. */
+export function targetedBudgetViolation(spentBefore: number): string | null {
+  return spentBefore + STAGE_2_TARGETED_CEILING > TOTAL_CEILING
+    ? `The targeted rerun's worst case (${STAGE_2_TARGETED_CEILING}) does not fit: ${spentBefore} of ${TOTAL_CEILING} already spent.`
     : null;
 }
 

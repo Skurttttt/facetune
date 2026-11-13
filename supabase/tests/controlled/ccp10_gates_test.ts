@@ -470,4 +470,95 @@ Deno.test("Stage 2 continues the rerun: its 71 cases, within 366 calls, then sto
   );
 });
 
+Deno.test("the targeted rerun runs its 2 cases once, within 7 calls, after a full Stage 2", async () => {
+  const out = join(
+    WORKSPACE,
+    "out",
+    `gate-2r-${crypto.randomUUID().slice(0, 8)}`,
+  );
+  const command = (stage: string) =>
+    new Deno.Command(Deno.execPath(), {
+      args: [
+        "run",
+        "--no-lock",
+        "--allow-env",
+        "--allow-read",
+        `--allow-write=${out}`,
+        "--allow-sys",
+        "--allow-run=docker,icacls",
+        "--allow-net=127.0.0.1,localhost",
+        join(HERE, "ccp10_eval.ts"),
+      ],
+      cwd: FUNCTIONS,
+      env: {
+        CCP10_MODE: "dry",
+        CCP10_STAGE: stage,
+        CCP10_OUT: out,
+        CCP10_WORKSPACE: WORKSPACE,
+      },
+      stdout: "null",
+      stderr: "piped",
+    }).output();
+  for (const stage of ["1R", "2"]) {
+    const result = await command(stage);
+    assertEquals(result.code, 0, new TextDecoder().decode(result.stderr));
+  }
+  const stage2Summary = Deno.readTextFileSync(join(out, "summary-stage2.json"));
+  const before = Deno.readTextFileSync(join(out, "results.jsonl"));
+  const spent = JSON.parse(stage2Summary).provider_calls as {
+    total: number;
+    by_kind: Record<string, number>;
+  };
+
+  const targeted = await command("2R");
+  assertEquals(targeted.code, 0, new TextDecoder().decode(targeted.stderr));
+  const summary = JSON.parse(
+    Deno.readTextFileSync(join(out, "summary-stage2-targeted-rerun.json")),
+  ) as Summary & {
+    run_kind: string;
+    live_budget: { spent_before: number; new_call_allowance: number };
+  };
+  assertEquals(summary.run_kind, "stage2_targeted_rerun");
+  assertEquals(summary.stop_reason, null);
+  assertEquals(summary.violations, []);
+  assertEquals(summary.live_budget.spent_before, spent.total);
+  assertEquals(summary.live_budget.new_call_allowance, 7);
+  assert(summary.provider_calls.total - spent.total <= 7);
+  // Only the two paths' kinds were called: no analysis, no Tutorial.
+  for (const kind of ["analysis", "manifest", "guideline"]) {
+    assertEquals(
+      summary.provider_calls.by_kind[kind] ?? 0,
+      spent.by_kind[kind] ?? 0,
+      kind,
+    );
+  }
+  // Appended, never rewritten: exactly two new rows, for exactly the two cases.
+  const after = Deno.readTextFileSync(join(out, "results.jsonl"));
+  assert(after.startsWith(before));
+  const added = after.slice(before.length).split("\n").filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  assertEquals(added.map((row) => row.id), [
+    "E-no_makeup_makeup",
+    "N-eyeshadow-absent",
+  ]);
+  const probe = added[1];
+  assertEquals(probe.kind, "probe");
+  assert("validator_failure" in probe && "raw_validator_response" in probe);
+  assertEquals(
+    Deno.readTextFileSync(join(out, "summary-stage2.json")),
+    stage2Summary,
+  );
+  // Each case's function log was kept, and the started marker stays.
+  for (const id of ["E-no_makeup_makeup", "N-eyeshadow-absent"]) {
+    Deno.statSync(join(out, `function-log-${id}.txt`));
+  }
+  Deno.statSync(join(out, "targeted-rerun.started"));
+  // Once only.
+  const again = await command("2R");
+  const againError = new TextDecoder().decode(again.stderr);
+  assertEquals(again.code, 2, againError);
+  assert(/already ran|does not fit/.test(againError), againError);
+  assertEquals(Deno.readTextFileSync(join(out, "results.jsonl")), after);
+});
+
 Deno.test("the stops all ran", () => assertEquals(runs, 8));

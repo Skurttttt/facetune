@@ -42,6 +42,7 @@ import {
   samePalette,
   stageViolation,
   StopLoss,
+  targetedKindViolation,
   validatorBypassReason,
   versionViolation,
   wilson,
@@ -66,8 +67,12 @@ import {
   STAGE_1_CEILING,
   STAGE_1_RERUN_AUTHORIZATION,
   STAGE_2_CEILING,
+  STAGE_2_TARGETED,
+  STAGE_2_TARGETED_AUTHORIZATION,
+  STAGE_2_TARGETED_CEILING,
   stepsOf,
   STYLES,
+  targetedBudgetViolation,
   TOTAL_CEILING,
   TUTORIALS,
   VARIATIONS,
@@ -1134,7 +1139,7 @@ Deno.test("the remediation token and the Stage tokens are not interchangeable", 
       CCP10_STAGE: "R2",
     });
     assertEquals(unknown.code, 2);
-    assert(unknown.stderr.includes("1, 2, R1, or 1R"), unknown.stderr);
+    assert(unknown.stderr.includes("1, 2, R1, 1R, or 2R"), unknown.stderr);
   } finally {
     Deno.removeSync(out, { recursive: true });
   }
@@ -1888,14 +1893,14 @@ Deno.test("Stage 2 refuses every other run's token", async () => {
 Deno.test("there is no stage after 2: CCP-11 and CCP-12 cannot start from here", async () => {
   const out = Deno.makeTempDirSync({ prefix: "ccp10-stage3-" });
   try {
-    for (const stage of ["3", "11", "12", "CCP-11", "CCP-12", "2R", " 2"]) {
+    for (const stage of ["3", "11", "12", "CCP-11", "CCP-12", "3R", " 2"]) {
       const result = await runner({
         ...SAFE_ENV,
         CCP10_OUT: join(out, "run"),
         CCP10_STAGE: stage,
       });
       assertEquals(result.code, 2, stage);
-      assert(result.stderr.includes("1, 2, R1, or 1R"), result.stderr);
+      assert(result.stderr.includes("1, 2, R1, 1R, or 2R"), result.stderr);
     }
   } finally {
     Deno.removeSync(out, { recursive: true });
@@ -2133,4 +2138,269 @@ Deno.test("source: Stage 2 checks the next case's worst case, and the retry boun
     ),
   );
   assert(source.includes("stage2BudgetViolation(spentBefore)"));
+});
+
+// ---------------------------------------------------------------------------
+// The targeted Stage 2 rerun (2R): two cases, 7 calls, one run
+// ---------------------------------------------------------------------------
+
+const TARGETED_TOKEN = "CCP-10-STAGE-2R:2-cases:7-calls";
+
+Deno.test("14 and 18: the targeted rerun is exactly the two unsettled Stage 2 cases", () => {
+  assertEquals([...STAGE_2_TARGETED], [
+    "E-no_makeup_makeup",
+    "N-eyeshadow-absent",
+  ]);
+  const cases = ALL_CASES.filter((c) =>
+    (STAGE_2_TARGETED as readonly string[]).includes(c.id)
+  );
+  assertEquals(cases.map((c) => [c.id, c.kind, c.stage]), [
+    ["E-no_makeup_makeup", "look", 2],
+    ["N-eyeshadow-absent", "probe", 2],
+  ]);
+});
+
+Deno.test("19-22: 7 new calls on top of 256, so at most 263, never past 440", () => {
+  assertEquals(STAGE_2_TARGETED_CEILING, 7);
+  assertEquals(runCeiling("2R", 256), 263);
+  assertEquals(runCeiling("2R", 0), 7);
+  assertEquals(runCeiling("2R", 437), 440);
+  assertEquals(targetedBudgetViolation(256), null);
+  assertEquals(targetedBudgetViolation(433), null);
+  assert(targetedBudgetViolation(434)?.includes("does not fit"));
+  for (let spent = 0; spent <= 440; spent += 1) {
+    assert(runCeiling("2R", spent) <= TOTAL_CEILING);
+  }
+  const dir = Deno.makeTempDirSync({ prefix: "ccp10-2r-budget-" });
+  const path = join(dir, "ccp10-live-budget.json");
+  const prior = {
+    total: 256,
+    byKind: { analysis: 11, recommendation: 66, image: 73, validator: 85 },
+  };
+  Deno.writeTextFileSync(path, JSON.stringify(prior));
+  try {
+    const budget = new CallBudget(path, runCeiling("2R", 256));
+    assertEquals(budget.total, 256);
+    let charged = 0;
+    while (true) {
+      try {
+        budget.charge("validator");
+        charged += 1;
+      } catch (error) {
+        assert(error instanceof CeilingReached);
+        break;
+      }
+    }
+    assertEquals(charged, 7);
+    const after = JSON.parse(Deno.readTextFileSync(path));
+    assertEquals(after.total, 263);
+    assertEquals(after.byKind.recommendation, 66);
+    assertEquals(after.byKind.image, 73);
+  } finally {
+    Deno.removeSync(dir, { recursive: true });
+  }
+});
+
+Deno.test("24 and 25: E's bound is 2 recommendation + 4 preview calls; N's is 1 validator call", () => {
+  assertEquals(worstCaseFor(lookById("E-no_makeup_makeup")), 6);
+  const probe = ALL_CASES.find((c) => c.id === "N-eyeshadow-absent")!;
+  assertEquals(probe.kind, "probe");
+  assertEquals(worstCaseFor(probe), 1);
+  assertEquals(
+    STAGE_2_TARGETED.map((id) =>
+      worstCaseFor(ALL_CASES.find((c) => c.id === id)!)
+    )
+      .reduce((a, b) => a + b, 0),
+    STAGE_2_TARGETED_CEILING,
+  );
+  // Only what those paths use: analysis is reused, and no Tutorial runs.
+  for (const kind of ["recommendation", "image", "validator"] as const) {
+    assertEquals(targetedKindViolation(kind), null);
+  }
+  for (const kind of ["analysis", "manifest", "guideline"] as const) {
+    assert(targetedKindViolation(kind)?.includes("forbids"));
+  }
+});
+
+Deno.test("15-17: the targeted token is unique, required, and authorizes nothing else", async () => {
+  assertEquals(STAGE_2_TARGETED_AUTHORIZATION, TARGETED_TOKEN);
+  assertEquals(authorizationFor("2R"), TARGETED_TOKEN);
+  const tokens = (["1", "2", "R1", "1R", "2R"] as const).map(authorizationFor);
+  assertEquals(new Set(tokens).size, 5);
+  const out = Deno.makeTempDirSync({ prefix: "ccp10-2r-token-" });
+  try {
+    for (
+      const token of [
+        LIVE_AUTHORIZATION[1],
+        LIVE_AUTHORIZATION[2],
+        REMEDIATION_AUTHORIZATION,
+        STAGE_1_RERUN_AUTHORIZATION,
+        `${TARGETED_TOKEN} `,
+        "",
+      ]
+    ) {
+      const result = await runner({
+        ...SAFE_ENV,
+        CCP10_OUT: join(out, "run"),
+        CCP10_MODE: "live",
+        CCP10_STAGE: "2R",
+        CCP10_LIVE_AUTHORIZATION: token,
+      }, LIVE_NET);
+      assertEquals(result.code, 2, token);
+      assert(result.stderr.includes("exact authorization"), result.stderr);
+    }
+    for (const stage of ["1", "2", "R1", "1R"]) {
+      const result = await runner({
+        ...SAFE_ENV,
+        CCP10_OUT: join(out, "run"),
+        CCP10_MODE: "live",
+        CCP10_STAGE: stage,
+        CCP10_LIVE_AUTHORIZATION: TARGETED_TOKEN,
+      }, LIVE_NET);
+      assertEquals(result.code, 2, stage);
+      assert(result.stderr.includes("exact authorization"), result.stderr);
+    }
+  } finally {
+    Deno.removeSync(out, { recursive: true });
+  }
+});
+
+Deno.test("23: a live targeted rerun cannot begin without the budget history", async () => {
+  const out = Deno.makeTempDirSync({ prefix: "ccp10-2r-live-" });
+  const home = join(out, "home");
+  Deno.mkdirSync(join(home, ".facetune-eval"), { recursive: true });
+  const { repo, dispose } = cloneAt(PROTECTED_BASELINE);
+  try {
+    const result = await runner(
+      {
+        ...SAFE_ENV,
+        CCP10_OUT: join(out, "run"),
+        CCP10_MODE: "live",
+        CCP10_STAGE: "2R",
+        CCP10_LIVE_AUTHORIZATION: TARGETED_TOKEN,
+        CCP10_REPO: repo,
+        USERPROFILE: home,
+        HOME: home,
+      },
+      LIVE_NET,
+      "--allow-read",
+      RUN_GIT,
+    );
+    assertEquals(result.code, 2);
+    assert(result.stderr.includes("live budget history"), result.stderr);
+  } finally {
+    dispose();
+    Deno.removeSync(out, { recursive: true });
+  }
+});
+
+const STAGE_2_DONE = JSON.stringify({
+  run_kind: "stage2",
+  stop_reason: null,
+  simulated: true,
+});
+const targetedRefusals: Array<[string, Record<string, string>, string]> = [
+  ["no completed Stage 2", {}, "needs a completed Stage 2"],
+  ["a Stage 2 that stopped", {
+    "summary-stage2.json": JSON.stringify({
+      run_kind: "stage2",
+      stop_reason: "provider call ceiling reached",
+      simulated: true,
+    }),
+  }, "clean Stage 2"],
+  ["a live Stage 2 under a simulated rerun", {
+    "summary-stage2.json": JSON.stringify({
+      run_kind: "stage2",
+      stop_reason: null,
+      simulated: false,
+    }),
+  }, "same mode"],
+  ["a second targeted rerun (started marker)", {
+    "summary-stage2.json": STAGE_2_DONE,
+    "targeted-rerun.started": "2026-11-13T00:00:00Z\n",
+  }, "already ran"],
+  ["a second targeted rerun (summary)", {
+    "summary-stage2.json": STAGE_2_DONE,
+    "summary-stage2-targeted-rerun.json": "{}",
+  }, "already ran"],
+  ["a budget whose 7 calls no longer fit", {
+    "summary-stage2.json": STAGE_2_DONE,
+    "budget.json": JSON.stringify({ total: 434, byKind: {} }),
+  }, "does not fit"],
+];
+
+for (const [name, extra, message] of targetedRefusals) {
+  Deno.test(`26-28: the targeted rerun refuses ${name}, writing nothing`, async () => {
+    const out = stage2Directory({}, extra);
+    const before = [...Deno.readDirSync(out)].map((e) => e.name).sort();
+    try {
+      const result = await runner({
+        ...SAFE_ENV,
+        CCP10_OUT: out,
+        CCP10_STAGE: "2R",
+      });
+      assertEquals(result.code, 2, result.stderr);
+      assert(result.stderr.includes(message), result.stderr);
+      assertEquals(
+        [...Deno.readDirSync(out)].map((e) => e.name).filter((n) =>
+          n !== "review"
+        ).sort(),
+        before,
+      );
+    } finally {
+      Deno.removeSync(out, { recursive: true });
+    }
+  });
+}
+
+Deno.test("the targeted rerun refuses protected source that is not the H9 baseline", async () => {
+  const out = stage2Directory({}, { "summary-stage2.json": STAGE_2_DONE });
+  const { repo, dispose } = cloneAt(PROTECTED_BASELINE);
+  try {
+    Deno.writeTextFileSync(
+      join(
+        repo,
+        "supabase/functions/generate-custom-palette-preview/validator.ts",
+      ),
+      "\n// drift\n",
+      { append: true },
+    );
+    const result = await runner(
+      { ...SAFE_ENV, CCP10_OUT: out, CCP10_STAGE: "2R", CCP10_REPO: repo },
+      "127.0.0.1",
+      "--allow-read",
+      RUN_GIT,
+    );
+    assertEquals(result.code, 2, result.stderr);
+    assert(result.stderr.includes("H9 baseline"), result.stderr);
+  } finally {
+    dispose();
+    Deno.removeSync(out, { recursive: true });
+  }
+});
+
+Deno.test("source: the targeted queue is exactly its set, marked once, logs kept per case", () => {
+  const source = Deno.readTextFileSync(join(HERE, "ccp10_eval.ts"));
+  assert(source.includes(
+    "? ALL_CASES.filter((c) => targetedCases.has(c.id))",
+  ));
+  assert(source.includes("`${outDir}/targeted-rerun.started`"));
+  assert(source.includes("`${outDir}/function-log-${evalCase.id}.txt`"));
+  assert(source.includes("if (targeted && !leak) {"));
+  // Evidence goes through the leak scan before any results write.
+  const record = source.indexOf("function record(row: Row): void {");
+  const scan = source.indexOf(
+    "const leak = findLeak(JSON.stringify(row), [service, anon, liveKey]);",
+    record,
+  );
+  const write = source.indexOf("Deno.writeTextFileSync(resultsPath", record);
+  assert(
+    record > 0 && scan > record && scan < write,
+    `${record} ${scan} ${write}`,
+  );
+  assert(source.includes("JSON.stringify(safe)"));
+  // The probe no longer hides why it failed.
+  assert(source.includes("failure = classifyValidatorFailure("));
+  assert(source.includes("refusal_evidence: await refusalEvidence("));
+  assert(!/CCP-1[12]/.test(source));
 });

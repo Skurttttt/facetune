@@ -49,6 +49,14 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 import { createGeminiPreviewPorts } from "../../functions/generate-custom-palette-preview/gemini_client.ts";
 import { judgeValidatorResponse } from "../../functions/generate-custom-palette-preview/validator.ts";
+import { parseCustomPaletteRecommendation } from "../../functions/generate-custom-palette-recommendation/validation.ts";
+import { CUSTOM_PALETTE_RECOMMENDATION_PROMPT_VERSION } from "../../functions/generate-custom-palette-recommendation/prompt.ts";
+import {
+  classifyValidatorFailure,
+  explainPaletteConflict,
+  type ValidatorResponseMeta,
+  validatorResponseMeta,
+} from "./ccp10_evidence.ts";
 import {
   CUSTOM_PALETTE_VALIDATOR_VERSION,
   customPaletteValidatorPrompt,
@@ -95,6 +103,7 @@ import {
   samePalette,
   stageViolation,
   StopLoss,
+  targetedKindViolation,
   validatorBypassReason,
   versionViolation,
   wilson,
@@ -126,6 +135,9 @@ import {
   STAGE_1_ACCOUNTS,
   STAGE_1_RERUN_KIND,
   STAGE_1_RERUN_TITLE,
+  STAGE_2_TARGETED,
+  STAGE_2_TARGETED_KIND,
+  targetedBudgetViolation,
   TUTORIAL_CATEGORY,
   type TutorialCase,
   TUTORIALS,
@@ -152,16 +164,26 @@ const mode = Deno.env.get("CCP10_MODE") === "live"
   ? "live" as const
   : "dry" as const;
 const stageText = Deno.env.get("CCP10_STAGE") ?? "1";
-if (!["1", "2", "R1", "1R"].includes(stageText)) {
-  refuse("CCP10_STAGE must be 1, 2, R1, or 1R");
+if (!["1", "2", "R1", "1R", "2R"].includes(stageText)) {
+  refuse("CCP10_STAGE must be 1, 2, R1, 1R, or 2R");
 }
 const runKind = stageText as RunKind;
 /** R1 runs under every Stage 1 rule, but only its three cases, and on its own. */
 const remediation = runKind === "R1";
 /** 1R is Stage 1 again, after remediation: same cases, same rules, new allowance. */
 const rerun = runKind === "1R";
-const stage = (remediation || rerun ? 1 : Number(stageText)) as Stage;
-const runLabel = remediation ? "remediation-r1" : `stage${stage}`;
+/** 2R reruns exactly two Stage 2 cases, with evidence capture, on a copy of Stage 2. */
+const targeted = runKind === "2R";
+const stage =
+  (remediation || rerun ? 1 : targeted ? 2 : Number(stageText)) as Stage;
+const runLabel = remediation
+  ? "remediation-r1"
+  : targeted
+  ? "stage2-targeted-rerun"
+  : `stage${stage}`;
+const targetedCases: ReadonlySet<string> | null = targeted
+  ? new Set(STAGE_2_TARGETED)
+  : null;
 // The remediation lock: the code loaded here must be the remediated versions.
 if (
   CUSTOM_PALETTE_PREVIEW_PROMPT_VERSION !== REQUIRED_PREVIEW_VERSION ||
@@ -329,7 +351,9 @@ const dryCeiling = mode === "dry"
 const spentBefore = new CallBudget(budgetPath, 0).total;
 const ceiling = dryCeiling > 0 ? dryCeiling : runCeiling(runKind, spentBefore);
 if (stage === 2 && dryCeiling === 0) {
-  const tooLate = stage2BudgetViolation(spentBefore);
+  const tooLate = targeted
+    ? targetedBudgetViolation(spentBefore)
+    : stage2BudgetViolation(spentBefore);
   if (tooLate) refuse(tooLate);
 }
 const budget = new CallBudget(budgetPath, ceiling);
@@ -376,6 +400,10 @@ interface CaseProviderRecord {
   variationNumbers: number[];
   /** Held in memory only, to re-judge an accepted preview. Never written out. */
   validatorTexts: string[];
+  /** Held in memory only, to explain a refusal. Only the explanation is written. */
+  recommendationTexts: string[];
+  /** What each validator response looked like, before the client read it. */
+  validatorMeta: ValidatorResponseMeta[];
   frozenHash: string | null;
   expectedPalette: string[] | null;
 }
@@ -388,6 +416,8 @@ function newRecord(): CaseProviderRecord {
     promptPalettes: [],
     variationNumbers: [],
     validatorTexts: [],
+    recommendationTexts: [],
+    validatorMeta: [],
     frozenHash: null,
     expectedPalette: null,
   };
@@ -428,7 +458,8 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   } catch (error) {
     return halt(error instanceof Error ? error.message : "unknown request");
   }
-  const forbidden = stageViolation(stage, kind);
+  const forbidden = stageViolation(stage, kind) ??
+    (targeted ? targetedKindViolation(kind) : null);
   if (forbidden) {
     record({
       id: "violation",
@@ -478,6 +509,22 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     ? provider.answer(kind, body)
     : await realFetch(input, init);
   stopLoss.providerResponded(response.status);
+  if (kind === "validator") {
+    current.validatorMeta.push(await validatorResponseMeta(response));
+  }
+  if (kind === "recommendation" && response.ok) {
+    try {
+      const copy = await response.clone().json() as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      };
+      current.recommendationTexts.push(
+        copy.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "")
+          .join("") ?? "",
+      );
+    } catch {
+      current.recommendationTexts.push("");
+    }
+  }
   if (kind === "validator" && response.ok) {
     const copy = await response.clone().json() as {
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
@@ -623,7 +670,45 @@ if (stage === 2) {
   } catch {
     alreadyRan = false;
   }
-  if (alreadyRan) refuse("Stage 2 already ran in this directory.");
+  if (!targeted && alreadyRan) {
+    refuse("Stage 2 already ran in this directory.");
+  }
+  if (targeted) {
+    // The targeted rerun continues a full Stage 2 that finished without a stop,
+    // in the same mode, and runs once: its started marker is never removed.
+    if (!alreadyRan) refuse("The targeted rerun needs a completed Stage 2.");
+    try {
+      const stage2 = JSON.parse(
+        Deno.readTextFileSync(`${outDir}/summary-stage2.json`),
+      ) as {
+        run_kind?: string;
+        stop_reason?: string | null;
+        simulated?: boolean;
+      };
+      if (
+        stage2.run_kind !== "stage2" || stage2.stop_reason !== null ||
+        stage2.simulated !== (mode === "dry")
+      ) {
+        refuse("The targeted rerun needs a clean Stage 2 in the same mode.");
+      }
+    } catch {
+      refuse("The targeted rerun cannot read Stage 2's summary.");
+    }
+    for (
+      const marker of [
+        `${outDir}/targeted-rerun.started`,
+        `${outDir}/summary-stage2-targeted-rerun.json`,
+      ]
+    ) {
+      let exists = true;
+      try {
+        Deno.statSync(marker);
+      } catch {
+        exists = false;
+      }
+      if (exists) refuse("The targeted rerun already ran in this directory.");
+    }
+  }
   // Stage 2 builds on Stage 1, so it may only follow a Stage 1 that finished clean.
   try {
     const stage1 = JSON.parse(
@@ -940,8 +1025,14 @@ type Row = Record<string, unknown> & {
 const rowsThisRun: Row[] = [];
 
 function record(row: Row): void {
-  rowsThisRun.push(row);
-  Deno.writeTextFileSync(resultsPath, JSON.stringify(row) + "\n", {
+  // Nothing reaches the results file before the leak scan has seen it.
+  const leak = findLeak(JSON.stringify(row), [service, anon, liveKey]);
+  const safe: Row = leak
+    ? { id: row.id, block: row.block, kind: row.kind, redacted: leak }
+    : row;
+  if (leak) stopLoss.stop(`sensitive content in a result: ${leak}`);
+  rowsThisRun.push(safe);
+  Deno.writeTextFileSync(resultsPath, JSON.stringify(safe) + "\n", {
     append: true,
   });
 }
@@ -1161,6 +1252,36 @@ async function previewChecks(
   };
 }
 
+/**
+ * Why the recommendation guard refused, from the model's last response, held in
+ * memory. Only the matched words, their fields and a short context are written.
+ */
+async function refusalEvidence(
+  code: string | null,
+  selections: PaletteSelection[],
+): Promise<Record<string, unknown>> {
+  const text = current.recommendationTexts.at(-1) ?? null;
+  const evidence: Record<string, unknown> = {
+    guard_code: code,
+    recommendation_version: CUSTOM_PALETTE_RECOMMENDATION_PROMPT_VERSION,
+    recommendation_model: "gemini-3.6-flash",
+    attempt: current.recommendationTexts.length,
+    response_present: text !== null && text.length > 0,
+    response_sha256: text ? await sha256(text) : null,
+  };
+  if (text && code === "conflicting_palette_text") {
+    Object.assign(
+      evidence,
+      explainPaletteConflict(
+        text,
+        selections,
+        parseCustomPaletteRecommendation,
+      ),
+    );
+  }
+  return evidence;
+}
+
 async function runLook(look: LookCase): Promise<void> {
   const account = look.account;
   const session = sessions.get(account)!;
@@ -1200,6 +1321,10 @@ async function runLook(look: LookCase): Promise<void> {
       outcome: "recommendation_failed",
       failure_code: recommendation.body?.error?.code ?? null,
       provider_calls: current.calls,
+      refusal_evidence: await refusalEvidence(
+        recommendation.body?.error?.code ?? null,
+        expected,
+      ),
     });
     return;
   }
@@ -1428,6 +1553,8 @@ async function runProbe(probe: ProbeCase): Promise<void> {
   const ports = createGeminiPreviewPorts(Deno.env.get("GEMINI_API_KEY")!);
   let outcome = "validator_failure";
   let reasons: string[] = [];
+  let failure: Record<string, unknown> | null = null;
+  let rawText: string | null = null;
   try {
     const text = await ports.requestValidation(
       customPaletteValidatorPrompt(selections),
@@ -1440,14 +1567,30 @@ async function runProbe(probe: ProbeCase): Promise<void> {
         mimeType: "image/png",
       },
     );
+    rawText = text;
     const verdict = judgeValidatorResponse(text, selections);
     outcome = verdict.outcome;
+    if (outcome === "validator_failure") {
+      failure = classifyValidatorFailure(
+        null,
+        current.validatorMeta.at(-1) ?? null,
+        text,
+        selections,
+      );
+    }
     reasons = [
       ...verdict.color_mismatch_reasons.map((r) => `${r.category}:${r.reason}`),
       ...verdict.mismatch_categories.map((c) => `${c}:mismatch`),
     ];
   } catch (error) {
     if (error instanceof CeilingReached) throw error;
+    // Still no judgment and still never a pass, but no longer anonymous.
+    failure = classifyValidatorFailure(
+      error,
+      current.validatorMeta.at(-1) ?? null,
+      null,
+      selections,
+    );
   }
   record({
     id: probe.id,
@@ -1460,6 +1603,10 @@ async function runProbe(probe: ProbeCase): Promise<void> {
     flagged: outcome === "retryable_palette_mismatch" ||
       outcome === "nonretryable_palette_mismatch",
     reasons,
+    validator_failure: failure,
+    validator_response_meta: current.validatorMeta.at(-1) ?? null,
+    // Judgments only (no image, no prompt), capped, and leak-scanned by record().
+    raw_validator_response: rawText === null ? null : rawText.slice(0, 8000),
     provider_calls: current.calls,
   });
 }
@@ -1479,7 +1626,11 @@ function loadAllRows(): Row[] {
 
 // Stage 2 live may not begin until Stage 1's blind review is complete and clean.
 let reviewNote = "not_required_at_stage_1";
-if (stage === 2) {
+if (targeted) {
+  // Stage 1's review is checked by the runner. Stage 2's is still pending, and is
+  // not a precondition for diagnosing two of its cases.
+  reviewNote = "not_required_for_targeted_rerun";
+} else if (stage === 2) {
   if (mode === "live") {
     try {
       const review = readReviewSheet(
@@ -1514,7 +1665,23 @@ function accountOf(evalCase: EvalCase): AccountId | null {
 }
 
 let setupFailed = false;
-const accountsNeeded = planned
+const accountsNeeded = targetedCases
+  ? [
+    ...new Set([
+      ...LOOKS.filter((look) => targetedCases.has(look.id)).map((l) =>
+        l.account
+      ),
+      // A probe reads its source preview with the source's own account.
+      ...PROBES.filter((probe) => targetedCases.has(probe.id)).flatMap((
+        probe,
+      ) =>
+        A_COLORS.map((color) => state.looks[`A-${probe.category}-${color}`])
+          .filter((look) => look?.previewId).map((look) => look!.account)
+          .slice(0, 1)
+      ),
+    ]),
+  ]
+  : planned
   ? [
     ...new Set(
       LOOKS.filter((look) => planned.has(look.id)).map((l) => l.account),
@@ -1536,10 +1703,19 @@ for (const account of accountsNeeded) {
   if (stopLoss.reason || budget.exhausted) break;
 }
 
-const queue = ALL_CASES.filter((c) =>
-  (planned ? planned.has(c.id) : c.stage === stage) &&
-  !state.finished.includes(c.id)
-);
+// The targeted cases already finished once in Stage 2, so they run regardless.
+const queue = targetedCases
+  ? ALL_CASES.filter((c) => targetedCases.has(c.id))
+  : ALL_CASES.filter((c) =>
+    (planned ? planned.has(c.id) : c.stage === stage) &&
+    !state.finished.includes(c.id)
+  );
+if (targeted && !setupFailed && !stopLoss.reason) {
+  Deno.writeTextFileSync(
+    `${outDir}/targeted-rerun.started`,
+    new Date().toISOString() + "\n",
+  );
+}
 let index = 0;
 for (const evalCase of queue) {
   if (setupFailed || stopLoss.reason) break;
@@ -1557,6 +1733,7 @@ for (const evalCase of queue) {
     break;
   }
   current = newRecord();
+  const logStart = captured.length;
   provider.startCase(
     inject === "palette_mutation"
       ? "retry"
@@ -1613,6 +1790,13 @@ for (const evalCase of queue) {
   if (budget.exhausted) stopLoss.stop("provider call ceiling reached");
   const leak = findLeak(captured.join("\n"), [service, anon, liveKey]);
   if (leak) stopLoss.stop(`sensitive content in logs: ${leak}`);
+  // The targeted rerun keeps each case's function log, already leak-scanned.
+  if (targeted && !leak) {
+    Deno.writeTextFileSync(
+      `${outDir}/function-log-${evalCase.id}.txt`,
+      captured.slice(logStart).join("\n") + "\n",
+    );
+  }
   state.finished.push(evalCase.id);
   saveState();
   say(
@@ -1624,7 +1808,17 @@ for (const evalCase of queue) {
 // Summary and gates
 // ---------------------------------------------------------------------------
 
-const rows = loadAllRows();
+/** For the targeted rerun, each case's latest row stands for it. */
+function latestPerCase(all: Row[]): Row[] {
+  const last = new Map<string, number>();
+  all.forEach((row, at) => {
+    if (row.kind !== "violation") last.set(row.id, at);
+  });
+  return all.filter((row, at) =>
+    row.kind === "violation" || last.get(row.id) === at
+  );
+}
+const rows = targeted ? latestPerCase(loadAllRows()) : loadAllRows();
 const previews = rows.filter((r) => r.attempts !== undefined);
 const looks = rows.filter((r) => r.kind === "look" && r.outcome !== "skipped");
 const accepted = previews.filter((r) => r.outcome === "accepted");
@@ -1739,6 +1933,8 @@ const summary = {
     : `Stage ${stage}`,
   run_kind: rerun
     ? STAGE_1_RERUN_KIND
+    : targeted
+    ? STAGE_2_TARGETED_KIND
     : remediation
     ? "remediation_r1"
     : `stage${stage}`,

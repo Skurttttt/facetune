@@ -388,6 +388,22 @@ export function stageViolation(
     : null;
 }
 
+const TARGETED_KINDS: ReadonlySet<ProviderKind> = new Set([
+  "recommendation",
+  "image",
+  "validator",
+]);
+
+/**
+ * The targeted rerun reuses Stage 2's analyzed accounts and runs no Tutorial,
+ * so only a recommendation, a preview and the validator may be called.
+ */
+export function targetedKindViolation(kind: ProviderKind): string | null {
+  return TARGETED_KINDS.has(kind)
+    ? null
+    : `the targeted rerun forbids a ${kind} call`;
+}
+
 /** Returns why this image request is not the frozen palette, or null if it is. */
 export function paletteViolation(options: {
   frozenHash: string | null;
