@@ -26,7 +26,9 @@ import {
   CUSTOM_PALETTE_VALIDATOR_SCHEMA,
   CUSTOM_PALETTE_VALIDATOR_VERSION,
   customPaletteValidatorPrompt,
+  IDENTITY_FEATURES,
 } from "./validator_prompt.ts";
+import { colorTone, describeTone } from "./tone.ts";
 
 const BLUSH: PaletteSelection = {
   category_code: "blush",
@@ -75,6 +77,10 @@ const CANDIDATE: PreviewImage = {
   mimeType: "image/png",
 };
 
+const SAME_PERSON: Record<string, string> = Object.fromEntries(
+  IDENTITY_FEATURES.map((feature) => [feature, "same"]),
+);
+
 function observation(categoryCode: string, overrides = {}) {
   return {
     categoryCode,
@@ -93,9 +99,10 @@ function observations(
   categories: unknown[] = [observation("blush"), observation("lipstick")],
 ): string {
   return JSON.stringify({
+    identityFeatures: SAME_PERSON,
+    identity: "preserved",
     categories,
     introducedCategories: [],
-    identity: "preserved",
     ...overrides,
   });
 }
@@ -240,9 +247,9 @@ Deno.test("the variation number reaches the prompt", () => {
 Deno.test("versions are the additive CCP identifiers", () => {
   assertEquals(
     CUSTOM_PALETTE_PREVIEW_PROMPT_VERSION,
-    "custom_palette_preview_v1",
+    "custom_palette_preview_v2",
   );
-  assertEquals(CUSTOM_PALETTE_VALIDATOR_VERSION, "custom_palette_validator_v1");
+  assertEquals(CUSTOM_PALETTE_VALIDATOR_VERSION, "custom_palette_validator_v2");
 });
 
 // ---------------------------------------------------------------------------
@@ -279,7 +286,7 @@ Deno.test("a faithful result is accepted", () => {
   assertEquals(verdict.outcome, "accepted");
   assertEquals(verdict.mismatch_categories, []);
   assertEquals(verdict.uncertain_categories, []);
-  assertEquals(verdict.validator_version, "custom_palette_validator_v1");
+  assertEquals(verdict.validator_version, "custom_palette_validator_v2");
   assertEquals(verdict.failure_code, null);
 });
 
@@ -481,8 +488,8 @@ Deno.test("a faithful candidate is accepted with its provenance", async () => {
   if (result.outcome !== "accepted") return;
   assertEquals(result.image, CANDIDATE);
   assertEquals(result.model, "gemini-3.1-flash-image");
-  assertEquals(result.prompt_version, "custom_palette_preview_v1");
-  assertEquals(result.verdict.validator_version, "custom_palette_validator_v1");
+  assertEquals(result.prompt_version, "custom_palette_preview_v2");
+  assertEquals(result.verdict.validator_version, "custom_palette_validator_v2");
 });
 
 Deno.test("the validator sees the original and the candidate, in order", async () => {
@@ -713,6 +720,365 @@ Deno.test("an empty validator response is a failure, not a pass", async () => {
 function source(path: string): string {
   return Deno.readTextFileSync(new URL(path, import.meta.url));
 }
+
+// ---------------------------------------------------------------------------
+// CCP-10 Stage 1 remediation: identity drift and dark palettes
+// ---------------------------------------------------------------------------
+
+const DARK: PaletteSelection = {
+  category_code: "lipstick",
+  base_color_value: "#C8102E",
+  adjusted_color_value: "#290A0F",
+  color_label: "Red",
+  finish_code: "matte",
+};
+const GLITTER: PaletteSelection = {
+  category_code: "eyeshadow",
+  base_color_value: "#8A5A34",
+  adjusted_color_value: "#8A5A34",
+  color_label: "Bronze",
+  finish_code: "glitter",
+};
+
+function features(overrides: Record<string, string>) {
+  return { ...SAME_PERSON, ...overrides };
+}
+
+Deno.test("identity: a faithful same-person candidate is accepted, with no differences", () => {
+  const verdict = judge(observations());
+  assertEquals(verdict.outcome, "accepted");
+  assertEquals(verdict.identity, "preserved");
+  assertEquals(verdict.identity_differences, []);
+});
+
+Deno.test("identity: a different person is never accepted, whatever the summary says", () => {
+  // R004 and R006: same hair, pose and framing; a different face. The summary
+  // word alone said "preserved", which is exactly what Stage 1 accepted.
+  for (
+    const differs of [
+      { faceShape: "different" },
+      { eyes: "different" },
+      { nose: "different" },
+      { mouth: "different" },
+      { apparentAge: "different" },
+      { faceShape: "different", eyes: "different", nose: "different" },
+    ] as Array<Record<string, string>>
+  ) {
+    for (const summary of ["preserved", "changed"]) {
+      const verdict = judge(
+        observations({
+          identityFeatures: features(differs),
+          identity: summary,
+        }),
+      );
+      assertEquals(
+        verdict.outcome,
+        "retryable_palette_mismatch",
+        JSON.stringify(differs),
+      );
+      assertEquals(verdict.identity, "changed");
+      for (const key of Object.keys(differs)) {
+        assert(verdict.identity_differences.includes(key), key);
+      }
+    }
+  }
+});
+
+Deno.test("identity: an ambiguous identity fails closed", () => {
+  for (const feature of IDENTITY_FEATURES) {
+    const verdict = judge(
+      observations({ identityFeatures: features({ [feature]: "uncertain" }) }),
+    );
+    assert(verdict.outcome !== "accepted", feature);
+    assertEquals(verdict.identity, "uncertain", feature);
+  }
+  const summaryOnly = judge(observations({ identity: "uncertain" }));
+  assert(summaryOnly.outcome !== "accepted");
+});
+
+Deno.test("identity: missing or malformed identity evidence fails closed", () => {
+  const partial = { ...SAME_PERSON };
+  delete partial.eyes;
+  for (
+    const broken of [
+      observations({ identityFeatures: undefined }),
+      JSON.stringify({
+        identity: "preserved",
+        categories: [observation("blush"), observation("lipstick")],
+        introducedCategories: [],
+      }),
+      observations({ identityFeatures: partial }),
+      observations({ identityFeatures: { ...SAME_PERSON, ears: "same" } }),
+      observations({ identityFeatures: features({ eyes: "similar" }) }),
+      observations({ identityFeatures: features({ eyes: true as never }) }),
+      observations({ identityFeatures: [] }),
+      observations({ identityFeatures: "same" }),
+      observations({ identity: undefined }),
+    ]
+  ) {
+    const verdict = judge(broken);
+    assertEquals(verdict.outcome, "validator_failure", broken.slice(0, 80));
+    assertEquals(verdict.identity, null);
+  }
+});
+
+Deno.test("identity: inputs swapped by a broken port are not accepted", async () => {
+  // A validator that behaves like a careful model: when IMAGE B is the original,
+  // no makeup was applied.
+  class SwappingPorts extends FakePorts {
+    override requestValidation(
+      prompt: string,
+      original: PreviewImage,
+      candidate: PreviewImage,
+    ) {
+      // The bug under test: arguments passed the wrong way round.
+      this.validatorImages.push([candidate, original]);
+      // After the swap, the model's IMAGE B is the untouched original.
+      const imageB = original;
+      const sawOriginalAsCandidate = imageB.bytes === ORIGINAL.bytes;
+      return Promise.resolve(
+        sawOriginalAsCandidate
+          ? observations({}, [
+            observation("blush", {
+              presence: "absent",
+              color: "not_applicable",
+              finish: "not_applicable",
+            }),
+            observation("lipstick", {
+              presence: "absent",
+              color: "not_applicable",
+              finish: "not_applicable",
+            }),
+          ])
+          : observations(),
+      );
+    }
+  }
+  const ports = new SwappingPorts();
+  const result = await run(ports);
+  assertEquals(result.outcome, "retryable_palette_mismatch");
+  assertNoImage(result);
+});
+
+Deno.test("identity: the validator judges identity first, feature by feature", () => {
+  const prompt = customPaletteValidatorPrompt(SELECTIONS);
+  const identityAt = prompt.indexOf("STEP 1 — IDENTITY");
+  const paletteAt = prompt.indexOf("STEP 2 — THE PALETTE");
+  assert(identityAt >= 0 && paletteAt > identityAt);
+  for (const feature of IDENTITY_FEATURES) {
+    assert(prompt.indexOf(`- ${feature}:`) > identityAt, feature);
+    assert(prompt.indexOf(`- ${feature}:`) < paletteAt, feature);
+  }
+  assertStringIncludes(prompt, "is NOT enough to call it the same individual");
+  assertStringIncludes(prompt, "never preserved");
+  // Schema: identity evidence is required, and comes first.
+  const schema = CUSTOM_PALETTE_VALIDATOR_SCHEMA as {
+    required: string[];
+    properties: Record<string, { required?: string[] }>;
+  };
+  assertEquals(schema.required.slice(0, 2), ["identityFeatures", "identity"]);
+  assertEquals(Object.keys(schema.properties).slice(0, 2), [
+    "identityFeatures",
+    "identity",
+  ]);
+  assertEquals(schema.properties.identityFeatures.required, [
+    ...IDENTITY_FEATURES,
+  ]);
+});
+
+Deno.test("identity: an identity failure never yields an image", async () => {
+  const ports = new FakePorts();
+  ports.validatorText = observations({
+    identityFeatures: features({ faceShape: "different" }),
+  });
+  const result = await run(ports);
+  assertEquals(result.outcome, "retryable_palette_mismatch");
+  assertNoImage(result);
+});
+
+Deno.test("preview: the edit-only rule and the protected identity rules both reach the image prompt", () => {
+  const prompt = previewPrompt();
+  assertStringIncludes(prompt, "EDIT THIS PHOTOGRAPH, DO NOT RECREATE IT");
+  assertStringIncludes(prompt, "substitute a similar-looking person");
+  assertStringIncludes(
+    prompt,
+    "never changes the person, hair, clothing, lighting",
+  );
+  // The protected wording is still there, and still first.
+  assert(
+    prompt.indexOf("HIGHEST PRIORITY — IDENTITY") <
+      prompt.indexOf("EDIT THIS PHOTOGRAPH"),
+  );
+});
+
+Deno.test("tone: descriptions match what a person sees, including near-black", () => {
+  assertEquals(colorTone("#290A0F"), {
+    lightness: "very dark",
+    saturation: "muted",
+  });
+  assertEquals(colorTone("#29170A"), {
+    lightness: "very dark",
+    saturation: "muted",
+  });
+  assertEquals(colorTone("#0A2829"), {
+    lightness: "very dark",
+    saturation: "muted",
+  });
+  assertEquals(colorTone("#180A29"), {
+    lightness: "very dark",
+    saturation: "muted",
+  });
+  assertEquals(colorTone("#000000"), {
+    lightness: "very dark",
+    saturation: "muted",
+  });
+  assertEquals(colorTone("#FFFFFF"), {
+    lightness: "very light",
+    saturation: "muted",
+  });
+  assertEquals(colorTone("#FF002A").saturation, "vivid");
+  assertEquals(colorTone("#86797B"), {
+    lightness: "medium",
+    saturation: "muted",
+  });
+  assertEquals(colorTone("#F5D6DB").lightness, "very light");
+  assertEquals(colorTone("#6A2FB5").lightness, "medium");
+});
+
+Deno.test("dark palette: both prompts carry each color's tone and the darkness rule", () => {
+  const selections = [DARK];
+  const preview = customPalettePreviewPrompt(
+    "party",
+    selections,
+    [application("lipstick")] as never,
+    1,
+  );
+  const palette = JSON.parse(
+    preview.slice(
+      preview.lastIndexOf("Fixed palette: ") + "Fixed palette: ".length,
+    ),
+  );
+  assertEquals(palette[0].colorHex, "#290A0F");
+  assertEquals(palette[0].tone, "very dark, muted");
+  assertStringIncludes(
+    preview,
+    "must read as very dark or muted where it is applied",
+  );
+  assertStringIncludes(preview, "do not lighten, brighten, or saturate it");
+
+  const validator = customPaletteValidatorPrompt(selections);
+  assertStringIncludes(validator, '"tone":"very dark, muted"');
+  assertStringIncludes(validator, "with colorReason much_lighter");
+  assertStringIncludes(
+    validator,
+    "a medium or bright color where a very dark one was listed",
+  );
+  assertStringIncludes(validator, "it does not make the color itself lighter");
+  // The old tolerance that excused a lighter render is gone.
+  assert(!validator.includes("the skin beneath a thin layer"));
+  assertEquals(describeTone("#290A0F"), "very dark, muted");
+});
+
+Deno.test("dark palette: a near-black color rendered lighter or brighter is rejected", () => {
+  for (const reason of ["much_lighter", "much_more_saturated", "hue_differs"]) {
+    const verdict = judgeValidatorResponse(
+      observations({}, [
+        observation("lipstick", { color: "different", colorReason: reason }),
+      ]),
+      [DARK],
+    );
+    assertEquals(verdict.outcome, "retryable_palette_mismatch", reason);
+    assertEquals(verdict.color_mismatch_reasons, [{
+      category: "lipstick",
+      reason,
+    }]);
+  }
+});
+
+Deno.test("dark palette: a faithful dark color is accepted", () => {
+  const verdict = judgeValidatorResponse(
+    observations({}, [observation("lipstick")]),
+    [DARK],
+  );
+  assertEquals(verdict.outcome, "accepted");
+});
+
+Deno.test("dark palette: a dark color judged uncertain fails closed", () => {
+  const verdict = judgeValidatorResponse(
+    observations({}, [observation("lipstick", { color: "uncertain" })]),
+    [DARK],
+  );
+  assert(verdict.outcome !== "accepted");
+});
+
+Deno.test("palette: the frozen palette and its tone are identical on every attempt", () => {
+  const applications = [application("lipstick")] as never;
+  const first = customPalettePreviewPrompt("party", [DARK], applications, 1);
+  const marker = "Fixed palette: ";
+  const section = (prompt: string) => prompt.slice(prompt.lastIndexOf(marker));
+  for (
+    const correction of [[], ["lipstick:much_lighter"], ["identity:changed"]]
+  ) {
+    for (const variation of [1, 2, 7]) {
+      assertEquals(
+        section(
+          customPalettePreviewPrompt(
+            "party",
+            [DARK],
+            applications,
+            variation,
+            correction,
+          ),
+        ),
+        section(first),
+      );
+    }
+  }
+});
+
+Deno.test("palette: the validator cannot supply or change palette values", () => {
+  for (
+    const tampered of [
+      observations({ palette: [{ colorHex: "#FF0000" }] }),
+      observations({}, [
+        observation("blush", { colorHex: "#FF0000" }),
+        observation("lipstick"),
+      ]),
+      observations({}, [
+        observation("blush", { tone: "light" }),
+        observation("lipstick"),
+      ]),
+    ]
+  ) {
+    assertEquals(judge(tampered).outcome, "validator_failure");
+  }
+  const verdict = judge(observations()) as unknown as Record<string, unknown>;
+  for (const field of ["colorHex", "palette", "finish", "tone"]) {
+    assert(!(field in verdict), field);
+  }
+});
+
+Deno.test("finish: glitter shown flat is contradicted; unjudgeable stays accepted", () => {
+  const flat = judgeValidatorResponse(
+    observations({}, [
+      observation("eyeshadow", {
+        finish: "contradicted",
+        finishReason: "too_flat",
+      }),
+    ]),
+    [GLITTER],
+  );
+  assertEquals(flat.outcome, "retryable_palette_mismatch");
+  assertEquals(flat.finish_mismatch_reasons, [{
+    category: "eyeshadow",
+    reason: "too_flat",
+  }]);
+  const unjudgeable = judgeValidatorResponse(
+    observations({}, [observation("eyeshadow", { finish: "not_judgeable" })]),
+    [GLITTER],
+  );
+  assertEquals(unjudgeable.outcome, "accepted");
+});
 
 Deno.test("the protected preview functions never reach this mode", () => {
   for (

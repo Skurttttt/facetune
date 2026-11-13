@@ -66,6 +66,18 @@ const CANDIDATE: PreviewImage = {
   mimeType: "image/png",
 };
 
+const SAME_PERSON = {
+  faceShape: "same",
+  eyes: "same",
+  eyebrows: "same",
+  nose: "same",
+  mouth: "same",
+  skinMarks: "same",
+  apparentAge: "same",
+  hair: "same",
+  framing: "same",
+};
+
 function observed(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
     categories: [{
@@ -79,9 +91,30 @@ function observed(overrides: Record<string, unknown> = {}): string {
       ...overrides,
     }],
     introducedCategories: [],
+    identityFeatures: SAME_PERSON,
     identity: "preserved",
   });
 }
+
+const DIFFERENT_PERSON = JSON.stringify({
+  categories: [{
+    categoryCode: "blush",
+    featureVisibleInOriginal: true,
+    presence: "present",
+    color: "consistent",
+    colorReason: "none",
+    finish: "consistent",
+    finishReason: "none",
+  }],
+  introducedCategories: [],
+  identityFeatures: {
+    ...SAME_PERSON,
+    faceShape: "different",
+    eyes: "different",
+  },
+  // Stage 1: the summary said "preserved" while the face was a different person.
+  identity: "preserved",
+});
 
 const WRONG_COLOR = observed({
   color: "different",
@@ -423,6 +456,36 @@ Deno.test("exhausted attempts release the reservation with no charge", async () 
   assertEquals(world.releaseCodes, ["retryable_palette_mismatch"]);
   assertEquals(world.charges, 0);
   assertEquals(world.previews.length, 0);
+});
+
+Deno.test("an identity failure on every attempt persists nothing and charges nothing", async () => {
+  const world = new World();
+  world.validations = [DIFFERENT_PERSON, DIFFERENT_PERSON];
+  const error = await assertFails(world, 422, "palette_preview_mismatch");
+  assertEquals(error.retryable, true);
+  assertEquals(world.previews.length, 0);
+  assertEquals(world.charges, 0);
+  assertEquals(world.ledger.get(OPERATION), "released");
+  assertEquals(world.attempts.map((a) => a.status), [
+    "retryable_palette_mismatch",
+    "retryable_palette_mismatch",
+  ]);
+  assert(world.attempts[0].reasons.includes("identity:changed"));
+  // The retry is told why, and still sends the same palette.
+  assertStringIncludes(
+    world.imagePrompts[1],
+    "keep the person exactly as in the original photo",
+  );
+});
+
+Deno.test("an identity failure then a faithful candidate is one charge", async () => {
+  const world = new World();
+  world.validations = [DIFFERENT_PERSON, observed()];
+  const result = await createPreview(request(), world);
+  assertEquals(result.status, 200);
+  assertEquals(world.previews.length, 1);
+  assertEquals(world.charges, 1);
+  assertEquals(world.previews[0].accepted_attempt_number, 2);
 });
 
 Deno.test("a nonretryable mismatch stops at once and releases", async () => {

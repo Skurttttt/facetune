@@ -241,6 +241,19 @@ export class DryProvider {
       introducedCategories: entries
         .map((entry) => entry.category)
         .filter((c) => !listed.some((entry) => entry.categoryCode === c)),
+      identityFeatures: Object.fromEntries(
+        [
+          "faceShape",
+          "eyes",
+          "eyebrows",
+          "nose",
+          "mouth",
+          "skinMarks",
+          "apparentAge",
+          "hair",
+          "framing",
+        ].map((feature) => [feature, "same"]),
+      ),
       identity: "preserved",
     }));
   }

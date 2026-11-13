@@ -103,6 +103,9 @@ import {
   type ProbeCase,
   PROBES,
   probeTarget,
+  REMEDIATION_AUTHORIZATION,
+  REMEDIATION_CEILING,
+  REMEDIATION_R1,
   REPLAY_CASES,
   selfieOf,
   type SelfieSlot,
@@ -150,10 +153,16 @@ const mode = Deno.env.get("CCP10_MODE") === "live"
   ? "live" as const
   : "dry" as const;
 const stageText = Deno.env.get("CCP10_STAGE") ?? "1";
-if (stageText !== "1" && stageText !== "2") {
-  refuse("CCP10_STAGE must be 1 or 2");
+if (stageText !== "1" && stageText !== "2" && stageText !== "R1") {
+  refuse("CCP10_STAGE must be 1, 2, or R1");
 }
-const stage = Number(stageText) as Stage;
+/** R1 runs under every Stage 1 rule, but only its three cases, and on its own. */
+const remediation = stageText === "R1";
+const stage = (remediation ? 1 : Number(stageText)) as Stage;
+const runLabel = remediation ? "remediation-r1" : `stage${stage}`;
+const planned: ReadonlySet<string> | null = remediation
+  ? new Set(REMEDIATION_R1)
+  : null;
 const outDir = Deno.env.get("CCP10_OUT") ?? "";
 const url = Deno.env.get("LOCAL_SUPABASE_URL") ?? "";
 const anon = Deno.env.get("LOCAL_ANON_KEY") ?? "";
@@ -208,7 +217,8 @@ try {
     }
   } else {
     if (
-      Deno.env.get("CCP10_LIVE_AUTHORIZATION") !== LIVE_AUTHORIZATION[stage]
+      Deno.env.get("CCP10_LIVE_AUTHORIZATION") !==
+        (remediation ? REMEDIATION_AUTHORIZATION : LIVE_AUTHORIZATION[stage])
     ) {
       throw new GuardRefusal(
         "Live mode needs the exact authorization for this stage.",
@@ -275,8 +285,13 @@ if (mode === "live") {
 const dryCeiling = mode === "dry"
   ? Number(Deno.env.get("CCP10_DRY_CEILING") ?? "0")
   : 0;
+// R1's ceiling sits on top of whatever the live budget has already spent, and the
+// whole evaluation still never passes the total ceiling.
+const spentBefore = new CallBudget(budgetPath, 0).total;
 const ceiling = dryCeiling > 0
   ? dryCeiling
+  : remediation
+  ? Math.min(TOTAL_CEILING, spentBefore + REMEDIATION_CEILING)
   : stage === 1
   ? STAGE_1_CEILING
   : TOTAL_CEILING;
@@ -364,6 +379,12 @@ function safeObservations(text: string): Record<string, unknown> {
       })),
       introduced: (root.introducedCategories ?? []).map(code),
       identity: code(root.identity),
+      identityFeatures: Object.fromEntries(
+        Object.entries(
+          (root as { identityFeatures?: Record<string, unknown> })
+            .identityFeatures ?? {},
+        ).map(([key, value]) => [code(key), code(value)]),
+      ),
     };
   } catch {
     return { malformed: true };
@@ -1424,7 +1445,15 @@ function accountOf(evalCase: EvalCase): AccountId | null {
 }
 
 let setupFailed = false;
-const accountsNeeded = stage === 1 ? STAGE_1_ACCOUNTS : ACCOUNTS;
+const accountsNeeded = planned
+  ? [
+    ...new Set(
+      LOOKS.filter((look) => planned.has(look.id)).map((l) => l.account),
+    ),
+  ]
+  : stage === 1
+  ? STAGE_1_ACCOUNTS
+  : ACCOUNTS;
 for (const account of accountsNeeded) {
   try {
     await ensureAccount(account);
@@ -1439,7 +1468,8 @@ for (const account of accountsNeeded) {
 }
 
 const queue = ALL_CASES.filter((c) =>
-  c.stage === stage && !state.finished.includes(c.id)
+  (planned ? planned.has(c.id) : c.stage === stage) &&
+  !state.finished.includes(c.id)
 );
 let index = 0;
 for (const evalCase of queue) {
@@ -1550,7 +1580,8 @@ const tutorials = rows.filter((r) =>
 );
 const expectedPreviews =
   ALL_CASES.filter((c) =>
-    c.stage <= stage && (c.kind === "look" || c.kind === "variation")
+    (planned ? planned.has(c.id) : c.stage <= stage) &&
+    (c.kind === "look" || c.kind === "variation")
   ).length;
 const allAttempts = previews.flatMap((r) =>
   (r.attempt_statuses ?? []) as string[]
@@ -1712,7 +1743,9 @@ const summary = {
         (r.accounting_anomalies as unknown[]).length === 0
       ) &&
         previews.filter((r) => r.replay).length ===
-          REPLAY_CASES.filter((id) => lookById(id).stage <= stage).length,
+          REPLAY_CASES.filter((id) =>
+            planned ? planned.has(id) : lookById(id).stage <= stage
+          ).length,
     ),
     H5_tutorial_lineage: stage === 1 ? "NOT_IN_STAGE_1" : gate(
       tutorials.length === TUTORIALS.length &&
@@ -1734,7 +1767,7 @@ const summary = {
   },
 };
 Deno.writeTextFileSync(
-  `${outDir}/summary-stage${stage}.json`,
+  `${outDir}/summary-${runLabel}.json`,
   JSON.stringify(summary, null, 1),
 );
 say(

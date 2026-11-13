@@ -15,6 +15,21 @@ export const LIVE_AUTHORIZATION = {
 } as const;
 
 export type Stage = 1 | 2;
+
+/**
+ * The targeted remediation run after Stage 1's human review failed: exactly the
+ * three cases behind R004 (identity), R006 (identity) and R008 (dark palette), on
+ * the same selfies. It runs under Stage 1's rules, never counts as Stage 1, and
+ * cannot lead into Stage 2.
+ */
+export const REMEDIATION_R1 = [
+  "A-eyeliner-Violet",
+  "C-eyeshadow-glitter",
+  "D6",
+] as const;
+export const REMEDIATION_CEILING = 22;
+export const REMEDIATION_AUTHORIZATION =
+  "CCP-10-REMEDIATION-R1:3-cases:22-calls";
 export type SelfieSlot = "S1" | "S2" | "S3";
 export type AccountId = "S1a" | "S1b" | "S2a" | "S2b" | "S3a" | "S3b";
 
@@ -466,6 +481,14 @@ export function worstCaseFor(evalCase: EvalCase): number {
     case "probe":
       return WORST_CASE.probe;
   }
+}
+
+/** Worst-case calls for exactly these looks, with one analysis per account. */
+export function worstCaseForLooks(ids: readonly string[]): number {
+  const looks = ids.map(lookById);
+  const accounts = new Set(looks.map((look) => look.account));
+  return accounts.size * WORST_CASE.analysis +
+    looks.reduce((sum, look) => sum + worstCaseFor(look), 0);
 }
 
 export function worstCaseThroughStage(stage: Stage): number {

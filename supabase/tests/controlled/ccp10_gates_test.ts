@@ -178,4 +178,59 @@ for (
   });
 }
 
+Deno.test("the targeted remediation run is exactly three cases and cannot lead to Stage 2", async () => {
+  const out = join(
+    WORKSPACE,
+    "out",
+    `gate-r1-${crypto.randomUUID().slice(0, 8)}`,
+  );
+  const command = (stage: string) =>
+    new Deno.Command(Deno.execPath(), {
+      args: [
+        "run",
+        "--no-lock",
+        "--allow-env",
+        "--allow-read",
+        `--allow-write=${out}`,
+        "--allow-sys",
+        "--allow-run=docker,icacls",
+        "--allow-net=127.0.0.1,localhost",
+        join(HERE, "ccp10_eval.ts"),
+      ],
+      cwd: FUNCTIONS,
+      env: {
+        CCP10_MODE: "dry",
+        CCP10_STAGE: stage,
+        CCP10_OUT: out,
+        CCP10_WORKSPACE: WORKSPACE,
+      },
+      stdout: "null",
+      stderr: "piped",
+    }).output();
+  const r1 = await command("R1");
+  assertEquals(r1.code, 0, new TextDecoder().decode(r1.stderr));
+  const summary = JSON.parse(
+    Deno.readTextFileSync(join(out, "summary-remediation-r1.json")),
+  ) as Summary;
+  assertEquals(summary.stop_reason, null);
+  assertEquals(summary.cases.preview_requests, 3);
+  assertEquals(summary.provider_calls.ceiling, 22);
+  assert(summary.provider_calls.total <= 22);
+  assertEquals(summary.evidence_complete, true);
+  assertEquals(summary.gates.H4_accounting_exact, "PASS");
+  const rows = Deno.readTextFileSync(join(out, "results.jsonl")).split("\n")
+    .filter(Boolean).map((line) => JSON.parse(line));
+  assertEquals(rows.map((r) => r.id).sort(), [
+    "A-eyeliner-Violet",
+    "C-eyeshadow-glitter",
+    "D6",
+  ]);
+  // No Stage 1 summary exists here, so Stage 2 refuses to start from this run.
+  const stage2 = await command("2");
+  assertEquals(stage2.code, 2);
+  assert(
+    new TextDecoder().decode(stage2.stderr).includes("Stage 1's summary"),
+  );
+});
+
 Deno.test("the stops all ran", () => assertEquals(runs, 5));

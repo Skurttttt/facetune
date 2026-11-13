@@ -1,6 +1,9 @@
 import type { PaletteSelection } from "../_shared/custom_palette_contract.ts";
 import { CUSTOM_PALETTE_CATEGORIES } from "../_shared/custom_palette_contract.ts";
-import { CUSTOM_PALETTE_VALIDATOR_VERSION } from "./validator_prompt.ts";
+import {
+  CUSTOM_PALETTE_VALIDATOR_VERSION,
+  IDENTITY_FEATURES,
+} from "./validator_prompt.ts";
 
 export type PreviewOutcome =
   | "accepted"
@@ -25,6 +28,8 @@ export interface PreviewVerdict {
   uncertain_categories: string[];
   introduced_categories: string[];
   identity: IdentityObservation | null;
+  /** Identity features reported as different or uncertain. Codes only. */
+  identity_differences: string[];
   validator_version: string;
   /** A controlled code when no judgment could be made; otherwise `null`. */
   failure_code: string | null;
@@ -40,7 +45,12 @@ interface CategoryObservation {
   finishReason: string;
 }
 
-const ROOT_KEYS = new Set(["categories", "introducedCategories", "identity"]);
+const ROOT_KEYS = new Set([
+  "identityFeatures",
+  "identity",
+  "categories",
+  "introducedCategories",
+]);
 const OBSERVATION_KEYS = new Set([
   "categoryCode",
   "featureVisibleInOriginal",
@@ -78,6 +88,25 @@ const FINISH_REASONS = new Set([
   "wrong_texture",
 ]);
 const IDENTITY = new Set(["preserved", "changed", "uncertain"]);
+const FEATURE = new Set(["same", "different", "uncertain"]);
+const FEATURE_KEYS: ReadonlySet<string> = new Set(IDENTITY_FEATURES);
+
+/**
+ * The identity the server acts on. The model's own word counts only when every
+ * feature it compared agrees with it: any feature that differs means changed, and
+ * any it could not judge means uncertain, whatever the summary said.
+ */
+function effectiveIdentity(
+  reported: IdentityObservation,
+  features: Readonly<Record<string, string>>,
+): IdentityObservation {
+  const values = Object.values(features);
+  if (reported === "changed" || values.includes("different")) return "changed";
+  if (reported === "uncertain" || values.includes("uncertain")) {
+    return "uncertain";
+  }
+  return "preserved";
+}
 
 /** A verdict for when no judgment exists. Never `accepted`. */
 export function failedVerdict(
@@ -92,6 +121,7 @@ export function failedVerdict(
     uncertain_categories: [],
     introduced_categories: [],
     identity: null,
+    identity_differences: [],
     validator_version: CUSTOM_PALETTE_VALIDATOR_VERSION,
     failure_code: failureCode,
   };
@@ -185,6 +215,7 @@ export function judgeValidatorResponse(
   let observations: CategoryObservation[];
   let introduced: string[];
   let identity: IdentityObservation;
+  let features: Record<string, string>;
   try {
     const root = record(JSON.parse(text));
     onlyKeys(root, ROOT_KEYS);
@@ -210,7 +241,17 @@ export function judgeValidatorResponse(
     if (introduced.some((code) => selected.has(code))) {
       throw new MalformedObservation();
     }
-    identity = member(root.identity, IDENTITY) as IdentityObservation;
+    const reportedIdentity = member(
+      root.identity,
+      IDENTITY,
+    ) as IdentityObservation;
+    // Identity counts only with its evidence: every feature, each judged.
+    const featureInput = record(root.identityFeatures);
+    onlyKeys(featureInput, FEATURE_KEYS);
+    features = Object.fromEntries(
+      IDENTITY_FEATURES.map((key) => [key, member(featureInput[key], FEATURE)]),
+    );
+    identity = effectiveIdentity(reportedIdentity, features);
   } catch {
     return failedVerdict("validator_failure", "malformed_validator_response");
   }
@@ -261,6 +302,9 @@ export function judgeValidatorResponse(
     uncertain_categories: uncertain,
     introduced_categories: introduced,
     identity,
+    identity_differences: IDENTITY_FEATURES.filter((key) =>
+      features[key] !== "same"
+    ),
     validator_version: CUSTOM_PALETTE_VALIDATOR_VERSION,
     failure_code: null,
   };

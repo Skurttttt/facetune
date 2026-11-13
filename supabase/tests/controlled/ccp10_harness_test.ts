@@ -43,9 +43,13 @@ import {
   ALL_CASES,
   type Category,
   LIVE_AUTHORIZATION,
+  lookById,
   LOOKS,
   PROBES,
   probeTarget,
+  REMEDIATION_AUTHORIZATION,
+  REMEDIATION_CEILING,
+  REMEDIATION_R1,
   selfieOf,
   STAGE_1_ACCOUNTS,
   STAGE_1_CEILING,
@@ -54,6 +58,7 @@ import {
   TOTAL_CEILING,
   TUTORIALS,
   VARIATIONS,
+  worstCaseForLooks,
   worstCaseThroughStage,
 } from "./ccp10_plan.ts";
 
@@ -1057,6 +1062,58 @@ Deno.test("a missing budget folder fails safely outside the approved scope", asy
     assert(Deno.statSync(folder).isDirectory);
   } finally {
     Deno.removeSync(base, { recursive: true });
+  }
+});
+
+Deno.test("the targeted remediation run is exactly R004, R006 and R008, at 22 calls", () => {
+  assertEquals([...REMEDIATION_R1], [
+    "A-eyeliner-Violet",
+    "C-eyeshadow-glitter",
+    "D6",
+  ]);
+  // The same cases and the same selfies that failed review.
+  assertEquals(REMEDIATION_R1.map((id) => selfieOf(lookById(id).account)), [
+    "S3",
+    "S3",
+    "S2",
+  ]);
+  assert(REMEDIATION_R1.every((id) => lookById(id).stage === 1));
+  assertEquals(worstCaseForLooks(REMEDIATION_R1), 22);
+  assertEquals(REMEDIATION_CEILING, 22);
+  assert((REMEDIATION_AUTHORIZATION as string) !== LIVE_AUTHORIZATION[1]);
+  assert((REMEDIATION_AUTHORIZATION as string) !== LIVE_AUTHORIZATION[2]);
+});
+
+Deno.test("the remediation token and the Stage tokens are not interchangeable", async () => {
+  const out = Deno.makeTempDirSync({ prefix: "ccp10-r1-" });
+  const net = "127.0.0.1,generativelanguage.googleapis.com:443";
+  try {
+    for (
+      const [stage, token] of [
+        ["R1", LIVE_AUTHORIZATION[1]],
+        ["1", REMEDIATION_AUTHORIZATION],
+        ["2", REMEDIATION_AUTHORIZATION],
+      ]
+    ) {
+      const result = await runner({
+        ...SAFE_ENV,
+        CCP10_OUT: join(out, "run"),
+        CCP10_MODE: "live",
+        CCP10_STAGE: stage,
+        CCP10_LIVE_AUTHORIZATION: token,
+      }, net);
+      assertEquals(result.code, 2, stage);
+      assert(result.stderr.includes("exact authorization"), result.stderr);
+    }
+    const unknown = await runner({
+      ...SAFE_ENV,
+      CCP10_OUT: join(out, "run"),
+      CCP10_STAGE: "R2",
+    });
+    assertEquals(unknown.code, 2);
+    assert(unknown.stderr.includes("1, 2, or R1"), unknown.stderr);
+  } finally {
+    Deno.removeSync(out, { recursive: true });
   }
 });
 

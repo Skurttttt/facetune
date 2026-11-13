@@ -65,6 +65,17 @@ function observed(
       ...overrides,
     })),
     introducedCategories: [],
+    identityFeatures: {
+      faceShape: "same",
+      eyes: "same",
+      eyebrows: "same",
+      nose: "same",
+      mouth: "same",
+      skinMarks: "same",
+      apparentAge: "same",
+      hair: "same",
+      framing: "same",
+    },
     identity: "preserved",
   });
 }
