@@ -5,6 +5,7 @@ import 'package:facetune/features/makeup_kit/domain/catalog/makeup_kit_finish_ca
 import 'package:facetune/features/makeup_kit/domain/entities/makeup_kit_category.dart';
 import 'package:facetune/features/makeup_kit/domain/entities/makeup_kit_finish.dart';
 import 'package:facetune/features/makeup_kit/domain/value_objects/normalized_hex_color.dart';
+import 'package:facetune/features/makeup_kit/presentation/utils/makeup_kit_curated_shades.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 NormalizedHexColor _hex(String value) => NormalizedHexColor.parse(value);
@@ -25,30 +26,102 @@ CustomPaletteSelectionInput _valid({
 
 void main() {
   group('catalog', () {
-    test(
-      'supports exactly the four approved categories, in Tutorial order',
-      () {
-        expect(CustomPaletteCatalog.categories.map((c) => c.code), [
-          'blush',
-          'eyeshadow',
-          'eyeliner',
-          'lipstick',
-        ]);
-      },
-    );
+    test('supports exactly My Makeup Kit\'s categories, in Tutorial order', () {
+      expect(CustomPaletteCatalog.categories.map((c) => c.code), [
+        'foundation',
+        'concealer',
+        'contour_bronzer',
+        'blush',
+        'highlighter',
+        'eyebrow',
+        'eyeshadow',
+        'eyeliner',
+        'lipstick',
+        'lip_gloss',
+      ]);
+      // Category parity: the same set as My Makeup Kit, none added or missing.
+      expect(
+        CustomPaletteCatalog.categories.toSet(),
+        MakeupKitCategory.values.toSet(),
+      );
+      expect(CustomPaletteCatalog.categories, hasLength(10));
+      for (final category in MakeupKitCategory.values) {
+        expect(CustomPaletteCatalog.isSupported(category), isTrue);
+      }
+    });
 
-    test('excludes the categories CCP-1 did not approve', () {
-      for (final category in [
+    test('keeps the v1 categories in their original relative order', () {
+      final legacyOrder = [
+        for (final category in CustomPaletteCatalog.categories)
+          if (CustomPaletteCatalog.legacyCategories.contains(category))
+            category.code,
+      ];
+      expect(legacyOrder, ['blush', 'eyeshadow', 'eyeliner', 'lipstick']);
+    });
+
+    test('offers exactly My Makeup Kit\'s finishes for every category', () {
+      for (final category in MakeupKitCategory.values) {
+        expect(
+          CustomPaletteCatalog.finishesFor(category).toSet(),
+          MakeupKitFinishCatalog.allowedFinishes(category),
+          reason: category.code,
+        );
+      }
+    });
+
+    test('uses My Makeup Kit\'s curated shades for the complexion and brow '
+        'categories, and the shared colors for the rest', () {
+      const curated = {
         MakeupKitCategory.foundation,
         MakeupKitCategory.concealer,
         MakeupKitCategory.contourBronzer,
         MakeupKitCategory.highlighter,
         MakeupKitCategory.eyebrow,
-        MakeupKitCategory.lipGloss,
-      ]) {
-        expect(CustomPaletteCatalog.isSupported(category), isFalse);
-        expect(CustomPaletteCatalog.finishesFor(category), isEmpty);
+      };
+      for (final category in CustomPaletteCatalog.categories) {
+        final offered = CustomPaletteCatalog.swatchesFor(category);
+        if (curated.contains(category)) {
+          expect(CustomPaletteCatalog.usesCuratedShades(category), isTrue);
+          expect(
+            [for (final s in offered) '${s.label}|${s.hex}'],
+            [
+              for (final s in MakeupKitCuratedShades.forCategory(category))
+                '${s.label}|${s.hex}',
+            ],
+            reason: category.code,
+          );
+        } else {
+          expect(CustomPaletteCatalog.usesCuratedShades(category), isFalse);
+          expect(offered, same(CustomPaletteCatalog.swatches));
+        }
       }
+    });
+
+    test('resolves a color name per category', () {
+      // The same hex value names a different color in two categories.
+      expect(
+        CustomPaletteCatalog.swatchFor(
+          MakeupKitCategory.blush,
+          '#5C3A21',
+        )?.label,
+        'Brown',
+      );
+      expect(
+        CustomPaletteCatalog.swatchFor(
+          MakeupKitCategory.foundation,
+          '#5C3A21',
+        )?.label,
+        'Deep Espresso',
+      );
+      // A shared color is not a foundation choice, and vice versa.
+      expect(
+        CustomPaletteCatalog.swatchFor(MakeupKitCategory.foundation, '#C8102E'),
+        isNull,
+      );
+      expect(
+        CustomPaletteCatalog.swatchFor(MakeupKitCategory.lipstick, '#F1DFCB'),
+        isNull,
+      );
     });
 
     test('pins the approved category and finish matrix', () {
@@ -71,6 +144,25 @@ void main() {
         'cream',
         'glossy',
       ]);
+      expect(codes(MakeupKitCategory.foundation), [
+        'matte',
+        'natural',
+        'dewy',
+        'satin',
+      ]);
+      expect(codes(MakeupKitCategory.concealer), [
+        'matte',
+        'natural',
+        'radiant',
+      ]);
+      expect(codes(MakeupKitCategory.contourBronzer), ['matte', 'satin']);
+      expect(codes(MakeupKitCategory.highlighter), [
+        'natural',
+        'shimmer',
+        'metallic',
+      ]);
+      expect(codes(MakeupKitCategory.eyebrow), ['matte', 'natural']);
+      expect(codes(MakeupKitCategory.lipGloss), ['glossy', 'shimmer']);
     });
 
     test('finishes stay a subset of the kit catalog', () {
@@ -246,7 +338,9 @@ void main() {
     });
 
     test('rejects an unsupported or unknown category', () {
-      for (final code in ['foundation', 'lip_gloss', 'eyebrow', 'nails']) {
+      // Every My Makeup Kit category is supported now; only codes outside its
+      // set are refused.
+      for (final code in ['nails', 'lipGloss', 'lip-gloss', 'eyebrows', '']) {
         expect(codes([_valid(categoryCode: code)]), [
           CustomPaletteIssueCode.unsupportedCategory,
         ], reason: code);
@@ -285,16 +379,84 @@ void main() {
 
     test('accepts every approved category and finish combination', () {
       for (final category in CustomPaletteCatalog.categories) {
+        final swatch = CustomPaletteCatalog.swatchesFor(category).first;
         for (final MakeupKitFinish finish in CustomPaletteCatalog.finishesFor(
           category,
         )) {
           expect(
-            codes([_valid(categoryCode: category.code, finish: finish.code)]),
+            codes([
+              _valid(
+                categoryCode: category.code,
+                base: swatch.hex,
+                adjusted: swatch.hex,
+                label: swatch.label,
+                finish: finish.code,
+              ),
+            ]),
             isEmpty,
             reason: '${category.code}/${finish.code}',
           );
         }
       }
+    });
+
+    test('rejects a color the category does not offer', () {
+      // A shared color is not a foundation choice.
+      expect(codes([_valid(categoryCode: 'foundation', finish: 'natural')]), [
+        CustomPaletteIssueCode.invalidBaseColor,
+      ]);
+      // The right hex value under the other category's name is refused too.
+      expect(
+        codes([
+          _valid(
+            categoryCode: 'foundation',
+            base: '#5C3A21',
+            adjusted: '#5C3A21',
+            label: 'Brown',
+            finish: 'natural',
+          ),
+        ]),
+        [CustomPaletteIssueCode.invalidBaseColor],
+      );
+      // A curated shade is not a lipstick choice.
+      expect(
+        codes([
+          _valid(
+            categoryCode: 'lipstick',
+            base: '#F1DFCB',
+            adjusted: '#F1DFCB',
+            label: 'Fair Ivory',
+          ),
+        ]),
+        [CustomPaletteIssueCode.invalidBaseColor],
+      );
+    });
+
+    test('rejects a finish the new categories do not allow', () {
+      expect(
+        codes([
+          _valid(
+            categoryCode: 'lip_gloss',
+            base: '#C8102E',
+            adjusted: '#C8102E',
+            label: 'Red',
+            finish: 'matte',
+          ),
+        ]),
+        [CustomPaletteIssueCode.finishNotApplicable],
+      );
+      expect(
+        codes([
+          _valid(
+            categoryCode: 'eyebrow',
+            base: '#6B4A3A',
+            adjusted: '#6B4A3A',
+            label: 'Ash Brown',
+            finish: 'glitter',
+          ),
+        ]),
+        [CustomPaletteIssueCode.finishNotApplicable],
+      );
     });
   });
 
@@ -306,7 +468,7 @@ void main() {
       selections: [_valid()],
     ).toJson();
     expect(json['sourceMode'], 'custom_color_palette');
-    expect(json['paletteVersion'], 'custom_color_palette_contract_v1');
+    expect(json['paletteVersion'], 'custom_color_palette_contract_v2');
     expect(json.containsKey('userId'), isFalse);
     expect(json.containsKey('user_id'), isFalse);
   });
@@ -323,6 +485,36 @@ void main() {
       'eyeshadow',
       'eyeliner',
       'lipstick',
+    ]);
+  });
+
+  test('canonical order places all ten categories in Tutorial order', () {
+    final ordered = CustomPaletteValidator.canonicalOrder([
+      for (final code in [
+        'lip_gloss',
+        'eyeliner',
+        'eyebrow',
+        'foundation',
+        'lipstick',
+        'highlighter',
+        'eyeshadow',
+        'blush',
+        'contour_bronzer',
+        'concealer',
+      ])
+        _valid(categoryCode: code),
+    ]);
+    expect(ordered.map((s) => s.categoryCode), [
+      'foundation',
+      'concealer',
+      'contour_bronzer',
+      'blush',
+      'highlighter',
+      'eyebrow',
+      'eyeshadow',
+      'eyeliner',
+      'lipstick',
+      'lip_gloss',
     ]);
   });
 }

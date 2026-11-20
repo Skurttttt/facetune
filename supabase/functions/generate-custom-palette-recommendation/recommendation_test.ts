@@ -78,7 +78,7 @@ function assertConflict(text: string, selections = [BLUSH], code?: string) {
 function body(overrides: Record<string, unknown> = {}) {
   return {
     paletteRequestId: REQUEST_ID,
-    paletteVersion: "custom_color_palette_contract_v1",
+    paletteVersion: "custom_color_palette_contract_v2",
     sourceMode: "custom_color_palette",
     analysisId: ANALYSIS_ID,
     style: "soft_glam",
@@ -217,7 +217,7 @@ Deno.test("a valid palette is frozen beside its plan, unmerged", async () => {
   const row = ports.inserted[0];
   assertEquals(row.palette_snapshot_json, [BLUSH]);
   assertEquals(row.palette_digest, await paletteDigest([BLUSH]));
-  assertEquals(row.palette_version, "custom_color_palette_contract_v1");
+  assertEquals(row.palette_version, "custom_color_palette_contract_v2");
   assertEquals(
     row.prompt_version,
     CUSTOM_PALETTE_RECOMMENDATION_PROMPT_VERSION,
@@ -277,13 +277,34 @@ Deno.test("an invalid palette stops before quota and AI", async () => {
     [{ sourceMode: "my_makeup_kit" }, "invalid_palette_contract"],
     [{
       categorySelections: [{
-        categoryCode: "foundation",
+        categoryCode: "nails",
         baseColorValue: "#C8102E",
         adjustedColorValue: "#C8102E",
         colorLabel: "Red",
         finishCode: "matte",
       }],
     }, "unsupported_category"],
+    [{
+      // A shared color is not a foundation choice.
+      categorySelections: [{
+        categoryCode: "foundation",
+        baseColorValue: "#C8102E",
+        adjustedColorValue: "#C8102E",
+        colorLabel: "Red",
+        finishCode: "matte",
+      }],
+    }, "invalid_base_color"],
+    [{
+      // An older app's v1 request cannot carry a category v1 lacked.
+      paletteVersion: "custom_color_palette_contract_v1",
+      categorySelections: [{
+        categoryCode: "lip_gloss",
+        baseColorValue: "#C8102E",
+        adjustedColorValue: "#C8102E",
+        colorLabel: "Red",
+        finishCode: "glossy",
+      }],
+    }, "invalid_palette_contract"],
     [{
       categorySelections: [{
         categoryCode: "blush",
@@ -473,6 +494,105 @@ Deno.test("prose may use the user's own choice, but only for its category", () =
   );
 });
 
+// ---------------------------------------------------------------------------
+// Category parity: names that contain a guarded word
+// ---------------------------------------------------------------------------
+
+const MATTE_LIPSTICK: PaletteSelection = {
+  category_code: "lipstick",
+  base_color_value: "#C8102E",
+  adjusted_color_value: "#C8102E",
+  color_label: "Red",
+  finish_code: "matte",
+};
+const SHIMMER_GLOSS: PaletteSelection = {
+  category_code: "lip_gloss",
+  base_color_value: "#E75480",
+  adjusted_color_value: "#E75480",
+  color_label: "Pink",
+  finish_code: "shimmer",
+};
+const WARM_BEIGE_FOUNDATION: PaletteSelection = {
+  category_code: "foundation",
+  base_color_value: "#C99578",
+  adjusted_color_value: "#C99578",
+  color_label: "Warm Beige",
+  finish_code: "natural",
+};
+
+Deno.test("naming lip gloss as a product is not a glossy-finish claim", () => {
+  // A shimmer gloss over a matte lipstick: "gloss" names the category.
+  const plan = parseCustomPaletteRecommendation(
+    aiText({
+      applications: [
+        application("lipstick", {
+          technique: "Apply evenly before the lip gloss goes on top.",
+        }),
+        application("lip_gloss", {
+          placement: "Over the lipstick, at the center of the lips.",
+          technique: "Dab a thin layer of gloss and press the lips together.",
+        }),
+      ],
+      summary: "A lipstick base with a lip gloss layer on top.",
+    }),
+    [MATTE_LIPSTICK, SHIMMER_GLOSS],
+  );
+  assertEquals(plan.applications.map((a) => a.categoryCode), [
+    "lipstick",
+    "lip_gloss",
+  ]);
+});
+
+Deno.test("glossy is still refused when nobody chose a glossy finish", () => {
+  assertConflict(
+    aiText({
+      applications: [
+        application("lipstick"),
+        application("lip_gloss", {
+          technique: "Finish with a glossy, wet-look shine.",
+        }),
+      ],
+    }),
+    [MATTE_LIPSTICK, SHIMMER_GLOSS],
+    "conflicting_palette_text",
+  );
+  // Without a lip gloss in the palette, "gloss" still asserts the finish.
+  assertConflict(
+    aiText({
+      applications: [
+        application("lipstick", { technique: "Top with a little gloss." }),
+      ],
+    }),
+    [MATTE_LIPSTICK],
+    "conflicting_palette_text",
+  );
+});
+
+Deno.test("each word of a curated shade's own name is allowed", () => {
+  const plan = parseCustomPaletteRecommendation(
+    aiText({
+      applications: [
+        application("foundation", {
+          reasoning: "The warm beige base keeps the skin natural and even.",
+        }),
+      ],
+      summary: "A natural complexion that follows your chosen color.",
+    }),
+    [WARM_BEIGE_FOUNDATION],
+  );
+  assertEquals(plan.applications.length, 1);
+  // Another curated name is still a color claim.
+  assertConflict(
+    aiText({
+      applications: [
+        application("foundation", { reasoning: "A golden tone suits you." }),
+      ],
+    }),
+    [WARM_BEIGE_FOUNDATION],
+    "conflicting_palette_text",
+  );
+});
+
 Deno.test("the summary may mention any of the user's own choices", () => {
   const plan = parseCustomPaletteRecommendation(
     aiText({
@@ -561,7 +681,7 @@ Deno.test("the prompt leaves out labels and color-bearing attributes", () => {
 Deno.test("the version is the additive CCP identifier", () => {
   assertEquals(
     CUSTOM_PALETTE_RECOMMENDATION_PROMPT_VERSION,
-    "custom_palette_recommendation_v1",
+    "custom_palette_recommendation_v2",
   );
 });
 

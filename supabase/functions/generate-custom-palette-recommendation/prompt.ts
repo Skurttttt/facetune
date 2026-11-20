@@ -1,7 +1,9 @@
 import type { PaletteSelection } from "../_shared/custom_palette_contract.ts";
 
+/// v2: My Makeup Kit's ten categories, complexion and brow guidance, and lip
+/// gloss layered over lipstick.
 export const CUSTOM_PALETTE_RECOMMENDATION_PROMPT_VERSION =
-  "custom_palette_recommendation_v1";
+  "custom_palette_recommendation_v2";
 
 /** The facial attributes that bear on placement. */
 export interface PlacementAttributes {
@@ -91,6 +93,11 @@ WHAT YOU PROVIDE
 - intensity: how strongly to apply it.
 - reasoning: why this placement and technique suit this face and style.
 - summary: one or two sentences on how the look comes together.
+
+CATEGORY NOTES
+- foundation, concealer, contour_bronzer and highlighter are complexion products: keep the skin's own texture, freckles and marks visible, and never describe reshaping the face.
+- eyebrow fills the existing brows: keep their natural shape, thickness and position.
+- When both lipstick and lip_gloss are listed, lipstick is the base layer and lip_gloss is a thin top layer over it.
 
 HOW TO WRITE
 - Never name a color or a finish, and never write a color code. Say "your chosen color" and "your chosen finish" instead.

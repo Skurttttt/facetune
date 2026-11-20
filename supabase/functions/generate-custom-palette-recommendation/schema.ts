@@ -1,3 +1,5 @@
+import { CUSTOM_PALETTE_CATEGORIES } from "../_shared/custom_palette_contract.ts";
+
 /**
  * What the model may return. There is deliberately no color or finish field:
  * the frozen palette already holds those, and a value the model cannot return
@@ -16,7 +18,7 @@ export const CUSTOM_PALETTE_RECOMMENDATION_SCHEMA = {
     applications: {
       type: "array",
       minItems: 1,
-      maxItems: 4,
+      maxItems: CUSTOM_PALETTE_CATEGORIES.length,
       items: {
         type: "object",
         additionalProperties: false,
@@ -30,7 +32,7 @@ export const CUSTOM_PALETTE_RECOMMENDATION_SCHEMA = {
         properties: {
           categoryCode: {
             type: "string",
-            enum: ["blush", "eyeshadow", "eyeliner", "lipstick"],
+            enum: [...CUSTOM_PALETTE_CATEGORIES],
           },
           placement: { type: "string", minLength: 3, maxLength: 220 },
           technique: { type: "string", minLength: 3, maxLength: 220 },

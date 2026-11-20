@@ -15,8 +15,10 @@ import {
 
 import {
   CUSTOM_COLOR_PALETTE_CONTRACT_VERSION,
+  CUSTOM_COLOR_PALETTE_LEGACY_CONTRACT_VERSION,
   CUSTOM_COLOR_PALETTE_SOURCE_MODE,
   CUSTOM_PALETTE_CATEGORIES,
+  CUSTOM_PALETTE_CURATED_SWATCHES,
   CUSTOM_PALETTE_FINISHES,
   CUSTOM_PALETTE_STYLES,
   CUSTOM_PALETTE_SWATCHES,
@@ -26,6 +28,7 @@ import {
   type PaletteSelection,
   parseCustomPaletteRequest,
   parseFrozenPalette,
+  swatchesFor,
 } from "./custom_palette_contract.ts";
 import { customPalettePreviewPrompt } from "../generate-custom-palette-preview/prompt.ts";
 import { customPaletteRecommendationPrompt } from "../generate-custom-palette-recommendation/prompt.ts";
@@ -62,16 +65,38 @@ const ALL_FINISHES = [
   "glossy",
 ];
 
+/** The category's first offered color: curated categories never offer "Red". */
+function firstSwatch(categoryCode: string): [string, string] {
+  if (
+    !(CUSTOM_PALETTE_CATEGORIES as readonly string[]).includes(categoryCode)
+  ) {
+    return ["#C8102E", "Red"];
+  }
+  return Object.entries(
+    swatchesFor(categoryCode as CustomPaletteCategory),
+  )[0];
+}
+
+/** The category's first finish, or `matte` for an unknown category. */
+function firstFinish(categoryCode: string): string {
+  return (CUSTOM_PALETTE_CATEGORIES as readonly string[]).includes(
+      categoryCode,
+    )
+    ? CUSTOM_PALETTE_FINISHES[categoryCode as CustomPaletteCategory][0]
+    : "matte";
+}
+
 function selection(
   categoryCode: string,
-  finishCode: unknown = "matte",
+  finishCode: unknown = firstFinish(categoryCode),
   overrides: Record<string, unknown> = {},
 ) {
+  const [base, label] = firstSwatch(categoryCode);
   return {
     categoryCode,
-    baseColorValue: "#C8102E",
+    baseColorValue: base,
     adjustedColorValue: "#D93A52",
-    colorLabel: "Red",
+    colorLabel: label,
     finishCode,
     ...overrides,
   };
@@ -137,16 +162,100 @@ const COMBINATIONS = CUSTOM_PALETTE_CATEGORIES.flatMap((category) =>
 // Approved matrix
 // ---------------------------------------------------------------------------
 
-Deno.test("the approved matrix is exactly 4 categories and 15 combinations", () => {
+Deno.test("the approved matrix is exactly 10 categories and 31 combinations", () => {
   assertEquals([...CUSTOM_PALETTE_CATEGORIES], [
+    "foundation",
+    "concealer",
+    "contour_bronzer",
+    "blush",
+    "highlighter",
+    "eyebrow",
+    "eyeshadow",
+    "eyeliner",
+    "lipstick",
+    "lip_gloss",
+  ]);
+  assertEquals(COMBINATIONS.length, 31);
+  assertEquals(Object.keys(CUSTOM_PALETTE_SWATCHES).length, 24);
+  assertEquals(
+    Object.fromEntries(
+      Object.entries(CUSTOM_PALETTE_CURATED_SWATCHES).map((
+        [category, swatches],
+      ) => [category, Object.keys(swatches!).length]),
+    ),
+    {
+      foundation: 6,
+      concealer: 5,
+      contour_bronzer: 3,
+      highlighter: 4,
+      eyebrow: 4,
+    },
+  );
+  assertEquals(VECTORS.length, 24 * 6);
+});
+
+Deno.test("a color name is resolved per category", () => {
+  // One hex value, two names: Foundation "Deep Espresso", shared "Brown".
+  const espresso = parseCustomPaletteRequest(
+    body([selection("foundation", "natural", {
+      baseColorValue: "#5C3A21",
+      colorLabel: "Deep Espresso",
+    })]),
+  ).selections[0];
+  assertEquals(espresso.color_label, "Deep Espresso");
+  refusedWith(
+    "invalid_base_color",
+    body([selection("foundation", "natural", {
+      baseColorValue: "#5C3A21",
+      colorLabel: "Brown",
+    })]),
+  );
+  // A shared color is not a curated category's choice, and vice versa.
+  refusedWith(
+    "invalid_base_color",
+    body([selection("eyebrow", "matte", {
+      baseColorValue: "#C8102E",
+      colorLabel: "Red",
+    })]),
+  );
+  refusedWith(
+    "invalid_base_color",
+    body([selection("lipstick", "matte", {
+      baseColorValue: "#F1DFCB",
+      colorLabel: "Fair Ivory",
+    })]),
+  );
+});
+
+Deno.test("a v1 request from an older app is accepted only with the original four", () => {
+  const legacy = {
+    paletteVersion: CUSTOM_COLOR_PALETTE_LEGACY_CONTRACT_VERSION,
+  };
+  const parsed = parseCustomPaletteRequest(
+    body(
+      ["lipstick", "eyeliner", "eyeshadow", "blush"].map((c) => selection(c)),
+      legacy,
+    ),
+  );
+  assertEquals(parsed.selections.map((s) => s.category_code), [
     "blush",
     "eyeshadow",
     "eyeliner",
     "lipstick",
   ]);
-  assertEquals(COMBINATIONS.length, 15);
-  assertEquals(Object.keys(CUSTOM_PALETTE_SWATCHES).length, 24);
-  assertEquals(VECTORS.length, 24 * 6);
+  for (const category of ["foundation", "lip_gloss", "eyebrow"]) {
+    refusedWith(
+      "invalid_palette_contract",
+      body([selection("blush"), selection(category)], legacy),
+    );
+  }
+});
+
+Deno.test("lipstick and lip gloss can be chosen together", () => {
+  const parsed = parseCustomPaletteRequest(
+    body([selection("lip_gloss", "glossy"), selection("lipstick", "matte")]),
+  ).selections;
+  assertEquals(parsed.map((s) => s.category_code), ["lipstick", "lip_gloss"]);
 });
 
 for (const { category, finish } of COMBINATIONS) {
@@ -191,13 +300,24 @@ for (const { category, finish } of COMBINATIONS) {
   });
 }
 
-Deno.test("every color the adjuster can reach, on every category, stays exact", async () => {
+Deno.test("every color the adjuster can reach, on every shared-color category, stays exact", async () => {
+  // The vectors start from the shared colors, which only these offer.
+  const shared = CUSTOM_PALETTE_CATEGORIES.filter((category) =>
+    CUSTOM_PALETTE_CURATED_SWATCHES[category] === undefined
+  );
+  assertEquals(shared, [
+    "blush",
+    "eyeshadow",
+    "eyeliner",
+    "lipstick",
+    "lip_gloss",
+  ]);
   const digests = new Set<string>();
   for (const vector of VECTORS) {
-    for (const category of CUSTOM_PALETTE_CATEGORIES) {
+    for (const category of shared) {
       const parsed = parseCustomPaletteRequest(
         body([
-          selection(category, "matte", {
+          selection(category, firstFinish(category), {
             baseColorValue: vector.base,
             adjustedColorValue: vector.adjusted,
             colorLabel: vector.label,
@@ -221,7 +341,35 @@ Deno.test("every color the adjuster can reach, on every category, stays exact", 
   }
   // An achromatic base stays gray, so two saturation controls can share a color.
   const distinct = new Set(VECTORS.map((v) => `${v.base}${v.adjusted}`)).size;
-  assertEquals(digests.size, distinct * 4);
+  assertEquals(digests.size, distinct * shared.length);
+});
+
+Deno.test("every curated shade survives the contract and the preview prompt", () => {
+  for (
+    const [category, swatches] of Object.entries(
+      CUSTOM_PALETTE_CURATED_SWATCHES,
+    )
+  ) {
+    for (const [hex, label] of Object.entries(swatches!)) {
+      const parsed = parseCustomPaletteRequest(
+        body([selection(category, firstFinish(category), {
+          baseColorValue: hex,
+          adjustedColorValue: hex,
+          colorLabel: label,
+        })]),
+      ).selections;
+      assertEquals(parsed[0].color_label, label);
+      const [entry] = fixedPalette(
+        customPalettePreviewPrompt(
+          "natural",
+          parsed,
+          [applicationFor(category)],
+          1,
+        ),
+      );
+      assertEquals(entry.colorHex, hex);
+    }
+  }
 });
 
 Deno.test("the vectors really span light, dark and both saturation extremes", () => {
@@ -295,7 +443,7 @@ Deno.test("every forbidden category and finish combination is refused", () => {
       refused += 1;
     }
   }
-  assertEquals(refused, 4 * ALL_FINISHES.length - 15);
+  assertEquals(refused, 10 * ALL_FINISHES.length - 31);
 });
 
 Deno.test("unknown finishes are refused", () => {
@@ -306,16 +454,15 @@ Deno.test("unknown finishes are refused", () => {
   }
 });
 
-Deno.test("categories outside the approved four are refused", () => {
+Deno.test("categories outside My Makeup Kit's set are refused", () => {
   for (
     const category of [
-      "foundation",
-      "concealer",
       "contour",
-      "highlighter",
+      "bronzer",
       "eyebrows",
       "lips",
-      "lip_gloss",
+      "lipGloss",
+      "nails",
       "BLUSH",
       "",
       "__proto__",

@@ -247,9 +247,9 @@ Deno.test("the variation number reaches the prompt", () => {
 Deno.test("versions are the additive CCP identifiers", () => {
   assertEquals(
     CUSTOM_PALETTE_PREVIEW_PROMPT_VERSION,
-    "custom_palette_preview_v2",
+    "custom_palette_preview_v3",
   );
-  assertEquals(CUSTOM_PALETTE_VALIDATOR_VERSION, "custom_palette_validator_v2");
+  assertEquals(CUSTOM_PALETTE_VALIDATOR_VERSION, "custom_palette_validator_v3");
 });
 
 // ---------------------------------------------------------------------------
@@ -286,7 +286,7 @@ Deno.test("a faithful result is accepted", () => {
   assertEquals(verdict.outcome, "accepted");
   assertEquals(verdict.mismatch_categories, []);
   assertEquals(verdict.uncertain_categories, []);
-  assertEquals(verdict.validator_version, "custom_palette_validator_v2");
+  assertEquals(verdict.validator_version, "custom_palette_validator_v3");
   assertEquals(verdict.failure_code, null);
 });
 
@@ -418,7 +418,8 @@ Deno.test("malformed validator output never accepts", () => {
     observations({ outcome: "accepted" }),
     observations({ identity: "fine" }),
     observations({ introducedCategories: "none" }),
-    observations({ introducedCategories: ["foundation"] }),
+    // A category outside My Makeup Kit's set is not a category at all.
+    observations({ introducedCategories: ["nails"] }),
     // A selected category reported as introduced contradicts itself.
     observations({ introducedCategories: ["blush"] }),
     // Missing, extra, duplicate and unknown categories.
@@ -477,6 +478,24 @@ Deno.test("malformed validator output never accepts", () => {
   }
 });
 
+Deno.test("an unselected new category reported as introduced is a mismatch", () => {
+  // Since category parity, every My Makeup Kit category can be reported as
+  // added. An unselected one is a palette mismatch, never an acceptance.
+  for (
+    const code of [
+      "foundation",
+      "concealer",
+      "contour_bronzer",
+      "highlighter",
+      "eyebrow",
+      "lip_gloss",
+    ]
+  ) {
+    const verdict = judge(observations({ introducedCategories: [code] }));
+    assertEquals(verdict.outcome, "retryable_palette_mismatch", code);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // The pipeline
 // ---------------------------------------------------------------------------
@@ -488,8 +507,8 @@ Deno.test("a faithful candidate is accepted with its provenance", async () => {
   if (result.outcome !== "accepted") return;
   assertEquals(result.image, CANDIDATE);
   assertEquals(result.model, "gemini-3.1-flash-image");
-  assertEquals(result.prompt_version, "custom_palette_preview_v2");
-  assertEquals(result.verdict.validator_version, "custom_palette_validator_v2");
+  assertEquals(result.prompt_version, "custom_palette_preview_v3");
+  assertEquals(result.verdict.validator_version, "custom_palette_validator_v3");
 });
 
 Deno.test("the validator sees the original and the candidate, in order", async () => {
@@ -1132,4 +1151,150 @@ Deno.test("this phase neither charges usage nor writes storage or rows", () => {
       assert(!code.includes(forbidden), `${path}: ${forbidden}`);
     }
   }
+});
+
+// ---------------------------------------------------------------------------
+// Category parity (preview v3, validator v3)
+// ---------------------------------------------------------------------------
+
+const FOUNDATION: PaletteSelection = {
+  category_code: "foundation",
+  base_color_value: "#C99578",
+  adjusted_color_value: "#C99578",
+  color_label: "Warm Beige",
+  finish_code: "dewy",
+};
+const EYEBROW: PaletteSelection = {
+  category_code: "eyebrow",
+  base_color_value: "#6B4A3A",
+  adjusted_color_value: "#6B4A3A",
+  color_label: "Ash Brown",
+  finish_code: "natural",
+};
+const LIP_GLOSS: PaletteSelection = {
+  category_code: "lip_gloss",
+  base_color_value: "#E75480",
+  adjusted_color_value: "#E75480",
+  color_label: "Pink",
+  finish_code: "shimmer",
+};
+
+Deno.test("a palette of the original four gets no new category rules", () => {
+  const prompt = customPalettePreviewPrompt(
+    "soft_glam",
+    SELECTIONS,
+    APPLICATIONS,
+    1,
+  );
+  assert(!prompt.includes("CATEGORY RULES"));
+});
+
+Deno.test("complexion, brow and layered-lip rules appear only when chosen", () => {
+  const complexion = customPalettePreviewPrompt(
+    "natural",
+    [FOUNDATION, BLUSH],
+    [application("foundation"), application("blush")] as never,
+    1,
+  );
+  assertStringIncludes(complexion, "CATEGORY RULES");
+  assertStringIncludes(complexion, "Keep freckles, moles, beauty marks");
+  assert(!complexion.includes("eyebrow colors the existing brows"));
+  assert(!complexion.includes("lip_gloss is a thin top layer"));
+
+  const brows = customPalettePreviewPrompt(
+    "natural",
+    [EYEBROW],
+    [application("eyebrow")] as never,
+    1,
+  );
+  assertStringIncludes(brows, "Keep the exact brow shape");
+  assert(!brows.includes("Complexion products"));
+
+  const lips = customPalettePreviewPrompt(
+    "party",
+    [LIPSTICK, LIP_GLOSS],
+    [application("lipstick"), application("lip_gloss")] as never,
+    1,
+  );
+  assertStringIncludes(lips, "lipstick is the base layer");
+  assertStringIncludes(lips, "lip_gloss is a thin top layer");
+  // Gloss alone has no layering rule.
+  assert(
+    !customPalettePreviewPrompt(
+      "party",
+      [LIP_GLOSS],
+      [application("lip_gloss")] as never,
+      1,
+    ).includes("CATEGORY RULES"),
+  );
+});
+
+Deno.test("the new finishes have rendering guidance", () => {
+  const prompt = customPalettePreviewPrompt(
+    "natural",
+    [FOUNDATION, EYEBROW],
+    [application("foundation"), application("eyebrow")] as never,
+    1,
+  );
+  const palette = JSON.parse(
+    prompt.slice(prompt.lastIndexOf("Fixed palette: ") + 15),
+  ) as Array<Record<string, unknown>>;
+  for (const entry of palette) {
+    assert(
+      typeof entry.finishRendering === "string" &&
+        entry.finishRendering.length > 0,
+      String(entry.finish),
+    );
+  }
+});
+
+Deno.test("validator v3 judges brows by shape and covers every category", () => {
+  const prompt = customPaletteValidatorPrompt([FOUNDATION, EYEBROW, LIP_GLOSS]);
+  assertStringIncludes(prompt, "Ignore brow color or fill.");
+  assertStringIncludes(prompt, "Ignore lip color and gloss.");
+  assertStringIncludes(
+    prompt,
+    "Makeup does not excuse a mark that is no longer visible.",
+  );
+  for (
+    const code of [
+      "foundation",
+      "concealer",
+      "contour_bronzer",
+      "blush",
+      "highlighter",
+      "eyebrow",
+      "eyeshadow",
+      "eyeliner",
+      "lipstick",
+      "lip_gloss",
+    ]
+  ) {
+    assertStringIncludes(prompt, code);
+  }
+  const categories = CUSTOM_PALETTE_VALIDATOR_SCHEMA.properties
+    .categories as {
+      maxItems: number;
+      items: { properties: { categoryCode: { enum: string[] } } };
+    };
+  assertEquals(categories.maxItems, 10);
+  assertEquals(categories.items.properties.categoryCode.enum.length, 10);
+});
+
+Deno.test("a faithful palette with new categories is accepted", () => {
+  const palette: PaletteSelection[] = [
+    FOUNDATION,
+    EYEBROW,
+    { ...BLUSH },
+    { ...LIPSTICK },
+    LIP_GLOSS,
+  ];
+  const verdict = judgeValidatorResponse(
+    observations(
+      {},
+      palette.map((selection) => observation(selection.category_code)),
+    ),
+    palette,
+  );
+  assertEquals(verdict.outcome, "accepted");
 });

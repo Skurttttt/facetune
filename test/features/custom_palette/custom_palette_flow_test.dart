@@ -8,12 +8,18 @@ import 'package:facetune/features/authentication/data/providers/auth_repository_
 import 'package:facetune/features/authentication/domain/entities/auth_user.dart';
 import 'package:facetune/features/custom_palette/data/custom_palette_providers.dart';
 import 'package:facetune/features/custom_palette/domain/catalog/custom_palette_catalog.dart';
+import 'package:facetune/features/custom_palette/domain/catalog/custom_palette_color_model.dart';
 import 'package:facetune/features/custom_palette/domain/repositories/custom_palette_gateway.dart';
 import 'package:facetune/features/custom_palette/domain/validation/custom_palette_contract.dart';
 import 'package:facetune/features/custom_palette/presentation/pages/custom_palette_category_page.dart';
 import 'package:facetune/features/custom_palette/presentation/pages/custom_palette_page.dart';
 import 'package:facetune/features/custom_palette/presentation/pages/custom_palette_result_page.dart';
 import 'package:facetune/features/custom_palette/presentation/pages/custom_palette_review_page.dart';
+import 'package:facetune/features/custom_palette/presentation/controllers/custom_palette_draft_controller.dart';
+import 'package:facetune/features/custom_palette/presentation/widgets/custom_palette_selection_summary.dart';
+import 'package:facetune/features/makeup_kit/domain/entities/makeup_kit_category.dart';
+import 'package:facetune/features/makeup_kit/domain/value_objects/normalized_hex_color.dart';
+import 'package:facetune/features/makeup_kit/presentation/utils/makeup_kit_display.dart';
 import 'package:facetune/features/makeup_kit/domain/entities/makeup_recommendation_mode.dart';
 import 'package:facetune/features/makeup_kit/presentation/controllers/makeup_recommendation_mode_controller.dart';
 import 'package:facetune/features/makeup_kit/presentation/pages/recommendation_mode_selection_page.dart';
@@ -129,9 +135,38 @@ Future<void> _enterPalette(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// [_enterPalette] on a screen too short to show the entry without scrolling.
+Future<void> _enterPaletteScrolled(WidgetTester tester) async {
+  await tester.scrollUntilVisible(
+    find.text('Use Custom Color Palette'),
+    200,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.ensureVisible(find.text('Use Custom Color Palette'));
+  await tester.pumpAndSettle();
+  await _enterPalette(tester);
+}
+
 Future<void> _tapText(WidgetTester tester, String text) async {
   await tester.tap(find.text(text));
   await tester.pumpAndSettle();
+}
+
+/// The include switch of the category labelled [label], scrolled into view.
+///
+/// Targeted by its spoken label: with My Makeup Kit's ten categories the first
+/// switch on the screen is Foundation, not Blush.
+Future<Finder> _includeSwitch(WidgetTester tester, String label) async {
+  final finder = find.descendant(
+    of: find.byWidgetPredicate(
+      (widget) =>
+          widget is Semantics && widget.properties.label == 'Include $label',
+    ),
+    matching: find.byType(Switch),
+  );
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
+  return finder;
 }
 
 Future<void> _chooseBlush(WidgetTester tester) async {
@@ -183,23 +218,44 @@ void main() {
   });
 
   group('palette screen', () {
-    testWidgets('shows exactly the approved categories', (tester) async {
-      await _pump(tester);
-      await _enterPalette(tester);
-      for (final label in ['Blush', 'Eyeshadow', 'Eyeliner', 'Lipstick']) {
-        expect(find.text(label), findsOneWidget, reason: label);
-      }
-      for (final label in [
-        'Foundation',
-        'Concealer',
-        'Highlighter',
-        'Contour/Bronzer',
-        'Eyebrow',
-        'Lip Gloss',
-      ]) {
-        expect(find.text(label), findsNothing, reason: label);
-      }
-    });
+    testWidgets(
+      'shows exactly My Makeup Kit\'s categories, in Tutorial order',
+      (tester) async {
+        await _pump(tester);
+        await _enterPalette(tester);
+        const labels = [
+          'Foundation',
+          'Concealer',
+          'Contour/Bronzer',
+          'Blush',
+          'Highlighter',
+          'Eyebrow',
+          'Eyeshadow',
+          'Eyeliner',
+          'Lipstick',
+          'Lip Gloss',
+        ];
+        // The list is built lazily, so each row is scrolled to in turn. Every
+        // label is found exactly once, and sits below the previous one whenever
+        // both are on screen together.
+        for (var i = 0; i < labels.length; i += 1) {
+          final finder = find.text(labels[i]);
+          await tester.scrollUntilVisible(
+            finder,
+            120,
+            scrollable: find.byType(Scrollable).first,
+          );
+          expect(finder, findsOneWidget, reason: labels[i]);
+          if (i > 0 && tester.any(find.text(labels[i - 1]))) {
+            expect(
+              tester.getTopLeft(finder).dy,
+              greaterThan(tester.getTopLeft(find.text(labels[i - 1])).dy),
+              reason: '${labels[i - 1]} before ${labels[i]}',
+            );
+          }
+        }
+      },
+    );
 
     testWidgets('blocks Review until the contract passes, and says why', (
       tester,
@@ -212,7 +268,7 @@ void main() {
         findsOneWidget,
       );
 
-      await tester.tap(find.byType(Switch).first);
+      await tester.tap(await _includeSwitch(tester, 'Blush'));
       await tester.pumpAndSettle();
       expect(_callback(tester, 'Review palette'), isNull);
       expect(find.text('Choose a color and finish for Blush.'), findsOneWidget);
@@ -236,7 +292,7 @@ void main() {
       await _pump(tester);
       await _enterPalette(tester);
       await _chooseBlush(tester);
-      await tester.tap(find.byType(Switch).first);
+      await tester.tap(await _includeSwitch(tester, 'Blush'));
       await tester.pumpAndSettle();
       expect(_callback(tester, 'Review palette'), isNull);
       expect(find.text('Red (#C8102E)'), findsOneWidget);
@@ -356,6 +412,370 @@ void main() {
     });
   });
 
+  group('live adjustment preview', () {
+    const blush = MakeupKitCategory.blush;
+    final preview = find.byKey(CustomPaletteCategoryPage.livePreviewKey);
+
+    /// Blush's adjusted color, as the draft (the one source of truth) holds it.
+    NormalizedHexColor adjusted(_Harness harness) => harness.container
+        .read(customPaletteDraftControllerProvider)
+        .selectionFor(blush)
+        .adjustedColor!;
+
+    /// The preview's swatch color and text must both show [color].
+    void expectPreviewShows(
+      WidgetTester tester,
+      NormalizedHexColor color,
+      String name,
+    ) {
+      expect(
+        find.descendant(
+          of: preview,
+          matching: find.text('$name (${color.value})'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<AppColorSwatch>(
+              find.descendant(
+                of: preview,
+                matching: find.byType(AppColorSwatch),
+              ),
+            )
+            .color,
+        color.toColor(),
+      );
+    }
+
+    Future<_Harness> openRed(WidgetTester tester) async {
+      final harness = await _pump(tester);
+      await _enterPalette(tester);
+      await _tapText(tester, 'Choose Blush');
+      await _tapText(tester, 'Red');
+      return harness;
+    }
+
+    Finder slider(String label) => find.byWidgetPredicate(
+      (widget) =>
+          widget is Slider &&
+          widget.semanticFormatterCallback!(0).startsWith('$label, '),
+    );
+
+    testWidgets('sits between the swatches and the sliders, in owner order', (
+      tester,
+    ) async {
+      await openRed(tester);
+      double top(Finder finder) => tester.getRect(finder).top;
+      double bottom(Finder finder) => tester.getRect(finder).bottom;
+
+      // Title -> swatches -> preview -> Saturation -> Lightness -> Reset ->
+      // Finish -> Done.
+      final lastSwatch = find.text(CustomPaletteCatalog.swatches.last.label);
+      expect(bottom(find.text('Color')), lessThan(top(lastSwatch)));
+      expect(bottom(lastSwatch), lessThan(top(preview)));
+      expect(bottom(preview), lessThan(top(find.text('Saturation'))));
+      expect(
+        bottom(find.text('Saturation')),
+        lessThan(top(find.text('Lightness'))),
+      );
+      expect(bottom(find.text('Lightness')), lessThan(top(find.text('Reset'))));
+      expect(bottom(find.text('Reset')), lessThan(top(find.text('Finish'))));
+      expect(bottom(find.text('Matte')), lessThan(top(find.text('Done'))));
+    });
+
+    testWidgets('there is exactly one preview, before and after a choice', (
+      tester,
+    ) async {
+      await _pump(tester);
+      await _enterPalette(tester);
+      await _tapText(tester, 'Choose Blush');
+      expect(preview, findsOneWidget);
+      expect(find.text('No color chosen'), findsOneWidget);
+      expect(find.byType(Slider), findsNothing);
+
+      await _tapText(tester, 'Red');
+      expect(preview, findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(CustomPaletteCategoryPage),
+          matching: find.byType(CustomPaletteSelectionSummary),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('every saturation step updates the swatch and HEX at once', (
+      tester,
+    ) async {
+      final harness = await openRed(tester);
+      expectPreviewShows(tester, adjusted(harness), 'Red');
+      final seen = <String>{adjusted(harness).value};
+      for (final value in [90, 60, 30]) {
+        tester.widget<Slider>(slider('Saturation')).onChanged!(
+          value.toDouble(),
+        );
+        // One frame, no settling: the preview must already be current.
+        await tester.pump();
+        expect(find.text('$value%'), findsOneWidget);
+        expectPreviewShows(tester, adjusted(harness), 'Red, adjusted');
+        expect(seen.add(adjusted(harness).value), isTrue);
+      }
+    });
+
+    testWidgets('every lightness step updates the swatch and HEX at once', (
+      tester,
+    ) async {
+      final harness = await openRed(tester);
+      final seen = <String>{adjusted(harness).value};
+      for (final value in [70, 20, 55]) {
+        tester.widget<Slider>(slider('Lightness')).onChanged!(value.toDouble());
+        await tester.pump();
+        expect(find.text('$value%'), findsOneWidget);
+        expectPreviewShows(tester, adjusted(harness), 'Red, adjusted');
+        expect(seen.add(adjusted(harness).value), isTrue);
+      }
+    });
+
+    testWidgets('the preview follows a real drag before the finger lifts', (
+      tester,
+    ) async {
+      final harness = await openRed(tester);
+      final lightness = slider('Lightness');
+      final rect = tester.getRect(lightness);
+      final gesture = await tester.startGesture(
+        rect.centerLeft + const Offset(40, 0),
+      );
+      await tester.pump();
+      final base = adjusted(harness).value;
+
+      // Two moves while the finger is still down: each one must already be
+      // in the preview, in a single frame, with no settling.
+      await gesture.moveBy(Offset(rect.width / 4, 0));
+      await tester.pump();
+      final first = adjusted(harness).value;
+      expect(first, isNot(base));
+      expectPreviewShows(tester, adjusted(harness), 'Red, adjusted');
+
+      await gesture.moveBy(Offset(rect.width / 4, 0));
+      await tester.pump();
+      final second = adjusted(harness).value;
+      expect(second, isNot(first));
+      expectPreviewShows(tester, adjusted(harness), 'Red, adjusted');
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(adjusted(harness).value, second);
+      expect(preview, findsOneWidget);
+    });
+
+    testWidgets('Reset returns the preview and sliders to the base color', (
+      tester,
+    ) async {
+      final harness = await openRed(tester);
+      final baseLightness = tester.widget<Slider>(slider('Lightness')).value;
+      tester.widget<Slider>(slider('Lightness')).onChanged!(80);
+      tester.widget<Slider>(slider('Saturation')).onChanged!(40);
+      await tester.pump();
+      expectPreviewShows(tester, adjusted(harness), 'Red, adjusted');
+
+      await _tapText(tester, 'Reset');
+      expect(adjusted(harness).value, '#C8102E');
+      expectPreviewShows(tester, adjusted(harness), 'Red');
+      expect(tester.widget<Slider>(slider('Lightness')).value, baseLightness);
+    });
+
+    testWidgets('a new swatch moves the preview and the slider baseline', (
+      tester,
+    ) async {
+      final harness = await openRed(tester);
+      tester.widget<Slider>(slider('Lightness')).onChanged!(80);
+      await tester.pump();
+
+      await _tapText(tester, 'Blue');
+      expect(adjusted(harness).value, '#1F6FD6');
+      expectPreviewShows(tester, adjusted(harness), 'Blue');
+      final hsl = CustomPaletteColorModel.toHsl(
+        CustomPaletteCatalog.swatchFor(blush, '#1F6FD6')!.color,
+      );
+      expect(
+        tester.widget<Slider>(slider('Lightness')).value,
+        hsl.lightness.toDouble(),
+      );
+      expect(
+        tester.widget<Slider>(slider('Saturation')).value,
+        hsl.saturation.toDouble(),
+      );
+    });
+
+    testWidgets('finish shows in the preview; Done keeps every choice', (
+      tester,
+    ) async {
+      final harness = await openRed(tester);
+      tester.widget<Slider>(slider('Lightness')).onChanged!(70);
+      await tester.pump();
+      await _tapText(tester, 'Satin');
+      expect(
+        find.descendant(of: preview, matching: find.text('Satin finish')),
+        findsOneWidget,
+      );
+      final chosen = adjusted(harness).value;
+
+      await _tapText(tester, 'Done');
+      expect(find.byType(CustomPaletteCategoryPage), findsNothing);
+      expect(find.text('Red, adjusted ($chosen)'), findsOneWidget);
+      expect(find.text('Satin finish'), findsOneWidget);
+
+      await _tapText(tester, 'Edit Blush');
+      expect(
+        find.descendant(
+          of: preview,
+          matching: find.text('Red, adjusted ($chosen)'),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.widget<Slider>(slider('Lightness')).value, 70);
+    });
+
+    /// Opens Blush on a [size] screen at [scale] text, chooses Red, and scrolls
+    /// the way a user would: until the preview sits at the top of the screen.
+    Future<_Harness> openRedOn(
+      WidgetTester tester,
+      Size size,
+      double scale,
+    ) async {
+      final harness = await _pump(tester, size: size, textScale: scale);
+      await _enterPaletteScrolled(tester);
+      GoRouter.of(
+        tester.element(find.byType(CustomPalettePage)),
+      ).push(AppConstants.customPaletteCategoryLocation('blush'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Red'),
+        120,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await _tapText(tester, 'Red');
+      await tester.scrollUntilVisible(
+        preview,
+        120,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.ensureVisible(preview);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      return harness;
+    }
+
+    bool onScreen(WidgetTester tester, Finder finder) {
+      final viewport = tester.getRect(find.byType(Scrollable).first);
+      final rect = tester.getRect(finder);
+      return rect.top >= viewport.top && rect.bottom <= viewport.bottom;
+    }
+
+    testWidgets('dragging does not move the page', (tester) async {
+      final harness = await openRedOn(tester, const Size(360, 640), 1.3);
+      final position = tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position;
+      final before = position.pixels;
+
+      final rect = tester.getRect(slider('Lightness'));
+      final gesture = await tester.startGesture(rect.center);
+      await gesture.moveBy(const Offset(50, 0));
+      await tester.pump();
+      expect(position.pixels, before);
+      await gesture.moveBy(const Offset(-90, 0));
+      await tester.pump();
+      expect(position.pixels, before);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(position.pixels, before);
+      expect(preview, findsOneWidget);
+      expect(onScreen(tester, preview), isTrue);
+      expectPreviewShows(tester, adjusted(harness), 'Red, adjusted');
+    });
+
+    for (final (name, size, scale) in [
+      ('compact phone at 1.3x text', const Size(360, 640), 1.3),
+      ('narrow phone', const Size(320, 640), 1.0),
+      ('phone', const Size(393, 851), 1.0),
+      ('phone at 1.5x text', const Size(393, 851), 1.5),
+    ]) {
+      testWidgets('preview and both sliders fit on screen together: $name', (
+        tester,
+      ) async {
+        await openRedOn(tester, size, scale);
+        for (final finder in [
+          preview,
+          slider('Saturation'),
+          slider('Lightness'),
+        ]) {
+          expect(onScreen(tester, finder), isTrue, reason: '$finder');
+        }
+      });
+    }
+
+    for (final (name, size) in [
+      ('phone', const Size(393, 851)),
+      ('narrow phone', const Size(320, 640)),
+    ]) {
+      testWidgets('2x text keeps order and stays live: $name', (tester) async {
+        final harness = await openRedOn(tester, size, 2);
+        // With the preview at the top, the Saturation slider directly below it
+        // is on screen too. The test font is larger than the app's, so at 2x on
+        // the shortest screen Lightness may sit just below the fold here;
+        // ordinary scrolling, not an overlay, brings it up.
+        expect(onScreen(tester, preview), isTrue);
+        expect(onScreen(tester, slider('Saturation')), isTrue);
+        expect(
+          tester.getRect(preview).bottom,
+          lessThan(tester.getRect(find.text('Saturation')).top),
+        );
+        tester.widget<Slider>(slider('Saturation')).onChanged!(60);
+        await tester.pump();
+        expectPreviewShows(tester, adjusted(harness), 'Red, adjusted');
+
+        await tester.scrollUntilVisible(
+          slider('Lightness'),
+          120,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.ensureVisible(slider('Lightness'));
+        await tester.pumpAndSettle();
+        tester.widget<Slider>(slider('Lightness')).onChanged!(65);
+        await tester.pump();
+        expect(find.text('65%'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('preview speaks its values; controls are usable targets', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final harness = await openRed(tester);
+      tester.widget<Slider>(slider('Lightness')).onChanged!(70);
+      await tester.pump();
+      final label = tester
+          .getSemantics(
+            find.descendant(of: preview, matching: find.byType(Row)).first,
+          )
+          .label;
+      expect(label, contains('Your blush'));
+      expect(label, contains(adjusted(harness).value));
+      expect(label, contains('No finish chosen'));
+      for (final finder in [slider('Saturation'), slider('Lightness')]) {
+        expect(tester.getSize(finder).height, greaterThanOrEqualTo(48));
+      }
+      expect(
+        tester.getSize(find.widgetWithText(TertiaryButton, 'Reset')).height,
+        greaterThanOrEqualTo(48),
+      );
+      handle.dispose();
+    });
+  });
+
   group('back and edit', () {
     testWidgets('choices survive leaving the editor and returning', (
       tester,
@@ -459,7 +879,7 @@ void main() {
     testWidgets('an invalid draft cannot generate', (tester) async {
       final harness = await _pump(tester);
       await _enterPalette(tester);
-      await tester.tap(find.byType(Switch).first);
+      await tester.tap(await _includeSwitch(tester, 'Blush'));
       await tester.pumpAndSettle();
       GoRouter.of(
         tester.element(find.byType(CustomPalettePage)),

@@ -7,26 +7,59 @@
  */
 
 export const CUSTOM_COLOR_PALETTE_SOURCE_MODE = "custom_color_palette";
+/** The contract every new palette is written under. */
 export const CUSTOM_COLOR_PALETTE_CONTRACT_VERSION =
+  "custom_color_palette_contract_v2";
+
+/**
+ * The original four-category contract. Palettes stored under it stay readable,
+ * and a request that still names it (an older app) is accepted only while it
+ * uses those four categories. Either way the palette is written as v2.
+ */
+export const CUSTOM_COLOR_PALETTE_LEGACY_CONTRACT_VERSION =
   "custom_color_palette_contract_v1";
 
-/** The supported categories, in Tutorial application order. */
+/**
+ * The supported categories, in Tutorial application order: My Makeup Kit's
+ * exact category set. This order is the canonical order of a palette.
+ */
 export const CUSTOM_PALETTE_CATEGORIES = [
+  "foundation",
+  "concealer",
+  "contour_bronzer",
   "blush",
+  "highlighter",
+  "eyebrow",
   "eyeshadow",
   "eyeliner",
   "lipstick",
+  "lip_gloss",
 ] as const;
 
 export type CustomPaletteCategory = typeof CUSTOM_PALETTE_CATEGORIES[number];
 
+/** The categories of the v1 contract. */
+export const CUSTOM_PALETTE_LEGACY_CATEGORIES: ReadonlySet<string> = new Set([
+  "blush",
+  "eyeshadow",
+  "eyeliner",
+  "lipstick",
+]);
+
+/** My Makeup Kit's finishes for each category, in its declaration order. */
 export const CUSTOM_PALETTE_FINISHES: Readonly<
   Record<CustomPaletteCategory, readonly string[]>
 > = {
+  foundation: ["matte", "natural", "dewy", "satin"],
+  concealer: ["matte", "natural", "radiant"],
+  contour_bronzer: ["matte", "satin"],
   blush: ["matte", "satin", "shimmer"],
+  highlighter: ["natural", "shimmer", "metallic"],
+  eyebrow: ["matte", "natural"],
   eyeshadow: ["matte", "satin", "shimmer", "metallic", "glitter"],
   eyeliner: ["matte", "satin", "glossy"],
   lipstick: ["matte", "satin", "cream", "glossy"],
+  lip_gloss: ["glossy", "shimmer"],
 };
 
 /** Every finish code the app knows, so "unknown" and "not allowed here" differ. */
@@ -70,6 +103,59 @@ export const CUSTOM_PALETTE_SWATCHES: Readonly<Record<string, string>> = {
   "#8A5A34": "Bronze",
   "#B8BCC2": "Silver",
 };
+
+/**
+ * Categories that offer only My Makeup Kit's curated shades instead of the
+ * shared colors: an arbitrary color is not a sensible foundation, concealer,
+ * contour, highlighter or brow choice. Base color value -> its one label.
+ */
+export const CUSTOM_PALETTE_CURATED_SWATCHES: Readonly<
+  Partial<Record<CustomPaletteCategory, Readonly<Record<string, string>>>>
+> = {
+  foundation: {
+    "#F1DFCB": "Fair Ivory",
+    "#EFCBA9": "Light Beige",
+    "#C99578": "Warm Beige",
+    "#C68642": "Medium Honey",
+    "#A9702F": "Tan Caramel",
+    "#5C3A21": "Deep Espresso",
+  },
+  concealer: {
+    "#F3E1CE": "Fair",
+    "#EAC9A6": "Light",
+    "#CE9B72": "Medium",
+    "#B27D4B": "Tan",
+    "#6E4527": "Deep",
+  },
+  contour_bronzer: {
+    "#A9713D": "Warm Tan",
+    "#8C6C5C": "Cool Taupe",
+    "#7A4B2A": "Deep Bronze",
+  },
+  highlighter: {
+    "#F3D9B1": "Champagne",
+    "#E8B4A0": "Rose Gold",
+    "#E4C078": "Gold",
+    "#F5E9DA": "Pearl",
+  },
+  eyebrow: {
+    "#8A6E5D": "Soft Taupe",
+    "#6B4A3A": "Ash Brown",
+    "#5C3E2E": "Warm Brunette",
+    "#4A4038": "Charcoal",
+  },
+};
+
+/**
+ * The colors [category] offers: its curated shades, or the shared colors.
+ * Per category because a curated shade may share a hex value with a shared
+ * color under a different name.
+ */
+export function swatchesFor(
+  category: CustomPaletteCategory,
+): Readonly<Record<string, string>> {
+  return CUSTOM_PALETTE_CURATED_SWATCHES[category] ?? CUSTOM_PALETTE_SWATCHES;
+}
 
 export const CUSTOM_PALETTE_STYLES: ReadonlySet<string> = new Set([
   "natural",
@@ -192,7 +278,7 @@ function parseSelection(value: unknown): PaletteSelection {
   }
   // The label must be the catalog's own, so no free text can ever reach a
   // prompt or a stored palette through it.
-  const label = CUSTOM_PALETTE_SWATCHES[base];
+  const label = swatchesFor(category)[base];
   if (label === undefined || input.colorLabel !== label) {
     throw new PaletteContractError("invalid_base_color");
   }
@@ -223,7 +309,8 @@ export function parseCustomPaletteRequest(
   if (
     !input ||
     !hasOnlyKeys(input, REQUEST_KEYS) ||
-    input.paletteVersion !== CUSTOM_COLOR_PALETTE_CONTRACT_VERSION ||
+    (input.paletteVersion !== CUSTOM_COLOR_PALETTE_CONTRACT_VERSION &&
+      input.paletteVersion !== CUSTOM_COLOR_PALETTE_LEGACY_CONTRACT_VERSION) ||
     input.sourceMode !== CUSTOM_COLOR_PALETTE_SOURCE_MODE
   ) {
     throw new PaletteContractError("invalid_palette_contract");
@@ -258,6 +345,15 @@ export function parseCustomPaletteRequest(
     new Set(selections.map((s) => s.category_code)).size !== selections.length
   ) {
     throw new PaletteContractError("duplicate_category");
+  }
+  // An older app that still sends v1 cannot have meant a category v1 lacked.
+  if (
+    input.paletteVersion === CUSTOM_COLOR_PALETTE_LEGACY_CONTRACT_VERSION &&
+    selections.some((s) =>
+      !CUSTOM_PALETTE_LEGACY_CATEGORIES.has(s.category_code)
+    )
+  ) {
+    throw new PaletteContractError("invalid_palette_contract");
   }
   selections.sort((a, b) =>
     CUSTOM_PALETTE_CATEGORIES.indexOf(a.category_code) -

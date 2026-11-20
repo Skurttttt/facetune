@@ -1,12 +1,15 @@
 import { assertEquals, assertNotEquals, assertThrows } from "jsr:@std/assert@1";
 
 import {
+  CUSTOM_COLOR_PALETTE_CONTRACT_VERSION,
+  CUSTOM_COLOR_PALETTE_LEGACY_CONTRACT_VERSION,
   CUSTOM_PALETTE_CATEGORIES,
   CUSTOM_PALETTE_FINISHES,
   CUSTOM_PALETTE_SWATCHES,
   PaletteContractError,
   paletteDigest,
   parseCustomPaletteRequest,
+  swatchesFor,
 } from "./custom_palette_contract.ts";
 
 const REQUEST_ID = "11111111-1111-4111-8111-111111111111";
@@ -26,7 +29,7 @@ function selection(overrides: Record<string, unknown> = {}) {
 function request(overrides: Record<string, unknown> = {}) {
   return {
     paletteRequestId: REQUEST_ID,
-    paletteVersion: "custom_color_palette_contract_v1",
+    paletteVersion: "custom_color_palette_contract_v2",
     sourceMode: "custom_color_palette",
     analysisId: ANALYSIS_ID,
     style: "soft_glam",
@@ -57,13 +60,20 @@ Deno.test("accepts a valid palette and keeps the user's exact values", () => {
 
 Deno.test("accepts every approved category and finish combination", () => {
   for (const category of CUSTOM_PALETTE_CATEGORIES) {
+    const [base, label] = Object.entries(swatchesFor(category))[0];
     for (const finish of CUSTOM_PALETTE_FINISHES[category]) {
       const parsed = parseCustomPaletteRequest(request({
         categorySelections: [
-          selection({ categoryCode: category, finishCode: finish }),
+          selection({
+            categoryCode: category,
+            finishCode: finish,
+            baseColorValue: base,
+            colorLabel: label,
+          }),
         ],
       }));
       assertEquals(parsed.selections[0].finish_code, finish);
+      assertEquals(parsed.selections[0].color_label, label);
     }
   }
 });
@@ -90,10 +100,42 @@ Deno.test("source mode routing: only this mode's identifier is accepted", () => 
 });
 
 Deno.test("refuses an unknown contract version", () => {
-  assertRefused(
-    request({ paletteVersion: "custom_color_palette_contract_v2" }),
-    "invalid_palette_contract",
+  for (
+    const version of [
+      "custom_color_palette_contract_v3",
+      "custom_color_palette_contract_v0",
+      "custom_color_palette_contract",
+      "",
+      null,
+    ]
+  ) {
+    assertRefused(
+      request({ paletteVersion: version }),
+      "invalid_palette_contract",
+    );
+  }
+});
+
+Deno.test("accepts the current and the legacy contract versions", () => {
+  assertEquals(
+    CUSTOM_COLOR_PALETTE_CONTRACT_VERSION,
+    "custom_color_palette_contract_v2",
   );
+  assertEquals(
+    CUSTOM_COLOR_PALETTE_LEGACY_CONTRACT_VERSION,
+    "custom_color_palette_contract_v1",
+  );
+  for (
+    const version of [
+      CUSTOM_COLOR_PALETTE_CONTRACT_VERSION,
+      CUSTOM_COLOR_PALETTE_LEGACY_CONTRACT_VERSION,
+    ]
+  ) {
+    const parsed = parseCustomPaletteRequest(
+      request({ paletteVersion: version }),
+    );
+    assertEquals(parsed.selections[0].category_code, "blush");
+  }
 });
 
 Deno.test("refuses a body that names a user or carries extra fields", () => {
@@ -131,7 +173,7 @@ Deno.test("refuses an empty palette", () => {
 });
 
 Deno.test("refuses an unsupported category", () => {
-  for (const code of ["foundation", "lip_gloss", "eyebrow", "nails", 7]) {
+  for (const code of ["nails", "lips", "eyebrows", "lipGloss", 7]) {
     assertRefused(
       request({ categorySelections: [selection({ categoryCode: code })] }),
       "unsupported_category",

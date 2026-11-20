@@ -27,6 +27,9 @@ class CustomPaletteCategoryPage extends ConsumerWidget {
 
   static const _title = 'Custom Color Palette';
 
+  /// The one live preview of this category's adjusted color.
+  static const livePreviewKey = ValueKey('custom-palette-live-preview');
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final category = MakeupKitCategory.fromCode(categoryCode);
@@ -45,21 +48,26 @@ class CustomPaletteCategoryPage extends ConsumerWidget {
         child: PageFrame(
           child: ListView(
             children: [
+              const _SectionTitle('Color'),
+              const SizedBox(height: AppSpacing.sm),
+              CustomPaletteSwatchGrid(
+                swatches: CustomPaletteCatalog.swatchesFor(category),
+                selected: base,
+                onSelected: (swatch) =>
+                    controller.selectSwatch(category, swatch),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              // The live preview sits directly above the sliders, so the
+              // adjusted color and HEX value stay in view while dragging. It
+              // reads the same draft selection the sliders write.
               AppCard(
+                key: CustomPaletteCategoryPage.livePreviewKey,
                 padding: const EdgeInsets.all(AppSpacing.md),
                 child: CustomPaletteSelectionSummary(
                   title: 'Your ${category.label.toLowerCase()}',
                   selection: selection,
                   swatchSize: AppColorSwatch.largeSize,
                 ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              const _SectionTitle('Color'),
-              const SizedBox(height: AppSpacing.sm),
-              CustomPaletteSwatchGrid(
-                selected: base,
-                onSelected: (swatch) =>
-                    controller.selectSwatch(category, swatch),
               ),
               if (base != null) ...[
                 const SizedBox(height: AppSpacing.lg),

@@ -6,7 +6,7 @@
 -- still removes the whole family. Rolled back.
 begin;
 
-select plan(36);
+select plan(42);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -103,7 +103,7 @@ select ok(
 );
 select ok(
   not public.custom_palette_snapshot_is_valid(
-    jsonb_build_array(pg_temp.selection('foundation'))
+    jsonb_build_array(pg_temp.selection('nails'))
   ),
   'an unsupported category fails'
 );
@@ -156,6 +156,44 @@ select ok(
   'a missing field fails'
 );
 
+-- Category parity (contract v2): My Makeup Kit's ten categories.
+select ok(
+  public.custom_palette_snapshot_is_valid(jsonb_build_array(
+    pg_temp.selection('foundation', '#5C3A21', '#5C3A21', 'Deep Espresso',
+      'natural')
+  )),
+  'a curated foundation shade passes under its own name'
+);
+select ok(
+  not public.custom_palette_snapshot_is_valid(jsonb_build_array(
+    pg_temp.selection('foundation', '#5C3A21', '#5C3A21', 'Brown', 'natural')
+  )),
+  'the shared name of the same hex value is not a foundation choice'
+);
+select ok(
+  public.custom_palette_snapshot_is_valid(jsonb_build_array(
+    pg_temp.selection('foundation', '#C99578', '#C99578', 'Warm Beige', 'dewy'),
+    pg_temp.selection('concealer', '#EAC9A6', '#EAC9A6', 'Light', 'radiant'),
+    pg_temp.selection('contour_bronzer', '#7A4B2A', '#7A4B2A', 'Deep Bronze',
+      'matte'),
+    pg_temp.selection(),
+    pg_temp.selection('highlighter', '#F3D9B1', '#F3D9B1', 'Champagne',
+      'shimmer'),
+    pg_temp.selection('eyebrow', '#6B4A3A', '#6B4A3A', 'Ash Brown', 'natural'),
+    pg_temp.selection('eyeshadow', '#6A2FB5', '#6A2FB5', 'Violet', 'glitter'),
+    pg_temp.selection('eyeliner', '#1B1B1B', '#1B1B1B', 'Black', 'glossy'),
+    pg_temp.selection('lipstick', '#E75480', '#E75480', 'Pink', 'cream'),
+    pg_temp.selection('lip_gloss', '#E75480', '#E75480', 'Pink', 'shimmer')
+  )),
+  'all ten categories together pass'
+);
+select ok(
+  not public.custom_palette_snapshot_is_valid(jsonb_build_array(
+    pg_temp.selection('lip_gloss', '#E75480', '#E75480', 'Pink', 'matte')
+  )),
+  'a finish lip gloss does not offer fails'
+);
+
 -- ---------------------------------------------------------------------------
 -- Table constraints
 -- ---------------------------------------------------------------------------
@@ -170,7 +208,7 @@ select lives_ok(
 select throws_ok(
   $$ select pg_temp.insert_palette(
     gen_random_uuid(), gen_random_uuid(),
-    jsonb_build_array(pg_temp.selection('foundation'))
+    jsonb_build_array(pg_temp.selection('nails'))
   ) $$,
   '23514', null,
   'the table refuses an invalid palette'
@@ -179,10 +217,36 @@ select throws_ok(
   $$ select pg_temp.insert_palette(
     gen_random_uuid(), gen_random_uuid(),
     jsonb_build_array(pg_temp.selection()),
-    p_version => 'custom_color_palette_contract_v2'
+    p_version => 'custom_color_palette_contract_v3'
   ) $$,
   '23514', null,
   'the table refuses an unknown contract version'
+);
+select lives_ok(
+  $$ select pg_temp.insert_palette(
+    '50000000-0000-4000-8000-00000000cc0a',
+    '60000000-0000-4000-8000-00000000cc0a',
+    jsonb_build_array(
+      pg_temp.selection('eyebrow', '#6B4A3A', '#6B4A3A', 'Ash Brown',
+        'natural')
+    ),
+    p_version => 'custom_color_palette_contract_v2',
+    -- Bob's account, so Alice's own-row count below is unchanged.
+    p_user => '10000000-0000-4000-8000-00000000cc02',
+    p_analysis => '40000000-0000-4000-8000-00000000cc03'
+  ) $$,
+  'a v2 row may hold a new category'
+);
+select throws_ok(
+  $$ select pg_temp.insert_palette(
+    gen_random_uuid(), gen_random_uuid(),
+    jsonb_build_array(
+      pg_temp.selection('eyebrow', '#6B4A3A', '#6B4A3A', 'Ash Brown',
+        'natural')
+    )
+  ) $$,
+  '23514', null,
+  'a v1 row may hold only the original four categories'
 );
 select throws_ok(
   $$ select pg_temp.insert_palette(

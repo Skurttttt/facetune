@@ -10,37 +10,73 @@ void main() {
   final contract = File(
     'supabase/functions/_shared/custom_palette_contract.ts',
   ).readAsStringSync();
+  // The migration that defines the current (v2) palette validity rules.
   final migration = File(
+    'supabase/migrations/20261120000100_ccp_category_parity.sql',
+  ).readAsStringSync();
+  // The original migration, which created the v1 rules and still governs the
+  // rows written under them.
+  final legacyMigration = File(
     'supabase/migrations/20261008000100_ccp_palette_lineage.sql',
   ).readAsStringSync();
 
   test('identifiers agree', () {
     expect(contract, contains('"$customColorPaletteSourceMode"'));
     expect(contract, contains('"$customColorPaletteContractVersion"'));
+    expect(contract, contains('"$customColorPaletteLegacyContractVersion"'));
     expect(migration, contains("'$customColorPaletteContractVersion'"));
+    expect(migration, contains("'$customColorPaletteLegacyContractVersion'"));
+    expect(
+      legacyMigration,
+      contains("'$customColorPaletteLegacyContractVersion'"),
+    );
+    expect(customColorPaletteReadableContractVersions, {
+      'custom_color_palette_contract_v1',
+      'custom_color_palette_contract_v2',
+    });
   });
 
-  test('every swatch agrees across Dart, TypeScript and SQL', () {
-    for (final swatch in CustomPaletteCatalog.swatches) {
-      expect(
-        contract,
-        contains('"${swatch.hex}": "${swatch.label}"'),
-        reason: swatch.label,
-      );
-      expect(
-        migration,
-        contains("when '${swatch.hex}' then '${swatch.label}'"),
-        reason: swatch.label,
-      );
+  test('every swatch agrees across Dart, TypeScript and SQL, per category', () {
+    var total = 0;
+    final seen = <String>{};
+    for (final category in CustomPaletteCatalog.categories) {
+      for (final swatch in CustomPaletteCatalog.swatchesFor(category)) {
+        // Each (category list, hex) pair is counted once: the shared list is
+        // used by five categories but written once on each side.
+        if (!seen.add(
+          '${CustomPaletteCatalog.usesCuratedShades(category) ? category.code : 'shared'}'
+          '|${swatch.hex}',
+        )) {
+          continue;
+        }
+        total += 1;
+        expect(
+          contract,
+          contains('"${swatch.hex}": "${swatch.label}"'),
+          reason: '${category.code} ${swatch.label}',
+        );
+        expect(
+          migration,
+          contains("when '${swatch.hex}' then '${swatch.label}'"),
+          reason: '${category.code} ${swatch.label}',
+        );
+      }
     }
-    expect(
-      RegExp(r'"#[0-9A-F]{6}": "').allMatches(contract),
-      hasLength(CustomPaletteCatalog.swatches.length),
-    );
+    expect(total, 24 + 6 + 5 + 3 + 4 + 4);
+    expect(RegExp(r'"#[0-9A-F]{6}": "').allMatches(contract), hasLength(total));
     expect(
       RegExp(r"when '#[0-9A-F]{6}' then '").allMatches(migration),
+      hasLength(total),
+    );
+  });
+
+  test('the v1 migration still holds only the original rules', () {
+    // Rows written under v1 were checked by these rules; they must not change.
+    expect(
+      RegExp(r"when '#[0-9A-F]{6}' then '").allMatches(legacyMigration),
       hasLength(CustomPaletteCatalog.swatches.length),
     );
+    expect(legacyMigration, contains('not between 1 and 4'));
   });
 
   test('every category and finish agrees across all three', () {

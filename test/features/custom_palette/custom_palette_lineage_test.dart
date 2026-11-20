@@ -244,12 +244,86 @@ void main() {
   });
 
   group('stored palette', () {
+    test('a stored v1 palette of the original four categories still reads', () {
+      final palette = CustomPaletteDtos.palette([
+        paletteRow(),
+        paletteRow(
+          category: 'eyeshadow',
+          base: '#C9A227',
+          adjusted: '#C9A227',
+          label: 'Gold',
+          finish: 'metallic',
+        ),
+        paletteRow(
+          category: 'eyeliner',
+          base: '#6A2FB5',
+          adjusted: '#6A2FB5',
+          label: 'Violet',
+          finish: 'glossy',
+        ),
+        paletteRow(
+          category: 'lipstick',
+          base: '#E8711A',
+          adjusted: '#E8711A',
+          label: 'Orange',
+          finish: 'satin',
+        ),
+      ]);
+      expect(palette.map((shade) => shade.category.code), [
+        'blush',
+        'eyeshadow',
+        'eyeliner',
+        'lipstick',
+      ]);
+    });
+
+    test('a stored v2 palette with the new categories reads', () {
+      final palette = CustomPaletteDtos.palette([
+        paletteRow(
+          category: 'foundation',
+          base: '#C99578',
+          adjusted: '#C99578',
+          label: 'Warm Beige',
+          finish: 'dewy',
+        ),
+        paletteRow(
+          category: 'eyebrow',
+          base: '#6B4A3A',
+          adjusted: '#6B4A3A',
+          label: 'Ash Brown',
+          finish: 'natural',
+        ),
+        paletteRow(
+          category: 'lipstick',
+          base: '#C8102E',
+          adjusted: '#C8102E',
+          label: 'Red',
+        ),
+        paletteRow(
+          category: 'lip_gloss',
+          base: '#E75480',
+          adjusted: '#E75480',
+          label: 'Pink',
+          finish: 'shimmer',
+        ),
+      ]);
+      expect(palette.map((shade) => shade.category.code), [
+        'foundation',
+        'eyebrow',
+        'lipstick',
+        'lip_gloss',
+      ]);
+      expect(palette.first.colorLabel, 'Warm Beige');
+    });
+
     test('an invalid stored palette is refused rather than shown', () {
       for (final bad in <Object?>[
         null,
         <Object?>[],
-        [paletteRow(category: 'foundation')],
+        [paletteRow(category: 'nails')],
+        [paletteRow(category: 'lips')],
         [paletteRow(finish: 'glossy')],
+        [paletteRow(category: 'lip_gloss', finish: 'matte')],
         [paletteRow(adjusted: 'pink')],
       ]) {
         expect(

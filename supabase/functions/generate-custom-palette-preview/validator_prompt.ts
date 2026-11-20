@@ -1,11 +1,17 @@
-import type { PaletteSelection } from "../_shared/custom_palette_contract.ts";
+import {
+  CUSTOM_PALETTE_CATEGORIES,
+  type PaletteSelection,
+} from "../_shared/custom_palette_contract.ts";
 import { describeTone } from "./tone.ts";
 
 /// v2 (CCP-10 Stage 1 remediation): identity first, judged feature by feature;
 /// each color's tone; lightness and saturation are part of the color.
-export const CUSTOM_PALETTE_VALIDATOR_VERSION = "custom_palette_validator_v2";
+/// v3 (category parity): My Makeup Kit's ten categories; brows judged by shape,
+/// not fill; skin marks must survive complexion makeup; every category can be
+/// reported as introduced.
+export const CUSTOM_PALETTE_VALIDATOR_VERSION = "custom_palette_validator_v3";
 
-const categoryCodes = ["blush", "eyeshadow", "eyeliner", "lipstick"];
+const categoryCodes: string[] = [...CUSTOM_PALETTE_CATEGORIES];
 
 /**
  * The features compared between the original and the candidate. Makeup is meant
@@ -61,7 +67,7 @@ export const CUSTOM_PALETTE_VALIDATOR_SCHEMA = {
     categories: {
       type: "array",
       minItems: 1,
-      maxItems: 4,
+      maxItems: CUSTOM_PALETTE_CATEGORIES.length,
       items: {
         type: "object",
         additionalProperties: false,
@@ -114,7 +120,7 @@ export const CUSTOM_PALETTE_VALIDATOR_SCHEMA = {
     },
     introducedCategories: {
       type: "array",
-      maxItems: 4,
+      maxItems: CUSTOM_PALETTE_CATEGORIES.length,
       items: { type: "string", enum: categoryCodes },
     },
   },
@@ -144,10 +150,10 @@ STEP 1 — IDENTITY. Do this first, before you look at any makeup, and judge it 
 Makeup is supposed to differ between the images. Everything that makes the person recognizable is not. Compare the face in IMAGE B with the face in IMAGE A, feature by feature, and report each as same, different, or uncertain:
 - faceShape: face outline, jaw, chin, and cheekbones.
 - eyes: eye shape, size, and spacing. Ignore eyeliner and eyeshadow.
-- eyebrows: brow shape and position.
+- eyebrows: brow shape, thickness, and position. Ignore brow color or fill.
 - nose: nose shape and size.
-- mouth: lip shape and size. Ignore lip color.
-- skinMarks: moles, freckles, scars, and other marks visible in IMAGE A.
+- mouth: lip shape and size. Ignore lip color and gloss.
+- skinMarks: moles, freckles, scars, and other marks visible in IMAGE A. Makeup does not excuse a mark that is no longer visible.
 - apparentAge: how old the person looks.
 - hair: hairline, length, and hairstyle.
 - framing: pose, head angle, and crop.
@@ -188,7 +194,7 @@ finishReason (none unless finish is contradicted)
 - too_shiny, too_flat, or wrong_texture.
 
 introducedCategories
-- Any of blush, eyeshadow, eyeliner, or lipstick visibly added in IMAGE B that is NOT in the listed palette. Do not list a listed category. Do not report skin or complexion here.
+- Any of foundation, concealer, contour_bronzer, blush, highlighter, eyebrow, eyeshadow, eyeliner, lipstick, or lip_gloss visibly added in IMAGE B that is NOT in the listed palette. Do not list a listed category. Report a complexion category (foundation, concealer, contour_bronzer, highlighter) or eyebrow only for a clearly visible cosmetic layer, such as a visible change of skin color, contour shading, a highlight sheen, or filled-in brows; ordinary differences in lighting or photo quality are not makeup.
 
 Never guess to be helpful: "uncertain" is a correct answer. Return JSON matching the supplied schema only.
 

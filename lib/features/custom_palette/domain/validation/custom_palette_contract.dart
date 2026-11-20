@@ -126,7 +126,7 @@ abstract final class CustomPaletteValidator {
     if (!_canonicalHex.hasMatch(base) || !_canonicalHex.hasMatch(adjusted)) {
       issues.add(issue(CustomPaletteIssueCode.invalidColor));
     } else {
-      final swatch = CustomPaletteCatalog.swatchFor(base);
+      final swatch = CustomPaletteCatalog.swatchFor(category, base);
       if (swatch == null || swatch.label != selection.colorLabel) {
         issues.add(issue(CustomPaletteIssueCode.invalidBaseColor));
       }

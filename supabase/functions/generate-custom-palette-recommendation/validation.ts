@@ -73,8 +73,9 @@ const COLOR_WORDS = [
 ];
 
 /**
- * Finish code -> the words that assert it. `natural` and `radiant` are absent:
- * neither is a CCP finish, and both are ordinary words in placement advice.
+ * Finish code -> the words that assert it. `natural`, `dewy` and `radiant` are
+ * absent: all three are ordinary words in complexion and placement advice, so
+ * guarding them would refuse sound plans rather than catch a contradiction.
  */
 const FINISH_WORDS: Readonly<Record<string, readonly string[]>> = {
   matte: ["matte"],
@@ -129,7 +130,11 @@ function intensity(input: Record<string, unknown>, key: string): Intensity {
 function allowedWords(selections: readonly PaletteSelection[]): Set<string> {
   const allowed = new Set<string>();
   for (const selection of selections) {
-    allowed.add(selection.color_label.toLowerCase());
+    const label = selection.color_label.toLowerCase();
+    allowed.add(label);
+    // A curated name can hold several words ("warm beige", "rose gold"): each
+    // is part of the user's own base name, not an asserted color.
+    for (const word of label.split(/\s+/)) allowed.add(word);
     for (const word of FINISH_WORDS[selection.finish_code] ?? []) {
       allowed.add(word);
     }
@@ -137,14 +142,43 @@ function allowedWords(selections: readonly PaletteSelection[]): Set<string> {
   return allowed;
 }
 
-/** Refuses prose that asserts a color or finish the user did not choose. */
+/**
+ * Category names that contain a guarded word. "Lip gloss" names the product,
+ * not the glossy finish, so when it is in the palette the name itself is not an
+ * assertion. "Glossy" stays guarded.
+ */
+const CATEGORY_NAME_PHRASES: Readonly<Partial<Record<string, RegExp>>> = {
+  lip_gloss: /\blip[\s-]?gloss(?:es)?\b|\bgloss(?:es)?\b(?!y)/g,
+};
+
+function withoutCategoryNames(
+  lower: string,
+  paletteCategories: ReadonlySet<string>,
+): string {
+  let text = lower;
+  for (const category of paletteCategories) {
+    const phrase = CATEGORY_NAME_PHRASES[category];
+    if (phrase) text = text.replace(phrase, " ");
+  }
+  return text;
+}
+
+/**
+ * Refuses prose that asserts a color or finish the user did not choose.
+ *
+ * Color and finish words are allowed only from [selections] (one category's
+ * own choice, or the whole palette for the summary). Category names are exempt
+ * for every category in the palette, so lipstick advice may mention the lip
+ * gloss layered over it.
+ */
 function assertNoConflict(
   prose: string,
   selections: readonly PaletteSelection[],
+  paletteCategories: ReadonlySet<string>,
 ): void {
   if (hexLike.test(prose)) throw invalid("conflicting_palette_text");
   const allowed = allowedWords(selections);
-  const lower = prose.toLowerCase();
+  const lower = withoutCategoryNames(prose.toLowerCase(), paletteCategories);
   const asserted = [...COLOR_WORDS, ...Object.values(FINISH_WORDS).flat()];
   for (const word of asserted) {
     if (allowed.has(word)) continue;
@@ -179,6 +213,9 @@ export function parseCustomPaletteRecommendation(
   }
   if (!Array.isArray(root.applications)) throw invalid();
 
+  const paletteCategories: ReadonlySet<string> = new Set(
+    selections.map((s) => s.category_code),
+  );
   const byCategory = new Map<string, CategoryApplication>();
   for (const entry of root.applications) {
     const input = record(entry);
@@ -202,13 +239,14 @@ export function parseCustomPaletteRecommendation(
         application.reasoning,
       ].join(" "),
       [selection],
+      paletteCategories,
     );
     byCategory.set(selection.category_code, application);
   }
   if (byCategory.size !== selections.length) throw invalid();
 
   const summary = text(root, "summary", 300);
-  assertNoConflict(summary, selections);
+  assertNoConflict(summary, selections, paletteCategories);
   return {
     // Canonical order, whatever order the model answered in.
     applications: selections.map((s) => byCategory.get(s.category_code)!),

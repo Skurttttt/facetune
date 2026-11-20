@@ -5,6 +5,7 @@ import 'package:facetune/features/custom_palette/domain/catalog/custom_palette_c
 import 'package:facetune/features/custom_palette/domain/catalog/custom_palette_color_model.dart';
 import 'package:facetune/features/custom_palette/domain/validation/custom_palette_contract.dart';
 import 'package:facetune/features/custom_palette/presentation/controllers/custom_palette_look_controller.dart';
+import 'package:facetune/features/makeup_kit/domain/entities/makeup_kit_category.dart';
 import 'package:facetune/features/makeup_kit/domain/entities/makeup_kit_finish.dart';
 import 'package:facetune/features/makeup_kit/domain/value_objects/normalized_hex_color.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -31,6 +32,20 @@ CustomPaletteSelectionInput _input(
   finishCode: finish,
 );
 
+/// A valid selection for [category] in its own colors: a curated category does
+/// not offer the shared "Red".
+CustomPaletteSelectionInput _inputFor(String category, {String? finish}) {
+  final parsed = MakeupKitCategory.fromCode(category)!;
+  final swatch = CustomPaletteCatalog.swatchesFor(parsed).first;
+  return _input(
+    category,
+    finish: finish ?? CustomPaletteCatalog.finishesFor(parsed).first.code,
+    base: swatch.hex,
+    adjusted: swatch.hex,
+    label: swatch.label,
+  );
+}
+
 List<String> _codes(List<CustomPaletteSelectionInput> selections) =>
     CustomPaletteValidator.validate(
       selections,
@@ -38,13 +53,30 @@ List<String> _codes(List<CustomPaletteSelectionInput> selections) =>
 
 void main() {
   group('the approved matrix', () {
-    test('is exactly 4 categories and 15 category and finish pairs', () {
+    test('is exactly 10 categories and 31 category and finish pairs', () {
       final pairs = CustomPaletteCatalog.categories.expand(
         (category) => CustomPaletteCatalog.finishesFor(
           category,
         ).map((finish) => '${category.code}/${finish.code}'),
       );
+      expect(pairs, hasLength(31));
       expect(pairs.toSet(), {
+        'foundation/matte',
+        'foundation/natural',
+        'foundation/dewy',
+        'foundation/satin',
+        'concealer/matte',
+        'concealer/natural',
+        'concealer/radiant',
+        'contour_bronzer/matte',
+        'contour_bronzer/satin',
+        'highlighter/natural',
+        'highlighter/shimmer',
+        'highlighter/metallic',
+        'eyebrow/matte',
+        'eyebrow/natural',
+        'lip_gloss/glossy',
+        'lip_gloss/shimmer',
         'blush/matte',
         'blush/satin',
         'blush/shimmer',
@@ -67,7 +99,7 @@ void main() {
       for (final category in CustomPaletteCatalog.categories) {
         for (final finish in CustomPaletteCatalog.finishesFor(category)) {
           expect(
-            _codes([_input(category.code, finish: finish.code)]),
+            _codes([_inputFor(category.code, finish: finish.code)]),
             isEmpty,
             reason: '${category.code}/${finish.code}',
           );
@@ -82,14 +114,14 @@ void main() {
         for (final finish in MakeupKitFinish.values) {
           if (allowed.contains(finish)) continue;
           expect(
-            _codes([_input(category.code, finish: finish.code)]),
+            _codes([_inputFor(category.code, finish: finish.code)]),
             ['finish_not_applicable'],
             reason: '${category.code}/${finish.code}',
           );
           refused += 1;
         }
       }
-      expect(refused, 4 * MakeupKitFinish.values.length - 15);
+      expect(refused, 10 * MakeupKitFinish.values.length - 31);
     });
 
     test('every category combination passes, in canonical order', () {
@@ -99,7 +131,7 @@ void main() {
           for (var i = 0; i < categories.length; i += 1)
             if (mask & (1 << i) != 0) categories[i].code,
         ];
-        final inputs = chosen.reversed.map(_input).toList();
+        final inputs = chosen.reversed.map((code) => _inputFor(code)).toList();
         expect(_codes(inputs), isEmpty, reason: '$chosen');
         expect(
           CustomPaletteValidator.canonicalOrder(
@@ -129,13 +161,27 @@ void main() {
       }
     });
 
-    test('every vector on every category passes the client contract', () {
+    test('every vector on every shared-color category passes the client '
+        'contract', () {
+      // The vectors start from the shared colors; curated categories never
+      // offer those, and their shades are covered by the slider test below.
+      final shared = CustomPaletteCatalog.categories.where(
+        (category) => !CustomPaletteCatalog.usesCuratedShades(category),
+      );
+      expect(shared.map((c) => c.code), [
+        'blush',
+        'eyeshadow',
+        'eyeliner',
+        'lipstick',
+        'lip_gloss',
+      ]);
       for (final vector in _vectors()) {
-        for (final category in CustomPaletteCatalog.categories) {
+        for (final category in shared) {
           expect(
             _codes([
               _input(
                 category.code,
+                finish: CustomPaletteCatalog.finishesFor(category).first.code,
                 base: vector['base'] as String,
                 adjusted: vector['adjusted'] as String,
                 label: vector['label'] as String,
@@ -150,7 +196,11 @@ void main() {
 
     test('every saturation and lightness the sliders hold stays canonical', () {
       final canonical = RegExp(r'^#[0-9A-F]{6}$');
-      for (final swatch in CustomPaletteCatalog.swatches) {
+      final everySwatch = {
+        for (final category in CustomPaletteCatalog.categories)
+          ...CustomPaletteCatalog.swatchesFor(category),
+      };
+      for (final swatch in everySwatch) {
         final base = swatch.color;
         for (var saturation = 0; saturation <= 100; saturation += 5) {
           for (var lightness = 0; lightness <= 100; lightness += 5) {
@@ -202,7 +252,7 @@ void main() {
       expect(_codes([_input('blush', finish: 'sparkle')]), [
         'unsupported_finish',
       ]);
-      for (final category in ['foundation', 'concealer', 'lips', 'BLUSH', '']) {
+      for (final category in ['nails', 'lips', 'eyebrows', 'BLUSH', '']) {
         expect(_codes([_input(category)]), ['unsupported_category']);
       }
     });

@@ -6,17 +6,20 @@ import '../../../../theme/app_tokens.dart';
 import '../../../makeup_kit/presentation/utils/makeup_kit_display.dart';
 import '../../domain/catalog/custom_palette_catalog.dart';
 
-/// The base-color palette: one choice per swatch.
+/// The base-color palette for one category: one choice per swatch.
 ///
 /// The selected swatch is marked by a check and a bolder name as well as its
 /// ring, and each name is spoken, so the choice never rests on color alone.
 class CustomPaletteSwatchGrid extends StatelessWidget {
   const CustomPaletteSwatchGrid({
+    required this.swatches,
     required this.selected,
     required this.onSelected,
     super.key,
   });
 
+  /// The colors this category offers (`CustomPaletteCatalog.swatchesFor`).
+  final List<CustomPaletteSwatch> swatches;
   final CustomPaletteSwatch? selected;
   final ValueChanged<CustomPaletteSwatch> onSelected;
 
@@ -37,7 +40,7 @@ class CustomPaletteSwatchGrid extends StatelessWidget {
         spacing: spacing,
         runSpacing: spacing,
         children: [
-          for (final swatch in CustomPaletteCatalog.swatches)
+          for (final swatch in swatches)
             SizedBox(
               width: tileWidth,
               child: _SwatchTile(

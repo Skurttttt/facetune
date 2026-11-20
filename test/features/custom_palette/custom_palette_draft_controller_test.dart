@@ -143,7 +143,7 @@ void main() {
       final red = CustomPaletteColorModel.toHsl(_swatch('Red').color);
       expect(gateway.requests.single.toJson(), {
         'paletteRequestId': 'request-1',
-        'paletteVersion': 'custom_color_palette_contract_v1',
+        'paletteVersion': 'custom_color_palette_contract_v2',
         'sourceMode': 'custom_color_palette',
         'analysisId': 'analysis-1',
         'style': 'soft_glam',
