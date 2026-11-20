@@ -209,6 +209,79 @@ void main() {
     },
   );
 
+  testWidgets('a new product starts with the first curated shade label', (
+    tester,
+  ) async {
+    final repository = _FakeRepository();
+    await _pump(tester, repository);
+
+    await _tap(tester, find.text('Add product'));
+
+    expect(repository.lastDraft?.colorLabel, 'Fair Ivory');
+  });
+
+  testWidgets(
+    'editing a fine-tuned colour keeps its null label instead of a shade name',
+    (tester) async {
+      final repository = _FakeRepository();
+      final product = MakeupKitProduct(
+        id: 'p-1',
+        userId: 'user-1',
+        category: MakeupKitCategory.lipstick,
+        color: NormalizedHexColor.parse('#A1323C'),
+        finish: MakeupKitFinish.matte,
+        createdAt: DateTime.utc(2026, 8, 13),
+        updatedAt: DateTime.utc(2026, 8, 13),
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            supabaseAvailableProvider.overrideWithValue(true),
+            authRepositoryProvider.overrideWithValue(
+              FakeAuthRepository(
+                user: const AuthUser(id: 'user-1', isAnonymous: false),
+              ),
+            ),
+            makeupKitProductsRepositoryProvider.overrideWithValue(repository),
+          ],
+          child: MaterialApp.router(
+            routerConfig: GoRouter(
+              initialLocation: '/',
+              routes: [
+                GoRoute(
+                  path: '/',
+                  builder: (context, state) => Scaffold(
+                    body: TextButton(
+                      onPressed: () => context.push('/edit'),
+                      child: const Text('Open edit product'),
+                    ),
+                  ),
+                ),
+                GoRoute(
+                  path: '/edit',
+                  builder: (context, state) =>
+                      AddMakeupKitProductPage(product: product),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open edit product'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Fair Ivory'), findsNothing);
+      await _tap(tester, find.text('Save changes'));
+
+      final draft = repository.lastUpdateDraft;
+      expect(draft, isNotNull);
+      expect(draft!.colorLabel, isNull);
+      expect(draft.color, NormalizedHexColor.parse('#A1323C'));
+      expect(draft.category, MakeupKitCategory.lipstick);
+    },
+  );
+
   testWidgets('duplicate taps while saving only submit once', (tester) async {
     final pending = Completer<MakeupKitProduct>();
     final repository = _FakeRepository(pending: pending);
@@ -275,11 +348,28 @@ class _FakeRepository implements MakeupKitProductsRepository {
     );
   }
 
+  MakeupKitProductDraft? lastUpdateDraft;
+
   @override
   Future<MakeupKitProduct> update(
     String productId,
     MakeupKitProductDraft draft,
-  ) => throw UnimplementedError();
+  ) async {
+    lastUpdateDraft = draft;
+    return MakeupKitProduct(
+      id: productId,
+      userId: 'user-1',
+      category: draft.category,
+      productName: draft.productName,
+      color: draft.color,
+      colorLabel: draft.colorLabel,
+      finish: draft.finish,
+      foundationDepth: draft.foundationDepth,
+      foundationUndertone: draft.foundationUndertone,
+      createdAt: DateTime.utc(2026, 8, 13),
+      updatedAt: DateTime.utc(2026, 8, 13),
+    );
+  }
 
   @override
   Future<void> delete(String productId) => throw UnimplementedError();

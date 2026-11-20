@@ -335,7 +335,7 @@ audited admin write is the `entitlement_allowance_adjustments` insert trigger.
 - `docs/SECURITY_HARDENING.md`, `.gitignore`, and `config/example.json`
   keep public config to URL + publishable key.
 - **Finding (pre-existing, not introduced here):** `NOTES.md` (tracked,
-  commit `2c728fe`) contains the plaintext line `SUPABASE PW: facetune_123*`.
+  commit `2c728fe`) contains the plaintext line `SUPABASE PW: <redacted>`.
   This is a database/dashboard credential committed to the repository. Not
   changed in this read-only phase; see §L manual actions.
 - **`NOTES.md` is non-authoritative personal scratch material.** It is not
@@ -468,7 +468,7 @@ Still unproven / to be proven in the phase that depends on them:
 
 # L. MANUAL ACTIONS REQUIRED
 
-1. **Rotate and remove the committed credential in `NOTES.md`** (`SUPABASE PW: facetune_123*`, tracked since `2c728fe`). Rotation is a dashboard action; removal is a repo edit outside WA-0's read-only rule and should be a deliberate commit (note: history retains it).
+1. **Rotate and remove the committed credential in `NOTES.md`** (`SUPABASE PW: <redacted>`, tracked since `2c728fe`). Rotation is a dashboard action; removal is a repo edit outside WA-0's read-only rule and should be a deliberate commit (note: history retains it).
 2. Decide the Shared Contract amendment described in §I before authorizing WA-1.
 3. Decide the admin web framework before WA-2 (not needed for WA-1).
 

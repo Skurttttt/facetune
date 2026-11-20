@@ -66,7 +66,10 @@ class _AddMakeupKitProductPageState
         product?.finish ??
         MakeupKitFinishCatalog.allowedFinishes(_initialCategory).first;
     _color = product?.color ?? _initialShade.color;
-    _colorLabel = product?.colorLabel ?? _initialShade.label;
+    // Editing keeps the saved label even when it is null: a fine-tuned colour
+    // has no curated name, and the first shade's name must not be written
+    // next to its hex.
+    _colorLabel = product != null ? product.colorLabel : _initialShade.label;
     _depth = product?.foundationDepth;
     _undertone = product?.foundationUndertone;
   }
